@@ -45,7 +45,7 @@ local function toggleInvisibility()
 
 	if isInvisible then
 		originalHipHeight = humanoid.HipHeight
-		humanoid.HipHeight = 10
+		humanoid.HipHeight = 50
 
 		local humanoidRootPart = getHumanoidRootPart()
 		if not humanoidRootPart then
