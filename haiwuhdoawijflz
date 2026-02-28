@@ -17,42 +17,42 @@ end
 
 local function getHumanoid(): Humanoid?
 	local character = player.Character
-	if not character then
-		return nil
-	end
+	if not character then return nil end
 	return character:FindFirstChildOfClass("Humanoid")
 end
 
-local function getHumanoidRootPart(): BasePart?
+local function getRoot(): BasePart?
 	local character = player.Character
-	if not character then
-		return nil
-	end
+	if not character then return nil end
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
 local function toggleInvisibility()
-	if not player.Character then
-		return
-	end
+	if not player.Character then return end
 
 	local humanoid = getHumanoid()
-	if not humanoid then
-		return
-	end
+	local root = getRoot()
+
+	if not humanoid or not root then return end
 
 	isInvisible = not isInvisible
 
 	if isInvisible then
+		-- Store original
 		originalHipHeight = humanoid.HipHeight
-		humanoid.HipHeight = 50
+		
+		-- Calculate height difference
+		local newHipHeight = 50
+		local offset = newHipHeight - originalHipHeight
 
-		local humanoidRootPart = getHumanoidRootPart()
-		if not humanoidRootPart then
-			return
-		end
+		-- Apply hip height
+		humanoid.HipHeight = newHipHeight
 
-		local savedPosition = humanoidRootPart.CFrame
+		-- Lift character up manually to prevent ground clipping
+		root.CFrame = root.CFrame + Vector3.new(0, offset, 0)
+
+		-- Invisibility seat trick
+		local savedPosition = root.CFrame
 
 		player.Character:MoveTo(INVISIBILITY_POSITION)
 		task.wait(0.15)
@@ -81,8 +81,14 @@ local function toggleInvisibility()
 		setCharacterTransparency(player.Character, 0.5)
 
 	else
+		-- Restore hip height
+		local offset = originalHipHeight - humanoid.HipHeight
 		humanoid.HipHeight = originalHipHeight
 
+		-- Move character back down cleanly
+		root.CFrame = root.CFrame + Vector3.new(0, offset, 0)
+
+		-- Remove seat
 		local invisChair = workspace:FindFirstChild("invischair")
 		if invisChair then
 			invisChair:Destroy()
