@@ -1,0 +1,91 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local INVISIBILITY_POSITION = Vector3.new(-25.95, 84, 3537.55)
+
+local isInvisible = false
+
+local function setCharacterTransparency(character: Model, transparency: number)
+	for _, descendant in character:GetDescendants() do
+		if descendant:IsA("BasePart") or descendant:IsA("Decal") then
+			descendant.Transparency = transparency
+		end
+	end
+end
+
+local function getHumanoidRootPart(): BasePart?
+	local character = player.Character
+	if not character then
+		return nil
+	end
+	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+local function toggleInvisibility()
+	if not player.Character then
+		return
+	end
+
+	isInvisible = not isInvisible
+
+	if isInvisible then
+		local humanoidRootPart = getHumanoidRootPart()
+		if not humanoidRootPart then
+			return
+		end
+
+		local savedPosition = humanoidRootPart.CFrame
+
+		-- Move to invis position
+		player.Character:MoveTo(INVISIBILITY_POSITION)
+		task.wait(0.15)
+
+		-- Create invisible seat
+		local seat = Instance.new("Seat")
+		seat.Name = "invischair"
+		seat.Anchored = false
+		seat.CanCollide = false
+		seat.Transparency = 1
+		seat.Position = INVISIBILITY_POSITION
+		seat.Parent = workspace
+
+		-- Weld seat to torso
+		local torso = player.Character:FindFirstChild("Torso") 
+			or player.Character:FindFirstChild("UpperTorso")
+
+		if torso then
+			local weld = Instance.new("Weld")
+			weld.Part0 = seat
+			weld.Part1 = torso
+			weld.Parent = seat
+		end
+
+		task.wait()
+		seat.CFrame = savedPosition
+
+		-- Make semi invisible
+		setCharacterTransparency(player.Character, 0.5)
+
+	else
+		-- Remove seat
+		local invisChair = workspace:FindFirstChild("invischair")
+		if invisChair then
+			invisChair:Destroy()
+		end
+
+		-- Restore visibility
+		if player.Character then
+			setCharacterTransparency(player.Character, 0)
+		end
+	end
+end
+
+-- Toggle with E
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	
+	if input.KeyCode == Enum.KeyCode.E then
+		toggleInvisibility()
+	end
+end)
