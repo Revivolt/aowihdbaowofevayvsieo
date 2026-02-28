@@ -42,7 +42,7 @@ local function toggleInvisibility()
 		originalHipHeight = humanoid.HipHeight
 		
 		-- Calculate height difference
-		local newHipHeight = 10
+		local newHipHeight = 20
 		local offset = newHipHeight - originalHipHeight
 
 		-- Apply hip height
