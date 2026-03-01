@@ -1,16 +1,14 @@
---// TRANSFORMATION SYSTEM (FULL)
+--// TRANSFORMATION SYSTEM (OVERRIDE VERSION)
 
 -----------------------------
 -- CONFIG
 -----------------------------
 
-local TRANSFORMATION_ID = 129469072457859 -- Put transformation animation ID
-local IDLE_ID = 97102311507506           -- Put idle animation ID
-local WALK_ID = 134010853417610           -- Put walk animation ID
+local TRANSFORMATION_ID = 129469072457859 -- transformation animation ID
+local IDLE_ID = 97102311507506           -- idle animation ID
+local WALK_ID = 134010853417610           -- optional walk animation ID
 
-local TRANSFORMATION_DURATION = 3    -- Seconds before switching to idle
-local IDLE_LOOPED = true
-local WALK_LOOPED = true
+local TRANSFORMATION_DURATION = 3
 
 -----------------------------
 -- SERVICES
@@ -26,78 +24,45 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 
+-- Disable default Roblox animations
+local animateScript = character:FindFirstChild("Animate")
+if animateScript then
+	animateScript.Disabled = true
+end
+
 -----------------------------
 -- VARIABLES
 -----------------------------
 
 local transformed = false
-
-local transformationTrack = nil
-local idleTrack = nil
-local walkTrack = nil
+local currentTrack = nil
 
 -----------------------------
--- LOAD ANIMATION FUNCTION
+-- LOAD FUNCTION
 -----------------------------
 
-local function loadAnimation(assetId)
+local function loadAnimation(assetId, looped)
 	local animation = Instance.new("Animation")
 	animation.AnimationId = "rbxassetid://" .. tostring(assetId)
-	return humanoid:LoadAnimation(animation)
+	
+	local track = humanoid:LoadAnimation(animation)
+	track.Looped = looped
+	
+	return track
 end
 
 -----------------------------
--- PLAY IDLE
+-- PLAY IDLE (Plays Even While Moving)
 -----------------------------
 
 local function playIdle()
-	if not transformed then return end
-	
-	-- Stop walk if playing
-	if walkTrack then
-		walkTrack:Stop()
-		walkTrack:Destroy()
-		walkTrack = nil
+	if currentTrack then
+		currentTrack:Stop()
+		currentTrack:Destroy()
 	end
 	
-	-- Restart idle cleanly
-	if idleTrack then
-		idleTrack:Stop()
-		idleTrack:Destroy()
-	end
-	
-	idleTrack = loadAnimation(IDLE_ID)
-	idleTrack.Looped = IDLE_LOOPED
-	idleTrack:Play()
-
-	-- Auto-restart idle if it ever stops
-	idleTrack.Stopped:Connect(function()
-		if transformed then
-			playIdle()
-		end
-	end)
-end
-
------------------------------
--- PLAY WALK
------------------------------
-
-local function playWalk()
-	if not transformed then return end
-	
-	-- Stop idle while walking
-	if idleTrack then
-		idleTrack:Stop()
-	end
-	
-	if walkTrack then
-		walkTrack:Stop()
-		walkTrack:Destroy()
-	end
-	
-	walkTrack = loadAnimation(WALK_ID)
-	walkTrack.Looped = WALK_LOOPED
-	walkTrack:Play()
+	currentTrack = loadAnimation(IDLE_ID, true)
+	currentTrack:Play()
 end
 
 -----------------------------
@@ -105,18 +70,16 @@ end
 -----------------------------
 
 local function playTransformation()
-	if transformationTrack then
-		transformationTrack:Stop()
-		transformationTrack:Destroy()
+	if currentTrack then
+		currentTrack:Stop()
+		currentTrack:Destroy()
 	end
 	
-	transformationTrack = loadAnimation(TRANSFORMATION_ID)
-	transformationTrack.Looped = false
-	transformationTrack:Play()
+	currentTrack = loadAnimation(TRANSFORMATION_ID, false)
+	currentTrack:Play()
 	
 	transformed = true
 	
-	-- Switch to idle after duration
 	task.delay(TRANSFORMATION_DURATION, function()
 		if transformed then
 			playIdle()
@@ -125,25 +88,7 @@ local function playTransformation()
 end
 
 -----------------------------
--- MOVEMENT DETECTION
------------------------------
-
-humanoid.Running:Connect(function(speed)
-	if not transformed then return end
-	
-	if speed > 0 then
-		-- Player moving
-		if not walkTrack or not walkTrack.IsPlaying then
-			playWalk()
-		end
-	else
-		-- Player stopped
-		playIdle()
-	end
-end)
-
------------------------------
--- START SYSTEM
+-- START
 -----------------------------
 
 playTransformation()
