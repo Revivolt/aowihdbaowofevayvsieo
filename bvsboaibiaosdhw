@@ -1,0 +1,127 @@
+--// TRANSFORMATION SYSTEM
+
+-----------------------------
+-- CONFIG
+-----------------------------
+
+local TRANSFORMATION_ID = 129469072457859 -- put transformation animation ID
+local IDLE_ID = 97102311507506 -- put idle animation ID
+
+local TRANSFORMATION_DURATION = 3 -- seconds before switching to idle
+local IDLE_LOOPED = true
+
+local WALK_ID = 134010853417610 -- put walk animation ID
+local WALK_LOOPED = true
+
+-----------------------------
+-- SETUP
+-----------------------------
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+
+local walkTrack = nil
+local currentTrack = nil
+local idleTrack = nil
+local transformed = false
+
+-----------------------------
+-- FUNCTION TO LOAD ANIMATION
+-----------------------------
+
+local function loadAnimation(assetId)
+	local animation = Instance.new("Animation")
+	animation.AnimationId = "rbxassetid://" .. tostring(assetId)
+	return humanoid:LoadAnimation(animation)
+end
+
+-----------------------------
+-- PLAY IDLE
+-----------------------------
+
+local function playIdle()
+	if not transformed then return end
+	
+	if idleTrack then
+		idleTrack:Stop()
+		idleTrack:Destroy()
+	end
+	
+	idleTrack = loadAnimation(IDLE_ID)
+	idleTrack.Looped = IDLE_LOOPED
+	idleTrack:Play()
+
+	-- If idle ever stops, restart it
+	idleTrack.Stopped:Connect(function()
+		if transformed then
+			playIdle()
+		end
+	end)
+end
+
+
+-----------------------------
+-- PLAY WALK
+-----------------------------
+
+local function playWalk()
+	if not transformed then return end
+	
+	if walkTrack then
+		walkTrack:Stop()
+		walkTrack:Destroy()
+	end
+	
+	if idleTrack then
+		idleTrack:Stop()
+	end
+	
+	walkTrack = loadAnimation(WALK_ID)
+	walkTrack.Looped = WALK_LOOPED
+	walkTrack:Play()
+end
+
+-----------------------------
+-- PLAY TRANSFORMATION
+-----------------------------
+
+local function playTransformation()
+	if currentTrack then
+		currentTrack:Stop()
+		currentTrack:Destroy()
+	end
+	
+	currentTrack = loadAnimation(TRANSFORMATION_ID)
+	currentTrack.Looped = false
+	currentTrack:Play()
+	
+	transformed = true
+
+humanoid.Running:Connect(function(speed)
+	if not transformed then return end
+	
+	if speed > 0 then
+		-- Player is moving
+		if not walkTrack or not walkTrack.IsPlaying then
+			playWalk()
+		end
+	else
+		-- Player stopped moving
+		if walkTrack then
+			walkTrack:Stop()
+			walkTrack:Destroy()
+			walkTrack = nil
+		end
+		
+		playIdle()
+	end
+end)
+
+-----------------------------
+-- START TRANSFORMATION
+-----------------------------
+
+playTransformation()
