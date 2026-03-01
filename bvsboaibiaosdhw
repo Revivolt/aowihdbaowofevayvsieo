@@ -5,7 +5,7 @@
 -----------------------------
 
 local TRANSFORMATION_ID = 129469072457859 -- Transformation animation
-local IDLE_ID = 97102311507506           -- Idle animation
+local IDLE_ID = 91348372558295           -- Idle animation
 local WALK_ID = 134010853417610           -- Walk animation
 
 -- Keybind emotes
