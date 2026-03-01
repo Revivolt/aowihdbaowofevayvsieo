@@ -1,4 +1,4 @@
---// TRANSFORMATION SYSTEM WITH KEYBINDS
+--// TRANSFORMATION SYSTEM WITH TOGGLE LOOP EMOTES
 
 -----------------------------
 -- CONFIG
@@ -41,7 +41,9 @@ local currentState = "None"
 local transformationTrack
 local idleTrack
 local walkTrack
-local activeEmoteTrack = nil
+
+-- Table to track looping emotes by key
+local loopingEmotes = {} -- keycode -> track
 
 -----------------------------
 -- LOAD ANIMATION
@@ -64,11 +66,15 @@ end
 
 local function playIdle()
 	if not transformed or currentState == "Idle" then return end
-	
 	currentState = "Idle"
 	
+	-- Stop walk if not moving
 	if walkTrack then walkTrack:Stop() end
-	if activeEmoteTrack then return end
+	
+	-- Stop idle if a looping emote is active
+	for _, track in pairs(loopingEmotes) do
+		if track and track.IsPlaying then return end
+	end
 	
 	if not idleTrack then
 		idleTrack = loadAnimation(IDLE_ID, Enum.AnimationPriority.Action, true)
@@ -83,11 +89,15 @@ end
 
 local function playWalk()
 	if not transformed or currentState == "Walk" then return end
-	
 	currentState = "Walk"
 	
+	-- Stop idle
 	if idleTrack then idleTrack:Stop() end
-	if activeEmoteTrack then return end
+	
+	-- Stop if any looping emote is active
+	for _, track in pairs(loopingEmotes) do
+		if track and track.IsPlaying then return end
+	end
 	
 	if not walkTrack then
 		walkTrack = loadAnimation(WALK_ID, Enum.AnimationPriority.Action, true)
@@ -106,7 +116,6 @@ local function playTransformation()
 		Enum.AnimationPriority.Action,
 		false
 	)
-
 	transformationTrack:Play()
 	transformed = true
 	
@@ -118,37 +127,29 @@ local function playTransformation()
 end
 
 -----------------------------
--- PLAY EMOTE (KEYBIND)
+-- TOGGLE LOOPING EMOTE
 -----------------------------
 
-local function playEmote(assetId)
+local function toggleLoopEmote(keyCode, assetId)
 	if not transformed then return end
 	
-	if activeEmoteTrack then
-		activeEmoteTrack:Stop()
-		activeEmoteTrack:Destroy()
+	-- If already active, stop it
+	if loopingEmotes[keyCode] then
+		loopingEmotes[keyCode]:Stop()
+		loopingEmotes[keyCode]:Destroy()
+		loopingEmotes[keyCode] = nil
+		playIdle() -- return to idle/walk
+		return
 	end
-	
-	activeEmoteTrack = loadAnimation(assetId, Enum.AnimationPriority.Action, false)
 	
 	-- Stop other tracks temporarily
 	if idleTrack then idleTrack:Stop() end
 	if walkTrack then walkTrack:Stop() end
 	
-	activeEmoteTrack:Play()
-	
-	-- After emote ends, return to correct state
-	activeEmoteTrack.Stopped:Connect(function()
-		activeEmoteTrack:Destroy()
-		activeEmoteTrack = nil
-		
-		-- Restore correct animation based on movement
-		if humanoid.MoveDirection.Magnitude > 0 then
-			playWalk()
-		else
-			playIdle()
-		end
-	end)
+	-- Play looping emote
+	local track = loadAnimation(assetId, Enum.AnimationPriority.Action, true)
+	track:Play()
+	loopingEmotes[keyCode] = track
 end
 
 -----------------------------
@@ -158,7 +159,10 @@ end
 humanoid.Running:Connect(function(speed)
 	if not transformed then return end
 	
-	if activeEmoteTrack then return end -- Don't interrupt active emote
+	-- If any looping emote is active, ignore movement
+	for _, track in pairs(loopingEmotes) do
+		if track and track.IsPlaying then return end
+	end
 	
 	if speed > 0 then
 		playWalk()
@@ -174,16 +178,16 @@ end)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if not transformed then return end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 	
-	if input.UserInputType == Enum.UserInputType.Keyboard then
-		local key = input.KeyCode
-		if key == Enum.KeyCode.T then
-			playEmote(EMOTE_T_ID)
-		elseif key == Enum.KeyCode.Y then
-			playEmote(EMOTE_Y_ID)
-		elseif key == Enum.KeyCode.U then
-			playEmote(EMOTE_U_ID)
-		end
+	local key = input.KeyCode
+	
+	if key == Enum.KeyCode.T then
+		toggleLoopEmote(key, EMOTE_T_ID)
+	elseif key == Enum.KeyCode.Y then
+		toggleLoopEmote(key, EMOTE_Y_ID)
+	elseif key == Enum.KeyCode.U then
+		toggleLoopEmote(key, EMOTE_U_ID)
 	end
 end)
 
