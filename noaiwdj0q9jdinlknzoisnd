@@ -1,0 +1,198 @@
+--// Spider
+
+-----------------------------
+-- CONFIG
+-----------------------------
+
+local TRANSFORMATION_ID = 0 -- Transformation animation
+local IDLE_ID = 80532977539303           -- Idle animation
+local WALK_ID = 89356423918695           -- Walk animation
+
+-- Keybind emotes
+local EMOTE_T_ID = 113915508368392
+local EMOTE_Y_ID = 86005347720103
+local EMOTE_U_ID = 134060662516499
+
+local TRANSFORMATION_DURATION = 0
+
+-----------------------------
+-- SERVICES
+-----------------------------
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+-----------------------------
+-- CHARACTER SETUP
+-----------------------------
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local animator = humanoid:WaitForChild("Animator")
+
+-----------------------------
+-- VARIABLES
+-----------------------------
+
+local transformed = false
+local currentState = "None"
+
+local transformationTrack
+local idleTrack
+local walkTrack
+
+-- Table to track looping emotes by key
+local loopingEmotes = {} -- keycode -> track
+
+-----------------------------
+-- LOAD ANIMATION
+-----------------------------
+
+local function loadAnimation(assetId, priority, looped)
+	local animation = Instance.new("Animation")
+	animation.AnimationId = "rbxassetid://" .. tostring(assetId)
+
+	local track = animator:LoadAnimation(animation)
+	track.Priority = priority
+	track.Looped = looped
+
+	return track
+end
+
+-----------------------------
+-- PLAY IDLE
+-----------------------------
+
+local function playIdle()
+	if not transformed or currentState == "Idle" then return end
+	currentState = "Idle"
+	
+	-- Stop walk if not moving
+	if walkTrack then walkTrack:Stop() end
+	
+	-- Stop idle if a looping emote is active
+	for _, track in pairs(loopingEmotes) do
+		if track and track.IsPlaying then return end
+	end
+	
+	if not idleTrack then
+		idleTrack = loadAnimation(IDLE_ID, Enum.AnimationPriority.Action, true)
+	end
+	
+	idleTrack:Play()
+end
+
+-----------------------------
+-- PLAY WALK
+-----------------------------
+
+local function playWalk()
+	if not transformed or currentState == "Walk" then return end
+	currentState = "Walk"
+	
+	-- Stop idle
+	if idleTrack then idleTrack:Stop() end
+	
+	-- Stop if any looping emote is active
+	for _, track in pairs(loopingEmotes) do
+		if track and track.IsPlaying then return end
+	end
+	
+	if not walkTrack then
+		walkTrack = loadAnimation(WALK_ID, Enum.AnimationPriority.Action, true)
+	end
+	
+	walkTrack:Play()
+end
+
+-----------------------------
+-- PLAY TRANSFORMATION
+-----------------------------
+
+local function playTransformation()
+	transformationTrack = loadAnimation(
+		TRANSFORMATION_ID,
+		Enum.AnimationPriority.Action,
+		false
+	)
+	transformationTrack:Play()
+	transformed = true
+	
+	task.delay(TRANSFORMATION_DURATION, function()
+		if transformed then
+			playIdle()
+		end
+	end)
+end
+
+-----------------------------
+-- TOGGLE LOOPING EMOTE
+-----------------------------
+
+local function toggleLoopEmote(keyCode, assetId)
+	if not transformed then return end
+	
+	-- If already active, stop it
+	if loopingEmotes[keyCode] then
+		loopingEmotes[keyCode]:Stop()
+		loopingEmotes[keyCode]:Destroy()
+		loopingEmotes[keyCode] = nil
+		playIdle() -- return to idle/walk
+		return
+	end
+	
+	-- Stop other tracks temporarily
+	if idleTrack then idleTrack:Stop() end
+	if walkTrack then walkTrack:Stop() end
+	
+	-- Play looping emote
+	local track = loadAnimation(assetId, Enum.AnimationPriority.Action, true)
+	track:Play()
+	loopingEmotes[keyCode] = track
+end
+
+-----------------------------
+-- MOVEMENT DETECTION
+-----------------------------
+
+humanoid.Running:Connect(function(speed)
+	if not transformed then return end
+	
+	-- If any looping emote is active, ignore movement
+	for _, track in pairs(loopingEmotes) do
+		if track and track.IsPlaying then return end
+	end
+	
+	if speed > 0 then
+		playWalk()
+	else
+		playIdle()
+	end
+end)
+
+-----------------------------
+-- KEYBIND INPUT
+-----------------------------
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if not transformed then return end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+	
+	local key = input.KeyCode
+	
+	if key == Enum.KeyCode.T then
+		toggleLoopEmote(key, EMOTE_T_ID)
+	elseif key == Enum.KeyCode.Y then
+		toggleLoopEmote(key, EMOTE_Y_ID)
+	elseif key == Enum.KeyCode.U then
+		toggleLoopEmote(key, EMOTE_U_ID)
+	end
+end)
+
+-----------------------------
+-- START SYSTEM
+-----------------------------
+
+playTransformation()
