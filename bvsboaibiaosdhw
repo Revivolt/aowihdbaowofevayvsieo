@@ -1,4 +1,4 @@
---// TRANSFORMATION SYSTEM (Movement Compatible)
+--// TRANSFORMATION SYSTEM WITH KEYBINDS
 
 -----------------------------
 -- CONFIG
@@ -8,6 +8,11 @@ local TRANSFORMATION_ID = 129469072457859 -- Transformation animation
 local IDLE_ID = 97102311507506           -- Idle animation
 local WALK_ID = 134010853417610           -- Walk animation
 
+-- Keybind emotes
+local EMOTE_T_ID = 80021276342508
+local EMOTE_Y_ID = 104809570223245
+local EMOTE_U_ID = 130916388086314
+
 local TRANSFORMATION_DURATION = 2
 
 -----------------------------
@@ -15,15 +20,15 @@ local TRANSFORMATION_DURATION = 2
 -----------------------------
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
 
 -----------------------------
 -- CHARACTER SETUP
 -----------------------------
 
+local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
-
 local animator = humanoid:WaitForChild("Animator")
 
 -----------------------------
@@ -36,6 +41,7 @@ local currentState = "None"
 local transformationTrack
 local idleTrack
 local walkTrack
+local activeEmoteTrack = nil
 
 -----------------------------
 -- LOAD ANIMATION
@@ -62,6 +68,7 @@ local function playIdle()
 	currentState = "Idle"
 	
 	if walkTrack then walkTrack:Stop() end
+	if activeEmoteTrack then return end
 	
 	if not idleTrack then
 		idleTrack = loadAnimation(IDLE_ID, Enum.AnimationPriority.Action, true)
@@ -80,6 +87,7 @@ local function playWalk()
 	currentState = "Walk"
 	
 	if idleTrack then idleTrack:Stop() end
+	if activeEmoteTrack then return end
 	
 	if not walkTrack then
 		walkTrack = loadAnimation(WALK_ID, Enum.AnimationPriority.Action, true)
@@ -110,11 +118,47 @@ local function playTransformation()
 end
 
 -----------------------------
+-- PLAY EMOTE (KEYBIND)
+-----------------------------
+
+local function playEmote(assetId)
+	if not transformed then return end
+	
+	if activeEmoteTrack then
+		activeEmoteTrack:Stop()
+		activeEmoteTrack:Destroy()
+	end
+	
+	activeEmoteTrack = loadAnimation(assetId, Enum.AnimationPriority.Action, false)
+	
+	-- Stop other tracks temporarily
+	if idleTrack then idleTrack:Stop() end
+	if walkTrack then walkTrack:Stop() end
+	
+	activeEmoteTrack:Play()
+	
+	-- After emote ends, return to correct state
+	activeEmoteTrack.Stopped:Connect(function()
+		activeEmoteTrack:Destroy()
+		activeEmoteTrack = nil
+		
+		-- Restore correct animation based on movement
+		if humanoid.MoveDirection.Magnitude > 0 then
+			playWalk()
+		else
+			playIdle()
+		end
+	end)
+end
+
+-----------------------------
 -- MOVEMENT DETECTION
 -----------------------------
 
 humanoid.Running:Connect(function(speed)
 	if not transformed then return end
+	
+	if activeEmoteTrack then return end -- Don't interrupt active emote
 	
 	if speed > 0 then
 		playWalk()
@@ -124,7 +168,27 @@ humanoid.Running:Connect(function(speed)
 end)
 
 -----------------------------
--- START
+-- KEYBIND INPUT
+-----------------------------
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if not transformed then return end
+	
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		local key = input.KeyCode
+		if key == Enum.KeyCode.T then
+			playEmote(EMOTE_T_ID)
+		elseif key == Enum.KeyCode.Y then
+			playEmote(EMOTE_Y_ID)
+		elseif key == Enum.KeyCode.U then
+			playEmote(EMOTE_U_ID)
+		end
+	end
+end)
+
+-----------------------------
+-- START SYSTEM
 -----------------------------
 
 playTransformation()
