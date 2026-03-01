@@ -1,15 +1,15 @@
---// test
+--// Stretch Clothing (Skybox)
 
 -----------------------------
 -- CONFIG
 -----------------------------
 
 local TRANSFORMATION_ID = 0000000000 -- Transformation animation
-local IDLE_ID = 0000000000           -- Idle animation
-local WALK_ID = 0000000000           -- Walk animation
+local IDLE_ID = 70883871260184           -- Idle animation
+local WALK_ID = 70883871260184           -- Walk animation
 
 -- Keybind emotes
-local EMOTE_T_ID = 70883871260184
+local EMOTE_T_ID = 0
 local EMOTE_Y_ID = 0000000000
 local EMOTE_U_ID = 0000000000
 
