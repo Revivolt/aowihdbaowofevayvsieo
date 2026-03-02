@@ -1,4 +1,4 @@
---// test6
+--// test7
 
 -----------------------------
 -- CONFIG
@@ -28,8 +28,8 @@ local EMOTE_U_ID = 0
 local TRANSFORMATION_DURATION = 0
 
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 100
-local SPRINT_SPEED = 300
+local BASE_WALK_SPEED = 80
+local SPRINT_SPEED = 140
 
 -- ANIMATION SPEEDS
 local TRANSFORM_ANIM_SPEED = 1
@@ -39,7 +39,7 @@ local SPRINT_ANIM_SPEED = 3
 local JUMP_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
 
-local ROTATION_SMOOTHNESS = 0.2 -- smaller = snappier, larger = smoother
+local ROTATION_SMOOTHNESS = 10 -- smaller = snappier, larger = smoother
 
 -----------------------------
 -- SERVICES
