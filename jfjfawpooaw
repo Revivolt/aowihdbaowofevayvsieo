@@ -1,4 +1,4 @@
---// test
+--// test2
 
 -----------------------------
 -- CONFIG
@@ -51,6 +51,9 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 
+-- Ensure smooth rotation
+humanoid.AutoRotate = true
+
 -----------------------------
 -- STATE VARIABLES
 -----------------------------
@@ -82,7 +85,14 @@ end
 -----------------------------
 
 local function playMovementAnimation(assetId, looped, speed)
-	if not isValidId(assetId) then return end
+	if not isValidId(assetId) then
+		if movementTrack then
+			movementTrack:Stop()
+			movementTrack:Destroy()
+			movementTrack = nil
+		end
+		return
+	end
 
 	if movementTrack then
 		movementTrack:Stop()
@@ -118,9 +128,7 @@ local function playActionAnimation(assetId, speed)
 	actionTrack.Looped = false
 	actionTrack:Play()
 
-	if speed then
-		actionTrack:AdjustSpeed(speed)
-	end
+	if speed then actionTrack:AdjustSpeed(speed) end
 
 	actionTrack.Stopped:Connect(function()
 		actionTrack:Destroy()
@@ -151,14 +159,18 @@ local function playWalk()
 	if emoteTrack or actionLocked then return end
 	local walkAnim = WALK_ID
 	if useAltWalk and isValidId(ALT_WALK_ID) then walkAnim = ALT_WALK_ID end
-	playMovementAnimation(walkAnim, true, WALK_ANIM_SPEED)
+
+	local speedFactor = humanoid.WalkSpeed / BASE_WALK_SPEED
+	playMovementAnimation(walkAnim, true, WALK_ANIM_SPEED * speedFactor)
 end
 
 local function playSprint()
 	if emoteTrack or actionLocked then return end
 	local sprintAnim = SPRINT_ID
 	if useAltSprint and isValidId(ALT_SPRINT_ID) then sprintAnim = ALT_SPRINT_ID end
-	playMovementAnimation(sprintAnim, true, SPRINT_ANIM_SPEED)
+
+	local speedFactor = humanoid.WalkSpeed / BASE_WALK_SPEED
+	playMovementAnimation(sprintAnim, true, SPRINT_ANIM_SPEED * speedFactor)
 end
 
 local function playJump()
@@ -205,11 +217,10 @@ function refreshState()
 	if actionLocked then return end
 	if emoteTrack then return end
 
-	if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
-		return
-	end
+	if humanoid:GetState() == Enum.HumanoidStateType.Freefall then return end
 
-	if humanoid.MoveDirection.Magnitude > 0 then
+	-- Use threshold to avoid jitter at high speeds
+	if humanoid.MoveDirection.Magnitude > 0.1 then
 		if sprinting then
 			playSprint()
 		else
