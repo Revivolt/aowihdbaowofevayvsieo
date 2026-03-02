@@ -1,4 +1,4 @@
---// test5
+--// test6
 
 -----------------------------
 -- CONFIG
@@ -60,6 +60,7 @@ humanoid.AutoRotate = true
 local transformed = false
 local sprinting = false
 local currentState = "None"
+local isInAir = false
 
 local useAltIdle = false
 local useAltWalk = false
@@ -184,10 +185,10 @@ local function playJump()
 	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
 	if not isValidId(animId) then return end
 
-	-- Pause movement animations instead of destroying
-	if idleTrack and idleTrack.IsPlaying then idleTrack:AdjustSpeed(0) end
-	if walkTrack and walkTrack.IsPlaying then walkTrack:AdjustSpeed(0) end
-	if sprintTrack and sprintTrack.IsPlaying then sprintTrack:AdjustSpeed(0) end
+	-- Stop movement animations while jumping
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
 
 	currentState = "Jump"
 
@@ -237,6 +238,20 @@ end
 local function refreshState()
 	if not transformed then return end
 	if emoteTrack then return end
+	if isInAir then return end -- 🚫 prevent mid-air movement updates
+
+	local speed = humanoid.MoveDirection.Magnitude
+
+	if speed > 0.1 then
+		if sprinting then
+			playSprint()
+		else
+			playWalk()
+		end
+	else
+		playIdle()
+	end
+end
 
 	-- Reload if toggle changed
 	if lastUseAltIdle ~= useAltIdle or
@@ -340,27 +355,22 @@ end)
 humanoid.StateChanged:Connect(function(_, new)
 	if not transformed then return end
 
-	if new == Enum.HumanoidStateType.Jumping then
+	if new == Enum.HumanoidStateType.Jumping 
+	or new == Enum.HumanoidStateType.Freefall then
+		
+		isInAir = true
 		playJump()
 
 	elseif new == Enum.HumanoidStateType.Landed then
+		
+		isInAir = false
+		
 		destroyTrack(jumpTrack)
 		jumpTrack = nil
-
-		-- Resume movement animations smoothly
-		if idleTrack and idleTrack.IsPlaying then
-			idleTrack:AdjustSpeed(IDLE_ANIM_SPEED)
-		end
-
-		if walkTrack and walkTrack.IsPlaying then
-			walkTrack:AdjustSpeed(WALK_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
-		end
-
-		if sprintTrack and sprintTrack.IsPlaying then
-			sprintTrack:AdjustSpeed(SPRINT_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
-		end
-
+		
 		currentState = "None"
+		
+		task.wait() -- wait 1 frame for speed to stabilize
 		refreshState()
 	end
 end)
