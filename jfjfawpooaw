@@ -1,4 +1,4 @@
---// test8
+--// test9
 
 -----------------------------
 -- CONFIG
@@ -28,8 +28,8 @@ local EMOTE_U_ID = 0
 local TRANSFORMATION_DURATION = 0
 
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 80
-local SPRINT_SPEED = 140
+local BASE_WALK_SPEED = 100
+local SPRINT_SPEED = 300
 
 -- ANIMATION SPEEDS
 local TRANSFORM_ANIM_SPEED = 1
