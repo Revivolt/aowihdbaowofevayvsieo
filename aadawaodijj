@@ -1,0 +1,220 @@
+--// test
+
+-----------------------------
+-- CONFIG
+-----------------------------
+
+-- DEFAULT ANIMATIONS
+local TRANSFORMATION_ID = 110574635021740
+local IDLE_ID = 138503654818181
+local WALK_ID = 96819546392344
+local SPRINT_ID = 83065934116885
+
+-- ALTERNATE ANIMATIONS
+local ALT_WALK_ID = 109318260839099   -- G toggle
+local ALT_SPRINT_ID = 0000000000 -- H toggle
+
+-- EMOTES (Movement cancels them)
+local EMOTE_T_ID = 0000000000
+local EMOTE_Y_ID = 0000000000
+local EMOTE_U_ID = 0000000000
+
+-- SPEED SETTINGS
+local BASE_WALK_SPEED = 16
+local SPRINT_SPEED = 28
+
+-- ANIMATION SPEEDS
+local WALK_ANIM_SPEED = 1
+local SPRINT_ANIM_SPEED = 1.2
+local IDLE_ANIM_SPEED = 1
+
+-----------------------------
+-- SERVICES
+-----------------------------
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local animator = humanoid:WaitForChild("Animator")
+
+-----------------------------
+-- STATE VARIABLES
+-----------------------------
+
+local transformed = false
+local sprinting = false
+
+local useAltWalk = false
+local useAltSprint = false
+
+local currentTrack
+local emoteTrack
+
+-----------------------------
+-- LOAD & PLAY
+-----------------------------
+
+local function playAnimation(assetId, looped, speed)
+	if currentTrack then
+		currentTrack:Stop()
+		currentTrack:Destroy()
+	end
+
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. tostring(assetId)
+
+	currentTrack = animator:LoadAnimation(anim)
+	currentTrack.Priority = Enum.AnimationPriority.Action
+	currentTrack.Looped = looped
+	currentTrack:Play()
+	
+	if speed then
+		currentTrack:AdjustSpeed(speed)
+	end
+end
+
+local function stopEmote()
+	if emoteTrack then
+		emoteTrack:Stop()
+		emoteTrack:Destroy()
+		emoteTrack = nil
+	end
+end
+
+-----------------------------
+-- STATE HANDLING
+-----------------------------
+
+local function playIdle()
+	if emoteTrack then return end
+	playAnimation(IDLE_ID, true, IDLE_ANIM_SPEED)
+end
+
+local function playWalk()
+	if emoteTrack then return end
+	
+	local walkAnim = useAltWalk and ALT_WALK_ID or WALK_ID
+	playAnimation(walkAnim, true, WALK_ANIM_SPEED)
+end
+
+local function playSprint()
+	if emoteTrack then return end
+	
+	local sprintAnim = useAltSprint and ALT_SPRINT_ID or SPRINT_ID
+	playAnimation(sprintAnim, true, SPRINT_ANIM_SPEED)
+end
+
+-----------------------------
+-- TRANSFORMATION
+-----------------------------
+
+local function playTransformation()
+	playAnimation(TRANSFORMATION_ID, false, 1)
+	transformed = true
+	humanoid.WalkSpeed = BASE_WALK_SPEED
+	
+	task.wait(3)
+	playIdle()
+end
+
+-----------------------------
+-- MOVEMENT
+-----------------------------
+
+humanoid.Running:Connect(function(speed)
+	if not transformed then return end
+	
+	if speed > 0 then
+		stopEmote()
+		
+		if sprinting then
+			playSprint()
+		else
+			playWalk()
+		end
+	else
+		playIdle()
+	end
+end)
+
+-----------------------------
+-- INPUT
+-----------------------------
+
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or not transformed then return end
+	
+	-- Sprint
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = true
+		humanoid.WalkSpeed = SPRINT_SPEED
+	end
+	
+	-- Walk Toggle (G)
+	if input.KeyCode == Enum.KeyCode.G then
+		useAltWalk = not useAltWalk
+		
+		if humanoid.MoveDirection.Magnitude > 0 and not sprinting then
+			playWalk()
+		end
+	end
+	
+	-- Sprint Toggle (H)
+	if input.KeyCode == Enum.KeyCode.H then
+		useAltSprint = not useAltSprint
+		
+		if humanoid.MoveDirection.Magnitude > 0 and sprinting then
+			playSprint()
+		end
+	end
+	
+	-- EMOTES (loop, movement cancels)
+	if input.KeyCode == Enum.KeyCode.T then
+		stopEmote()
+		emoteTrack = animator:LoadAnimation(Instance.new("Animation"))
+		emoteTrack.Animation.AnimationId = "rbxassetid://" .. EMOTE_T_ID
+		emoteTrack.Looped = true
+		emoteTrack.Priority = Enum.AnimationPriority.Action
+		emoteTrack:Play()
+	end
+	
+	if input.KeyCode == Enum.KeyCode.Y then
+		stopEmote()
+		emoteTrack = animator:LoadAnimation(Instance.new("Animation"))
+		emoteTrack.Animation.AnimationId = "rbxassetid://" .. EMOTE_Y_ID
+		emoteTrack.Looped = true
+		emoteTrack.Priority = Enum.AnimationPriority.Action
+		emoteTrack:Play()
+	end
+	
+	if input.KeyCode == Enum.KeyCode.U then
+		stopEmote()
+		emoteTrack = animator:LoadAnimation(Instance.new("Animation"))
+		emoteTrack.Animation.AnimationId = "rbxassetid://" .. EMOTE_U_ID
+		emoteTrack.Looped = true
+		emoteTrack.Priority = Enum.AnimationPriority.Action
+		emoteTrack:Play()
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = false
+		humanoid.WalkSpeed = BASE_WALK_SPEED
+		
+		if humanoid.MoveDirection.Magnitude > 0 then
+			playWalk()
+		else
+			playIdle()
+		end
+	end
+end)
+
+-----------------------------
+-- START
+-----------------------------
+
+playTransformation()
