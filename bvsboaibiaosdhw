@@ -1,4 +1,4 @@
---// ADVANCED TRANSFORMATION CONTROLLER (Movement Cancels Emotes)
+--// Tall Guy
 
 -----------------------------
 -- CONFIG
@@ -8,7 +8,7 @@
 local TRANSFORMATION_ID = 129469072457859
 local IDLE_ID = 91348372558295
 local WALK_ID = 134010853417610
-local SPRINT_ID = 0000000000
+local SPRINT_ID = 134411626334329
 
 local EMOTE_T_ID = 80021276342508
 local EMOTE_Y_ID = 104809570223245
@@ -25,7 +25,7 @@ local SPRINT_SPEED = 28
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 1
-local SPRINT_ANIM_SPEED = 1.2
+local SPRINT_ANIM_SPEED = 2
 
 -----------------------------
 -- SERVICES
