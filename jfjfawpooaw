@@ -1,4 +1,4 @@
---// test2
+--// test3
 
 -----------------------------
 -- CONFIG
@@ -35,7 +35,7 @@ local SPRINT_SPEED = 300
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 0.5
-local SPRINT_ANIM_SPEED = 6
+local SPRINT_ANIM_SPEED = 4
 local JUMP_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
 
@@ -67,8 +67,8 @@ local useAltIdle = false
 local useAltJump = false
 local useAltM1 = false
 
-local movementTrack -- for Idle / Walk / Sprint / Jump
-local actionTrack   -- for M1 / Emotes
+local movementTrack -- Idle / Walk / Sprint / Jump
+local actionTrack   -- M1 / Emotes
 local emoteTrack
 local actionLocked = false
 
@@ -105,6 +105,7 @@ local function playMovementAnimation(assetId, looped, speed)
 	movementTrack = animator:LoadAnimation(anim)
 	movementTrack.Priority = Enum.AnimationPriority.Movement
 	movementTrack.Looped = looped
+	movementTrack.ApplyRootMotion = false  -- FIX: disables rotation from animation
 	movementTrack:Play()
 
 	if speed then
@@ -219,7 +220,7 @@ function refreshState()
 
 	if humanoid:GetState() == Enum.HumanoidStateType.Freefall then return end
 
-	-- Use threshold to avoid jitter at high speeds
+	-- Threshold to prevent jank
 	if humanoid.MoveDirection.Magnitude > 0.1 then
 		if sprinting then
 			playSprint()
