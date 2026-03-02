@@ -1,4 +1,4 @@
---// test
+--// test2
 
 -----------------------------
 -- CONFIG
@@ -184,18 +184,22 @@ local function playJump()
 	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
 	if not isValidId(animId) then return end
 
-	-- Stop movement animations while jumping
-	destroyTrack(idleTrack); idleTrack = nil
-	destroyTrack(walkTrack); walkTrack = nil
-	destroyTrack(sprintTrack); sprintTrack = nil
+	-- Fade out movement instead of destroying
+	if idleTrack then idleTrack:Stop(0.15) end
+	if walkTrack then walkTrack:Stop(0.15) end
+	if sprintTrack then sprintTrack:Stop(0.15) end
 
 	currentState = "Jump"
 
-	destroyTrack(jumpTrack)
+	if jumpTrack then
+		jumpTrack:Stop()
+		jumpTrack:Destroy()
+	end
+
 	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
 
 	if jumpTrack then
-		jumpTrack:Play()
+		jumpTrack:Play(0.1)
 		jumpTrack:AdjustSpeed(JUMP_ANIM_SPEED)
 	end
 end
@@ -344,12 +348,15 @@ humanoid.StateChanged:Connect(function(_, new)
 		playJump()
 
 	elseif new == Enum.HumanoidStateType.Landed then
-		destroyTrack(jumpTrack)
+	if jumpTrack then
+		jumpTrack:Stop(0.1)
+		jumpTrack:Destroy()
 		jumpTrack = nil
-		currentState = "None"
-		refreshState()
 	end
-end)
+
+	currentState = "None"
+	refreshState()
+end
 
 -----------------------------
 -- START
