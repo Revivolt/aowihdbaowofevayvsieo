@@ -18,14 +18,14 @@ local EMOTE_U_ID = 0000000000
 local TRANSFORMATION_DURATION = 0
 
 -- Movement Speeds
-local BASE_WALK_SPEED = 30
-local SPRINT_SPEED = 80
+local BASE_WALK_SPEED = 60
+local SPRINT_SPEED = 140
 
 -- Animation Playback Speeds
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 0.5
-local SPRINT_ANIM_SPEED = 1
+local SPRINT_ANIM_SPEED = 3
 
 -----------------------------
 -- SERVICES
