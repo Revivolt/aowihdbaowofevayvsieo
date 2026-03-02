@@ -159,10 +159,15 @@ local function playJump()
 	playAnimation(jumpAnim, false, JUMP_ANIM_SPEED)
 end
 
+local m1Connection
+
 local function playM1()
 	if actionLocked then return end
-	actionLocked = true
+	if not isValidId(M1_ID) and not isValidId(ALT_M1_ID) then return end
 	
+	actionLocked = true
+	stopEmote()
+
 	local m1Anim = M1_ID
 	if useAltM1 and isValidId(ALT_M1_ID) then
 		m1Anim = ALT_M1_ID
@@ -170,8 +175,22 @@ local function playM1()
 
 	playAnimation(m1Anim, false, M1_ANIM_SPEED)
 
+	-- Disconnect old connection
+	if m1Connection then
+		m1Connection:Disconnect()
+		m1Connection = nil
+	end
+
+	-- Safety: if animation fails, unlock after 1 second
+	task.delay(1, function()
+		if actionLocked then
+			actionLocked = false
+			playIdle()
+		end
+	end)
+
 	if currentTrack then
-		currentTrack.Stopped:Connect(function()
+		m1Connection = currentTrack.Stopped:Connect(function()
 			actionLocked = false
 			
 			if humanoid.MoveDirection.Magnitude > 0 then
