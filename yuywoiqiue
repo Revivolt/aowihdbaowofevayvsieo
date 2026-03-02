@@ -1,4 +1,4 @@
---// e
+--// G
 
 -----------------------------
 -- CONFIG
@@ -148,36 +148,29 @@ local function playJump()
 	end
 end
 
-local m1Track
-
+-- LEFT CLICK FIXED
 local function playM1()
 	if not transformed then return end
 	local animId = useAltM1 and isValidId(ALT_M1_ID) and ALT_M1_ID or M1_ID
 	if not isValidId(animId) then return end
 
-	stopEmote() -- cancel any looping emote
+	stopEmote()
+	actionLocked = true -- prevent idle/walk from playing while M1 is active
 
-	-- Stop previous M1 if still playing
-	if m1Track then
-		m1Track:Stop()
-		m1Track:Destroy()
-		m1Track = nil
+	-- Stop any movement track so M1 plays cleanly
+	if idleTrack then idleTrack:Stop() end
+	if walkTrack then walkTrack:Stop() end
+	if sprintTrack then sprintTrack:Stop() end
+
+	local track = loadAnimation(animId,false)
+	if track then
+		track.Priority = Enum.AnimationPriority.Action
+		track:Play()
+		track.Stopped:Connect(function()
+			actionLocked = false
+			refreshState() -- resume normal idle/walk/sprint
+		end)
 	end
-
-	-- Load new track
-	m1Track = loadAnimation(animId,false)
-	if not m1Track then return end
-	m1Track.Priority = Enum.AnimationPriority.Action
-
-	-- Play it
-	m1Track:Play()
-
-	-- Once done, clean up and refresh state
-	m1Track.Stopped:Connect(function()
-		m1Track:Destroy()
-		m1Track = nil
-		refreshState()
-	end)
 end
 
 local function playLoopEmote(assetId)
@@ -191,7 +184,7 @@ end
 -- REFRESH STATE
 -----------------------------
 function refreshState()
-	if not transformed then return end
+	if not transformed or actionLocked then return end
 	if emoteTrack then return end
 	local speed = humanoid.MoveDirection.Magnitude
 	if speed > 0.1 then
