@@ -1,4 +1,4 @@
---// test4
+--// test5
 
 -----------------------------
 -- CONFIG
@@ -35,14 +35,13 @@ local SPRINT_SPEED = 300
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 0.5
-local SPRINT_ANIM_SPEED = 4
+local SPRINT_ANIM_SPEED = 6
 local JUMP_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
 
 -----------------------------
 -- SERVICES
 -----------------------------
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
@@ -51,85 +50,65 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 
--- Ensure smooth rotation
 humanoid.AutoRotate = true
 
 -----------------------------
--- STATE VARIABLES
+-- STATE
 -----------------------------
-
 local transformed = false
 local sprinting = false
-
-local useAltWalk = false
-local useAltSprint = false
-local useAltIdle = false
-local useAltJump = false
-local useAltM1 = false
-
-local movementTrack -- Idle / Walk / Sprint / Jump
-local actionTrack   -- M1 / Emotes
+local useAltWalk, useAltSprint, useAltIdle, useAltJump, useAltM1 = false, false, false, false, false
+local movementTrack
+local actionTrack
 local emoteTrack
 local actionLocked = false
 
 -----------------------------
--- SAFETY CHECK
+-- UTILITY
 -----------------------------
-
 local function isValidId(id)
 	return typeof(id) == "number" and id > 0
 end
 
------------------------------
--- PLAY ANIMATIONS
------------------------------
+local function stopMovementTrack()
+	if movementTrack then
+		movementTrack:Stop()
+		movementTrack:Destroy()
+		movementTrack = nil
+	end
+end
 
 local function playMovementAnimation(assetId, looped, speed)
 	if not isValidId(assetId) then
-		if movementTrack then
-			movementTrack:Stop()
-			movementTrack:Destroy()
-			movementTrack = nil
-		end
+		stopMovementTrack()
 		return
 	end
-
 	if movementTrack then
 		movementTrack:Stop()
 		movementTrack:Destroy()
 	end
-
 	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. tostring(assetId)
-
+	anim.AnimationId = "rbxassetid://"..tostring(assetId)
 	movementTrack = animator:LoadAnimation(anim)
 	movementTrack.Priority = Enum.AnimationPriority.Movement
 	movementTrack.Looped = looped
 	movementTrack:Play()
-
-	if speed then
-		movementTrack:AdjustSpeed(speed)
-	end
+	if speed then movementTrack:AdjustSpeed(speed) end
 end
 
 local function playActionAnimation(assetId, speed)
 	if not isValidId(assetId) then return end
-
 	if actionTrack then
 		actionTrack:Stop()
 		actionTrack:Destroy()
 	end
-
 	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. tostring(assetId)
-
+	anim.AnimationId = "rbxassetid://"..tostring(assetId)
 	actionTrack = animator:LoadAnimation(anim)
 	actionTrack.Priority = Enum.AnimationPriority.Action
 	actionTrack.Looped = false
 	actionTrack:Play()
-
 	if speed then actionTrack:AdjustSpeed(speed) end
-
 	actionTrack.Stopped:Connect(function()
 		actionTrack:Destroy()
 		actionTrack = nil
@@ -147,48 +126,43 @@ end
 -----------------------------
 -- STATE FUNCTIONS
 -----------------------------
-
 local function playIdle()
 	if emoteTrack or actionLocked then return end
-	local idleAnim = IDLE_ID
-	if useAltIdle and isValidId(ALT_IDLE_ID) then idleAnim = ALT_IDLE_ID end
-	playMovementAnimation(idleAnim, true, IDLE_ANIM_SPEED)
+	local animId = IDLE_ID
+	if useAltIdle and isValidId(ALT_IDLE_ID) then animId = ALT_IDLE_ID end
+	playMovementAnimation(animId, true, IDLE_ANIM_SPEED)
 end
 
 local function playWalk()
 	if emoteTrack or actionLocked then return end
-	local walkAnim = WALK_ID
-	if useAltWalk and isValidId(ALT_WALK_ID) then walkAnim = ALT_WALK_ID end
-
+	local animId = WALK_ID
+	if useAltWalk and isValidId(ALT_WALK_ID) then animId = ALT_WALK_ID end
 	local speedFactor = humanoid.WalkSpeed / BASE_WALK_SPEED
-	playMovementAnimation(walkAnim, true, WALK_ANIM_SPEED * speedFactor)
+	playMovementAnimation(animId, true, WALK_ANIM_SPEED * speedFactor)
 end
 
 local function playSprint()
 	if emoteTrack or actionLocked then return end
-	local sprintAnim = SPRINT_ID
-	if useAltSprint and isValidId(ALT_SPRINT_ID) then sprintAnim = ALT_SPRINT_ID end
-
+	local animId = SPRINT_ID
+	if useAltSprint and isValidId(ALT_SPRINT_ID) then animId = ALT_SPRINT_ID end
 	local speedFactor = humanoid.WalkSpeed / BASE_WALK_SPEED
-	playMovementAnimation(sprintAnim, true, SPRINT_ANIM_SPEED * speedFactor)
+	playMovementAnimation(animId, true, SPRINT_ANIM_SPEED * speedFactor)
 end
 
 local function playJump()
 	actionLocked = true
-	local jumpAnim = JUMP_ID
-	if useAltJump and isValidId(ALT_JUMP_ID) then jumpAnim = ALT_JUMP_ID end
-	playMovementAnimation(jumpAnim, false, JUMP_ANIM_SPEED)
+	local animId = JUMP_ID
+	if useAltJump and isValidId(ALT_JUMP_ID) then animId = ALT_JUMP_ID end
+	playMovementAnimation(animId, false, JUMP_ANIM_SPEED)
 end
 
 local function playM1()
-	local m1Anim = M1_ID
-	if useAltM1 and isValidId(ALT_M1_ID) then m1Anim = ALT_M1_ID end
-	if not isValidId(m1Anim) then return end
-
+	local animId = M1_ID
+	if useAltM1 and isValidId(ALT_M1_ID) then animId = ALT_M1_ID end
+	if not isValidId(animId) then return end
 	actionLocked = true
 	stopEmote()
-	playActionAnimation(m1Anim, M1_ANIM_SPEED)
-
+	playActionAnimation(animId, M1_ANIM_SPEED)
 	task.delay(1, function()
 		actionLocked = false
 		refreshState()
@@ -198,10 +172,8 @@ end
 local function playLoopEmote(assetId)
 	if not isValidId(assetId) then return end
 	stopEmote()
-
 	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. tostring(assetId)
-
+	anim.AnimationId = "rbxassetid://"..tostring(assetId)
 	emoteTrack = animator:LoadAnimation(anim)
 	emoteTrack.Priority = Enum.AnimationPriority.Action
 	emoteTrack.Looped = true
@@ -211,21 +183,15 @@ end
 -----------------------------
 -- STATE REFRESH
 -----------------------------
-
 function refreshState()
 	if not transformed then return end
 	if actionLocked then return end
 	if emoteTrack then return end
-
 	if humanoid:GetState() == Enum.HumanoidStateType.Freefall then return end
 
-	-- Threshold to prevent jank
-	if humanoid.MoveDirection.Magnitude > 0.1 then
-		if sprinting then
-			playSprint()
-		else
-			playWalk()
-		end
+	local moveMag = humanoid.MoveDirection.Magnitude
+	if moveMag > 0.1 then
+		if sprinting then playSprint() else playWalk() end
 	else
 		playIdle()
 	end
@@ -234,30 +200,21 @@ end
 -----------------------------
 -- TRANSFORMATION
 -----------------------------
-
 local function playTransformation()
 	if isValidId(TRANSFORMATION_ID) then
 		playMovementAnimation(TRANSFORMATION_ID, false, TRANSFORM_ANIM_SPEED)
 	end
-
 	transformed = true
 	humanoid.WalkSpeed = BASE_WALK_SPEED
-
 	task.delay(TRANSFORMATION_DURATION, function()
-		if transformed then
-			refreshState()
-		end
+		if transformed then refreshState() end
 	end)
 end
 
 -----------------------------
 -- EVENTS
 -----------------------------
-
-humanoid.Running:Connect(function()
-	refreshState()
-end)
-
+humanoid.Running:Connect(refreshState)
 humanoid.StateChanged:Connect(function(_, new)
 	if not transformed then return end
 	if new == Enum.HumanoidStateType.Jumping then
@@ -271,20 +228,17 @@ end)
 -----------------------------
 -- INPUT
 -----------------------------
-
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp or not transformed then return end
-
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		sprinting = true
 		humanoid.WalkSpeed = SPRINT_SPEED
 	end
-
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		playM1()
 	end
 
-	-- Toggle alternates
+	-- Alternate toggles
 	if input.KeyCode == Enum.KeyCode.G then useAltWalk = not useAltWalk end
 	if input.KeyCode == Enum.KeyCode.H then useAltSprint = not useAltSprint end
 	if input.KeyCode == Enum.KeyCode.J then useAltIdle = not useAltIdle end
@@ -308,5 +262,4 @@ end)
 -----------------------------
 -- START
 -----------------------------
-
 playTransformation()
