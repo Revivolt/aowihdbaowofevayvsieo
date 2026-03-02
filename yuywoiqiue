@@ -1,4 +1,4 @@
---// Gunner
+--// FULL TRANSFORMATION CONTROLLER (STABLE VERSION)
 
 -----------------------------
 -- CONFIG
@@ -67,6 +67,7 @@ local useAltM1 = false
 local currentTrack
 local emoteTrack
 local actionLocked = false
+local m1Connection
 
 -----------------------------
 -- SAFETY CHECK
@@ -94,7 +95,7 @@ local function playAnimation(assetId, looped, speed)
 	anim.AnimationId = "rbxassetid://" .. tostring(assetId)
 
 	currentTrack = animator:LoadAnimation(anim)
-	currentTrack.Priority = Enum.AnimationPriority.Action4
+	currentTrack.Priority = Enum.AnimationPriority.Action
 	currentTrack.Looped = looped
 	currentTrack:Play()
 
@@ -159,20 +160,18 @@ local function playJump()
 	playAnimation(jumpAnim, false, JUMP_ANIM_SPEED)
 end
 
-local m1Connection
-
 local function playM1()
 	if actionLocked then return end
-	if not isValidId(M1_ID) and not isValidId(ALT_M1_ID) then return end
 	
-	actionLocked = true
-	stopEmote()
-
 	local m1Anim = M1_ID
 	if useAltM1 and isValidId(ALT_M1_ID) then
 		m1Anim = ALT_M1_ID
 	end
+	
+	if not isValidId(m1Anim) then return end
 
+	actionLocked = true
+	stopEmote()
 	playAnimation(m1Anim, false, M1_ANIM_SPEED)
 
 	-- Disconnect old connection
@@ -181,28 +180,44 @@ local function playM1()
 		m1Connection = nil
 	end
 
-	-- Safety: if animation fails, unlock after 1 second
-	task.delay(1, function()
-		if actionLocked then
-			actionLocked = false
-			playIdle()
-		end
-	end)
-
+	-- Connect new one
 	if currentTrack then
 		m1Connection = currentTrack.Stopped:Connect(function()
 			actionLocked = false
-			
-			if humanoid.MoveDirection.Magnitude > 0 then
-				if sprinting then
-					playSprint()
-				else
-					playWalk()
-				end
-			else
-				playIdle()
-			end
+			refreshState()
 		end)
+	end
+
+	-- Safety unlock
+	task.delay(1, function()
+		if actionLocked then
+			actionLocked = false
+			refreshState()
+		end
+	end)
+end
+
+-----------------------------
+-- STATE REFRESH
+-----------------------------
+
+function refreshState()
+	if not transformed then return end
+	if actionLocked then return end
+	if emoteTrack then return end
+
+	if humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+		return
+	end
+
+	if humanoid.MoveDirection.Magnitude > 0 then
+		if sprinting then
+			playSprint()
+		else
+			playWalk()
+		end
+	else
+		playIdle()
 	end
 end
 
@@ -220,7 +235,7 @@ local function playTransformation()
 
 	task.delay(TRANSFORMATION_DURATION, function()
 		if transformed then
-			playIdle()
+			refreshState()
 		end
 	end)
 end
@@ -229,43 +244,23 @@ end
 -- MOVEMENT
 -----------------------------
 
-humanoid.Running:Connect(function(speed)
-	if not transformed or actionLocked then return end
-	
-	if speed > 0 then
-		stopEmote()
-		if sprinting then
-			playSprint()
-		else
-			playWalk()
-		end
-	else
-		playIdle()
-	end
+humanoid.Running:Connect(function()
+	refreshState()
 end)
-
------------------------------
--- JUMP DETECTION
------------------------------
 
 humanoid.StateChanged:Connect(function(_, new)
 	if not transformed then return end
-	
+
 	if new == Enum.HumanoidStateType.Jumping then
 		playJump()
 	elseif new == Enum.HumanoidStateType.Landed then
 		actionLocked = false
-		
-		if humanoid.MoveDirection.Magnitude > 0 then
-			playWalk()
-		else
-			playIdle()
-		end
+		refreshState()
 	end
 end)
 
 -----------------------------
--- EMOTE FUNCTION (T/Y/U)
+-- EMOTE FUNCTION
 -----------------------------
 
 local function playLoopEmote(assetId)
@@ -300,45 +295,24 @@ UserInputService.InputBegan:Connect(function(input, gp)
 		playM1()
 	end
 
-	-- Toggle Alternates
-	if input.KeyCode == Enum.KeyCode.G then
-		useAltWalk = not useAltWalk
-	end
+	-- Toggle alternates
+	if input.KeyCode == Enum.KeyCode.G then useAltWalk = not useAltWalk end
+	if input.KeyCode == Enum.KeyCode.H then useAltSprint = not useAltSprint end
+	if input.KeyCode == Enum.KeyCode.J then useAltIdle = not useAltIdle end
+	if input.KeyCode == Enum.KeyCode.K then useAltJump = not useAltJump end
+	if input.KeyCode == Enum.KeyCode.L then useAltM1 = not useAltM1 end
 
-	if input.KeyCode == Enum.KeyCode.H then
-		useAltSprint = not useAltSprint
-	end
-
-	if input.KeyCode == Enum.KeyCode.J then
-		useAltIdle = not useAltIdle
-	end
-
-	if input.KeyCode == Enum.KeyCode.K then
-		useAltJump = not useAltJump
-	end
-
-	if input.KeyCode == Enum.KeyCode.L then
-		useAltM1 = not useAltM1
-	end
-
-	-- Loop Emotes (cancel on movement)
-	if input.KeyCode == Enum.KeyCode.T then
-		playLoopEmote(EMOTE_T_ID)
-	end
-
-	if input.KeyCode == Enum.KeyCode.Y then
-		playLoopEmote(EMOTE_Y_ID)
-	end
-
-	if input.KeyCode == Enum.KeyCode.U then
-		playLoopEmote(EMOTE_U_ID)
-	end
+	-- Loop emotes
+	if input.KeyCode == Enum.KeyCode.T then playLoopEmote(EMOTE_T_ID) end
+	if input.KeyCode == Enum.KeyCode.Y then playLoopEmote(EMOTE_Y_ID) end
+	if input.KeyCode == Enum.KeyCode.U then playLoopEmote(EMOTE_U_ID) end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		sprinting = false
 		humanoid.WalkSpeed = BASE_WALK_SPEED
+		refreshState()
 	end
 end)
 
