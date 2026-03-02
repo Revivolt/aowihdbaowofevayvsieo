@@ -1,0 +1,255 @@
+--// Zombie
+
+-----------------------------
+-- CONFIG
+-----------------------------
+
+-- Animation IDs
+local TRANSFORMATION_ID = 110574635021740
+local IDLE_ID = 138503654818181
+local WALK_ID = 96819546392344
+local SPRINT_ID = 83065934116885
+
+local EMOTE_T_ID = 0000000000
+local EMOTE_Y_ID = 0000000000
+local EMOTE_U_ID = 0000000000
+
+-- Timing
+local TRANSFORMATION_DURATION = 3
+
+-- Movement Speeds
+local BASE_WALK_SPEED = 7
+local SPRINT_SPEED = 30
+
+-- Animation Playback Speeds
+local TRANSFORM_ANIM_SPEED = 1
+local IDLE_ANIM_SPEED = 1
+local WALK_ANIM_SPEED = 1
+local SPRINT_ANIM_SPEED = 10
+
+-----------------------------
+-- SERVICES
+-----------------------------
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+-----------------------------
+-- CHARACTER SETUP
+-----------------------------
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local animator = humanoid:WaitForChild("Animator")
+
+-----------------------------
+-- VARIABLES
+-----------------------------
+
+local transformed = false
+local sprinting = false
+local currentState = "None"
+
+local idleTrack
+local walkTrack
+local sprintTrack
+local transformationTrack
+local emoteTrack
+
+-----------------------------
+-- LOAD ANIMATION
+-----------------------------
+
+local function loadAnimation(assetId, looped)
+	local animation = Instance.new("Animation")
+	animation.AnimationId = "rbxassetid://" .. tostring(assetId)
+
+	local track = animator:LoadAnimation(animation)
+	track.Priority = Enum.AnimationPriority.Action
+	track.Looped = looped
+
+	return track
+end
+
+-----------------------------
+-- STOP ALL MOVEMENT ANIMS
+-----------------------------
+
+local function stopMovementTracks()
+	if idleTrack then idleTrack:Stop() end
+	if walkTrack then walkTrack:Stop() end
+	if sprintTrack then sprintTrack:Stop() end
+end
+
+-----------------------------
+-- STOP EMOTE
+-----------------------------
+
+local function stopEmote()
+	if emoteTrack then
+		emoteTrack:Stop()
+		emoteTrack:Destroy()
+		emoteTrack = nil
+	end
+end
+
+-----------------------------
+-- PLAY IDLE
+-----------------------------
+
+local function playIdle()
+	if not transformed or currentState == "Idle" then return end
+	if emoteTrack then return end
+
+	currentState = "Idle"
+	stopMovementTracks()
+
+	if not idleTrack then
+		idleTrack = loadAnimation(IDLE_ID, true)
+	end
+
+	idleTrack:Play()
+	idleTrack:AdjustSpeed(IDLE_ANIM_SPEED)
+end
+
+-----------------------------
+-- PLAY WALK
+-----------------------------
+
+local function playWalk()
+	if not transformed or currentState == "Walk" or sprinting then return end
+	if emoteTrack then return end
+
+	currentState = "Walk"
+	stopMovementTracks()
+
+	if not walkTrack then
+		walkTrack = loadAnimation(WALK_ID, true)
+	end
+
+	walkTrack:Play()
+	walkTrack:AdjustSpeed(WALK_ANIM_SPEED)
+end
+
+-----------------------------
+-- PLAY SPRINT
+-----------------------------
+
+local function playSprint()
+	if not transformed or currentState == "Sprint" then return end
+	if emoteTrack then return end
+
+	currentState = "Sprint"
+	stopMovementTracks()
+
+	if not sprintTrack then
+		sprintTrack = loadAnimation(SPRINT_ID, true)
+	end
+
+	sprintTrack:Play()
+	sprintTrack:AdjustSpeed(SPRINT_ANIM_SPEED)
+end
+
+-----------------------------
+-- PLAY TRANSFORMATION
+-----------------------------
+
+local function playTransformation()
+	transformationTrack = loadAnimation(TRANSFORMATION_ID, false)
+	transformationTrack:Play()
+	transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
+
+	transformed = true
+	humanoid.WalkSpeed = BASE_WALK_SPEED
+
+	task.delay(TRANSFORMATION_DURATION, function()
+		if transformed then
+			playIdle()
+		end
+	end)
+end
+
+-----------------------------
+-- PLAY LOOPING EMOTE
+-----------------------------
+
+local function playLoopEmote(assetId)
+	if not transformed then return end
+	
+	stopMovementTracks()
+	stopEmote()
+
+	emoteTrack = loadAnimation(assetId, true)
+	emoteTrack:Play()
+end
+
+-----------------------------
+-- SPRINT INPUT
+-----------------------------
+
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or not transformed then return end
+
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = true
+		humanoid.WalkSpeed = SPRINT_SPEED
+		
+		if humanoid.MoveDirection.Magnitude > 0 and not emoteTrack then
+			playSprint()
+		end
+	end
+
+	-- Emote Keys
+	if input.KeyCode == Enum.KeyCode.T then
+		playLoopEmote(EMOTE_T_ID)
+	elseif input.KeyCode == Enum.KeyCode.Y then
+		playLoopEmote(EMOTE_Y_ID)
+	elseif input.KeyCode == Enum.KeyCode.U then
+		playLoopEmote(EMOTE_U_ID)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if not transformed then return end
+
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = false
+		humanoid.WalkSpeed = BASE_WALK_SPEED
+		
+		if humanoid.MoveDirection.Magnitude > 0 and not emoteTrack then
+			playWalk()
+		else
+			playIdle()
+		end
+	end
+end)
+
+-----------------------------
+-- MOVEMENT DETECTION
+-----------------------------
+
+humanoid.Running:Connect(function(speed)
+	if not transformed then return end
+
+	-- If moving, cancel emote
+	if speed > 0 and emoteTrack then
+		stopEmote()
+	end
+
+	if speed > 0 then
+		if sprinting then
+			playSprint()
+		else
+			playWalk()
+		end
+	else
+		playIdle()
+	end
+end)
+
+-----------------------------
+-- START
+-----------------------------
+
+playTransformation()
