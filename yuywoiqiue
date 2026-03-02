@@ -94,7 +94,7 @@ local function playAnimation(assetId, looped, speed)
 	anim.AnimationId = "rbxassetid://" .. tostring(assetId)
 
 	currentTrack = animator:LoadAnimation(anim)
-	currentTrack.Priority = Enum.AnimationPriority.Action
+	currentTrack.Priority = Enum.AnimationPriority.Action4
 	currentTrack.Looped = looped
 	currentTrack:Play()
 
