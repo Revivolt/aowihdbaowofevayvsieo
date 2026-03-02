@@ -1,4 +1,4 @@
---// Sonic
+--// test
 
 -----------------------------
 -- CONFIG
@@ -36,7 +36,7 @@ local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 0.5
 local SPRINT_ANIM_SPEED = 2
-local JUMP_ANIM_SPEED = 10
+local JUMP_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
 
 -----------------------------
@@ -179,11 +179,20 @@ local function playSprint()
 end
 
 local function playJump()
+	if not transformed then return end
+
 	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
 	if not isValidId(animId) then return end
 
+	-- Stop movement animations while jumping
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+
+	currentState = "Jump"
+
 	destroyTrack(jumpTrack)
-	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Movement)
+	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
 
 	if jumpTrack then
 		jumpTrack:Play()
@@ -330,9 +339,14 @@ end)
 
 humanoid.StateChanged:Connect(function(_, new)
 	if not transformed then return end
+
 	if new == Enum.HumanoidStateType.Jumping then
 		playJump()
+
 	elseif new == Enum.HumanoidStateType.Landed then
+		destroyTrack(jumpTrack)
+		jumpTrack = nil
+		currentState = "None"
 		refreshState()
 	end
 end)
