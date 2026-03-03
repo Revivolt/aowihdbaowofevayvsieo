@@ -1,22 +1,22 @@
---// test2
+--// Zombie
 
 -----------------------------
 -- CONFIG
 -----------------------------
 
 -- DEFAULT ANIMATIONS
-local TRANSFORMATION_ID = 112109141479594
-local IDLE_ID = 0
-local WALK_ID = 118320322718866
-local SPRINT_ID = 76931637880681
-local JUMP_ID = 119889021060156
+local TRANSFORMATION_ID = 110574635021740
+local IDLE_ID = 138503654818181
+local WALK_ID = 96819546392344
+local SPRINT_ID = 83065934116885
+local JUMP_ID = 0
 local M1_ID = 0
 
 -- ALTERNATE ANIMATIONS
 local ALT_IDLE_ID = 0
-local ALT_WALK_ID = 0
+local ALT_WALK_ID = 109318260839099
 local ALT_SPRINT_ID = 0
-local ALT_JUMP_ID = 110340154189809
+local ALT_JUMP_ID = 0
 local ALT_M1_ID = 0
 
 -- EMOTES (movement cancels)
@@ -28,13 +28,13 @@ local EMOTE_U_ID = 0
 local TRANSFORMATION_DURATION = 8
 
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 100
-local SPRINT_SPEED = 300
+local BASE_WALK_SPEED = 7
+local SPRINT_SPEED = 30
 
 -- ANIMATION SPEEDS
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
-local WALK_ANIM_SPEED = 0.5
+local WALK_ANIM_SPEED = 1
 local SPRINT_ANIM_SPEED = 2
 local JUMP_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
@@ -184,22 +184,18 @@ local function playJump()
 	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
 	if not isValidId(animId) then return end
 
-	-- Fade out movement instead of destroying
-	if idleTrack then idleTrack:Stop(0.15) end
-	if walkTrack then walkTrack:Stop(0.15) end
-	if sprintTrack then sprintTrack:Stop(0.15) end
+	-- Stop movement animations while jumping
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
 
 	currentState = "Jump"
 
-	if jumpTrack then
-		jumpTrack:Stop()
-		jumpTrack:Destroy()
-	end
-
+	destroyTrack(jumpTrack)
 	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
 
 	if jumpTrack then
-		jumpTrack:Play(0.1)
+		jumpTrack:Play()
 		jumpTrack:AdjustSpeed(JUMP_ANIM_SPEED)
 	end
 end
@@ -348,15 +344,12 @@ humanoid.StateChanged:Connect(function(_, new)
 		playJump()
 
 	elseif new == Enum.HumanoidStateType.Landed then
-	if jumpTrack then
-		jumpTrack:Stop(0.1)
-		jumpTrack:Destroy()
+		destroyTrack(jumpTrack)
 		jumpTrack = nil
+		currentState = "None"
+		refreshState()
 	end
-
-	currentState = "None"
-	refreshState()
-end
+end)
 
 -----------------------------
 -- START
