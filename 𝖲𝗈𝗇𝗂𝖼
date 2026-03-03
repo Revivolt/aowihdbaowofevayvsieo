@@ -6,23 +6,23 @@
 
 -- DEFAULT ANIMATIONS
 local TRANSFORMATION_ID = 112109141479594
-local IDLE_ID = 0
+local IDLE_ID = 121745278632125
 local WALK_ID = 118320322718866
 local SPRINT_ID = 76931637880681
 local JUMP_ID = 119889021060156
-local M1_ID = 0
+local M1_ID = 119889021060156
 
 -- ALTERNATE ANIMATIONS
-local ALT_IDLE_ID = 0
-local ALT_WALK_ID = 0
-local ALT_SPRINT_ID = 0
-local ALT_JUMP_ID = 110340154189809
-local ALT_M1_ID = 0
+local ALT_IDLE_ID = 130432219266930 -- G
+local ALT_WALK_ID = 82598234841035 -- H
+local ALT_SPRINT_ID = 82598234841035 -- J
+local ALT_JUMP_ID = 110340154189809 -- K
+local ALT_M1_ID = 0 -- L
 
 -- EMOTES (movement cancels)
-local EMOTE_T_ID = 0
-local EMOTE_Y_ID = 0
-local EMOTE_U_ID = 0
+local EMOTE_T_ID = 93334432462341
+local EMOTE_Y_ID = 130070387700656
+local EMOTE_U_ID = 91255053058083
 
 -- TIMING
 local TRANSFORMATION_DURATION = 8
@@ -296,13 +296,13 @@ UserInputService.InputBegan:Connect(function(input, gp)
 	end
 
 	-- Toggle keys
-	if input.KeyCode == Enum.KeyCode.G then
+	if input.KeyCode == Enum.KeyCode.H then
 		useAltWalk = not useAltWalk
 		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.H then
+	elseif input.KeyCode == Enum.KeyCode.J then
 		useAltSprint = not useAltSprint
 		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.J then
+	elseif input.KeyCode == Enum.KeyCode.G then
 		useAltIdle = not useAltIdle
 		refreshState()
 	elseif input.KeyCode == Enum.KeyCode.K then
