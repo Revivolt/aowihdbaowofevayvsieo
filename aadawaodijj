@@ -1,4 +1,4 @@
---// test9
+--// N
 
 -----------------------------
 -- CONFIG
@@ -184,18 +184,12 @@ local function playJump()
 	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
 	if not isValidId(animId) then return end
 
-	currentState = "Jump"
+	-- Stop movement animations while jumping
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
 
-	-- Pause movement instead of destroying
-	if idleTrack and idleTrack.IsPlaying then
-		idleTrack:AdjustSpeed(0)
-	end
-	if walkTrack and walkTrack.IsPlaying then
-		walkTrack:AdjustSpeed(0)
-	end
-	if sprintTrack and sprintTrack.IsPlaying then
-		sprintTrack:AdjustSpeed(0)
-	end
+	currentState = "Jump"
 
 	destroyTrack(jumpTrack)
 	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
@@ -350,23 +344,12 @@ humanoid.StateChanged:Connect(function(_, new)
 		playJump()
 
 	elseif new == Enum.HumanoidStateType.Landed then
-
-	-- Remove jump animation
-	destroyTrack(jumpTrack)
-	jumpTrack = nil
-
-	currentState = "None"
-
-	-- Resume movement animations instead of restarting them
-	if sprinting and sprintTrack then
-		sprintTrack:AdjustSpeed(SPRINT_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
-	elseif walkTrack then
-		walkTrack:AdjustSpeed(WALK_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
-	elseif idleTrack then
-		idleTrack:AdjustSpeed(IDLE_ANIM_SPEED)
+		destroyTrack(jumpTrack)
+		jumpTrack = nil
+		currentState = "None"
+		refreshState()
 	end
-
-	refreshState()
+end)
 
 -----------------------------
 -- START
