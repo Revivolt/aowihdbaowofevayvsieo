@@ -1,10 +1,10 @@
---// Gunner
+--// test
 
 -----------------------------
 -- CONFIG
 -----------------------------
 
--- DEFAULT ANIMATIONS
+-- DEFAULT ANIMS
 local TRANSFORMATION_ID = 0
 local IDLE_ID = 130128432111327
 local WALK_ID = 99498309796580
@@ -366,7 +366,9 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		m1Held = false
-		stopAction()
+		if M1_LOOP then
+			stopAction()
+		end
 	end
 end)
 
