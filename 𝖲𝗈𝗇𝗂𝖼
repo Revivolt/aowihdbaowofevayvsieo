@@ -112,6 +112,9 @@ end
 -----------------------------
 -- SKID FLING
 -----------------------------
+
+local flingCooldown = false
+
 local function SkidFling(TargetPlayer)
 
 	local Character = Player.Character
@@ -174,6 +177,16 @@ local function SkidFling(TargetPlayer)
 		Humanoid:ChangeState("GettingUp")
 		task.wait()
 	until (RootPart.Position - getgenv().OldPos.Position).Magnitude < 25
+end
+
+RootPart.Velocity = Vector3.new()
+RootPart.RotVelocity = Vector3.new()
+
+for _,v in ipairs(Character:GetDescendants()) do
+	if v:IsA("BasePart") then
+		v.Velocity = Vector3.new()
+		v.RotVelocity = Vector3.new()
+	end
 end
 
 -----------------------------
@@ -331,6 +344,15 @@ local function playM1()
 	end
 end
 
+if targetPlayer and targetPlayer ~= player and not flingCooldown then
+	flingCooldown = true
+	task.spawn(function()
+		SkidFling(targetPlayer)
+		task.wait(0.6)
+		flingCooldown = false
+	end)
+end
+
 -----------------------------
 -- LOOP EMOTE
 -----------------------------
@@ -427,13 +449,19 @@ UserInputService.InputBegan:Connect(function(input, gp)
 	m1Held = true
 	playM1()
 
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	m1Held = true
+	playM1()
+
 	local target = mouse.Target
 	if target then
 		local character = target:FindFirstAncestorOfClass("Model")
 		if character then
 			local targetPlayer = Players:GetPlayerFromCharacter(character)
 			if targetPlayer and targetPlayer ~= player then
-				SkidFling(targetPlayer)
+				task.spawn(function()
+					SkidFling(targetPlayer)
+				end)
 			end
 		end
 	end
