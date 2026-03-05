@@ -38,8 +38,8 @@ local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 0.7
 local SPRINT_ANIM_SPEED = 1
-local JUMP_ANIM_SPEED = 1
-local FALL_ANIM_SPEED = 1
+local JUMP_ANIM_SPEED = 10
+local FALL_ANIM_SPEED = 10
 local M1_ANIM_SPEED = 1
 
 -----------------------------
