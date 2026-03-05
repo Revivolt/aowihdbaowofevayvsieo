@@ -15,12 +15,12 @@ local M1_ID = 121573002971812
 local M1_LOOP = false
 
 -- ALT ANIMS (TOGGLES)
-local ALT_IDLE_ID = 0 -- G
-local ALT_WALK_ID = 0 -- H
-local ALT_SPRINT_ID = 0 -- J
-local ALT_JUMP_ID = 0 -- K
-local ALT_FALL_ID = 0 -- I
-local ALT_M1_ID = 73468073017890 -- L
+local ALT_IDLE_ID = 0 -- X
+local ALT_WALK_ID = 0 -- C
+local ALT_SPRINT_ID = 0 -- V
+local ALT_JUMP_ID = 0 -- B
+local ALT_FALL_ID = 0 -- N
+local ALT_M1_ID = 73468073017890 -- M
 
 -- EMOTES (movement cancels)
 local EMOTE_T_ID = 0
@@ -334,20 +334,20 @@ UserInputService.InputBegan:Connect(function(input, gp)
 	end
 
 	-- Toggle keys
-	if input.KeyCode == Enum.KeyCode.H then
+	if input.KeyCode == Enum.KeyCode.C then
 		useAltWalk = not useAltWalk
 		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.J then
+	elseif input.KeyCode == Enum.KeyCode.V then
 		useAltSprint = not useAltSprint
 		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.G then
+	elseif input.KeyCode == Enum.KeyCode.X then
 		useAltIdle = not useAltIdle
 		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.K then
+	elseif input.KeyCode == Enum.KeyCode.B then
 		useAltJump = not useAltJump
-	elseif input.KeyCode == Enum.KeyCode.I then
+	elseif input.KeyCode == Enum.KeyCode.N then
 		useAltFall = not useAltFall
-	elseif input.KeyCode == Enum.KeyCode.L then
+	elseif input.KeyCode == Enum.KeyCode.M then
 		useAltM1 = not useAltM1
 	end
 
