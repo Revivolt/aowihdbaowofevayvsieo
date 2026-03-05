@@ -1,4 +1,4 @@
--- // Z
+-- // Q
 
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"))()
 
@@ -22,14 +22,10 @@ local gui = Library:create{
     Theme = Library.Themes.Serika
 }
 
--- Hook into Mercury's close button to also destroy the toggle
-if getgenv then
-    local originalClose = getgenv().MercuryUI
-    getgenv().MercuryUI = function()
-        toggleGui:Destroy()
-        if originalClose then originalClose() end
-    end
-end
+-- Destroy the toggle when the main UI is closed
+gui.AbsoluteObject.Destroying:Connect(function()
+    toggleGui:Destroy()
+end)
 
 local tab = gui:tab{
     Icon = "rbxassetid://6034996695",
