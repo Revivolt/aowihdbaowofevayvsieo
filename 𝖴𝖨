@@ -28,7 +28,7 @@ tab:button({
 })
 
 local tab = gui:tab{
-    Icon = "rbxassetid://87477233996066",
+    Icon = "rbxassetid://82130614869496",
     Name = "FE"
 }
 
