@@ -12,6 +12,7 @@ local SPRINT_ID = 76931637880681
 local JUMP_ID = 119889021060156
 local FALL_ID = 119889021060156
 local M1_ID = 119889021060156
+local M1_LOOP = true
 
 -- ALT ANIMS (TOGGLES)
 local ALT_IDLE_ID = 130432219266930 -- G
@@ -41,7 +42,6 @@ local SPRINT_ANIM_SPEED = 1
 local JUMP_ANIM_SPEED = 10
 local FALL_ANIM_SPEED = 10
 local M1_ANIM_SPEED = 10
-local M1_LOOP = true
 
 -----------------------------
 -- SERVICES
@@ -246,7 +246,7 @@ local function playM1()
 			actionTrack:AdjustSpeed(M1_ANIM_SPEED)
 		end
 	else
-		-- Single-shot mode: play once, then chain if still held
+		-- Single-shot mode: plays once per click, does not repeat while held
 		actionTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
 		if actionTrack then
 			actionTrack:Play()
@@ -254,9 +254,6 @@ local function playM1()
 			actionTrack.Stopped:Connect(function()
 				destroyTrack(actionTrack)
 				actionTrack = nil
-				if m1Held then
-					playM1()
-				end
 			end)
 		end
 	end
@@ -368,7 +365,9 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		m1Held = false
-		stopAction()
+		if M1_LOOP then
+			stopAction()
+		end
 	end
 end)
 
