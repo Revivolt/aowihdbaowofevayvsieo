@@ -1,4 +1,4 @@
---// test
+--// Gunner
 
 -----------------------------
 -- CONFIG
@@ -12,7 +12,7 @@ local SPRINT_ID = 70636286183373
 local JUMP_ID = 0
 local FALL_ID = 0
 local M1_ID = 121573002971812
-local M1_LOOP = false -- true = loops while holding left click | false = plays once per click
+local M1_LOOP = true -- true = loops while holding left click | false = plays once per click
 
 -- ALT ANIMS (TOGGLES)
 local ALT_IDLE_ID = 0 -- G
