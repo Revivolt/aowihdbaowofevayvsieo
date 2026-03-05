@@ -1,31 +1,10 @@
--- // Q
+-- // J
 
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"))()
-
--- Services
-local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-
--- ICON YOU CAN CHANGE
-local ICON_ID = "rbxassetid://6031280882"
-
--- Toggle GUI (created first so the close hook can reference it)
-local toggleGui = Instance.new("ScreenGui")
-toggleGui.Name = "ToggleGui"
-toggleGui.ResetOnSpawn = false
-toggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-toggleGui.Parent = (RunService:IsStudio() and LocalPlayer.PlayerGui) or game:GetService("CoreGui")
 
 local gui = Library:create{
     Theme = Library.Themes.Serika
 }
-
--- Destroy the toggle when the main UI is closed
-gui.AbsoluteObject.Destroying:Connect(function()
-    toggleGui:Destroy()
-end)
 
 local tab = gui:tab{
     Icon = "rbxassetid://6034996695",
@@ -40,6 +19,22 @@ tab:button({
     end,
 })
 
+-- Services
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ICON YOU CAN CHANGE
+local ICON_ID = "rbxassetid://6031280882"
+
+-- Toggle GUI
+local toggleGui = Instance.new("ScreenGui")
+toggleGui.Name = "ToggleGui"
+toggleGui.ResetOnSpawn = false
+toggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+toggleGui.Parent = (RunService:IsStudio() and LocalPlayer.PlayerGui) or game:GetService("CoreGui")
+
 -- Toggle Button (Square Image Button)
 local toggleButton = Instance.new("ImageButton")
 toggleButton.Name = "ToggleButton"
@@ -51,10 +46,12 @@ toggleButton.Image = ICON_ID
 toggleButton.ScaleType = Enum.ScaleType.Fit
 toggleButton.Parent = toggleGui
 
+-- Rounded corners
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = toggleButton
 
+-- Outline
 local stroke = Instance.new("UIStroke")
 stroke.Color = Color3.fromRGB(226, 183, 20)
 stroke.Thickness = 1
@@ -68,37 +65,47 @@ local moved = false
 local DRAG_THRESHOLD = 6
 
 toggleButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        moved = false
-        dragStart = input.Position
-        startPos = toggleButton.Position
-    end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		moved = false
+		dragStart = input.Position
+		startPos = toggleButton.Position
+	end
 end)
 
 toggleButton.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
-        if not moved then
-            Library.Toggled = not Library.Toggled
-            Library:show(Library.Toggled)
-        end
-    end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = false
+
+		if not moved then
+			Library.Toggled = not Library.Toggled
+			Library:show(Library.Toggled)
+		end
+	end
 end)
 
 UIS.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        if math.abs(delta.X) > DRAG_THRESHOLD or math.abs(delta.Y) > DRAG_THRESHOLD then
-            moved = true
-        end
-        if moved then
-            toggleButton.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
-        end
+	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - dragStart
+
+		if math.abs(delta.X) > DRAG_THRESHOLD or math.abs(delta.Y) > DRAG_THRESHOLD then
+			moved = true
+		end
+
+		if moved then
+			toggleButton.Position = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + delta.X,
+				startPos.Y.Scale,
+				startPos.Y.Offset + delta.Y
+			)
+		end
+	end
+end)
+
+-- Destroy toggle button when the main UI is closed
+Library.mainFrame.AbsoluteObject.AncestryChanged:Connect(function(_, parent)
+    if parent == nil then
+        toggleGui:Destroy()
     end
 end)
