@@ -1,15 +1,13 @@
--- // L
+-- // M
 
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"))()
 local gui = Library:create{
     Theme = Library.Themes.Serika
 }
-
 local tab = gui:tab{
     Icon = "rbxassetid://6034996695",
     Name = "Aimbot"
 }
-
 tab:button({
     Name = "show prompt",
     Description = "Very important button",
@@ -18,25 +16,22 @@ tab:button({
     end,
 })
 
--- Services
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local UIS = game:GetService("UserInputService")
 
--- Toggle GUI
 local toggleGui = Instance.new("ScreenGui")
 toggleGui.Name = "ToggleGui"
 toggleGui.ResetOnSpawn = false
 toggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 toggleGui.Parent = (game:GetService("RunService"):IsStudio() and LocalPlayer.PlayerGui) or game:GetService("CoreGui")
 
--- Button
 local toggleButton = Instance.new("TextButton")
 toggleButton.Name = "ToggleButton"
 toggleButton.Size = UDim2.fromOffset(90, 30)
 toggleButton.Position = UDim2.fromOffset(10, 10)
 toggleButton.BackgroundColor3 = Color3.fromRGB(50, 52, 55)
-toggleButton.TextColor3 = Color3.fromRGB(255,255,255)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleButton.Font = Enum.Font.SourceSansBold
 toggleButton.TextSize = 14
 toggleButton.Text = "Hide UI"
@@ -44,36 +39,20 @@ toggleButton.BorderSizePixel = 0
 toggleButton.Parent = toggleGui
 
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0,6)
+corner.CornerRadius = UDim.new(0, 6)
 corner.Parent = toggleButton
 
 local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(226,183,20)
+stroke.Color = Color3.fromRGB(226, 183, 20)
 stroke.Thickness = 1
 stroke.Parent = toggleButton
 
--- Drag variables
+-- DRAG + CLICK SYSTEM
 local dragging = false
 local dragStart
 local startPos
-local dragInput
 local moved = false
 local DRAG_THRESHOLD = 6
-
-local function update(input)
-    local delta = input.Position - dragStart
-
-    if math.abs(delta.X) > DRAG_THRESHOLD or math.abs(delta.Y) > DRAG_THRESHOLD then
-        moved = true
-    end
-
-    toggleButton.Position = UDim2.new(
-        startPos.X.Scale,
-        startPos.X.Offset + delta.X,
-        startPos.Y.Scale,
-        startPos.Y.Offset + delta.Y
-    )
-end
 
 toggleButton.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -81,30 +60,37 @@ toggleButton.InputBegan:Connect(function(input)
         moved = false
         dragStart = input.Position
         startPos = toggleButton.Position
-
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-
-                -- Only toggle if the button was clicked (not dragged)
-                if not moved then
-                    Library.Toggled = not Library.Toggled
-                    Library:show(Library.Toggled)
-                    toggleButton.Text = Library.Toggled and "Hide UI" or "Show UI"
-                end
-            end
-        end)
     end
 end)
 
-toggleButton.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
+toggleButton.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+        
+        -- Only toggle if it wasn't dragged
+        if not moved then
+            Library.Toggled = not Library.Toggled
+            Library:show(Library.Toggled)
+            toggleButton.Text = Library.Toggled and "Hide UI" or "Show UI"
+        end
     end
 end)
 
 UIS.InputChanged:Connect(function(input)
-    if dragging and input == dragInput then
-        update(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        
+        if math.abs(delta.X) > DRAG_THRESHOLD or math.abs(delta.Y) > DRAG_THRESHOLD then
+            moved = true
+        end
+
+        if moved then
+            toggleButton.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
     end
 end)
