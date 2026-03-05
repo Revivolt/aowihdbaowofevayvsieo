@@ -4,19 +4,21 @@
 -- CONFIG
 -----------------------------
 
--- DEFAULT ANIMATIONS
+-- DEFAULT ANIMS
 local TRANSFORMATION_ID = 112109141479594
 local IDLE_ID = 0
 local WALK_ID = 118320322718866
 local SPRINT_ID = 76931637880681
 local JUMP_ID = 119889021060156
+local FALL_ID = 119889021060156
 local M1_ID = 119889021060156
 
--- ALTERNATE ANIMATIONS
+-- ALT ANIMS (TOGGLES)
 local ALT_IDLE_ID = 130432219266930 -- G
 local ALT_WALK_ID = 82598234841035 -- H
 local ALT_SPRINT_ID = 82598234841035 -- J
 local ALT_JUMP_ID = 110340154189809 -- K
+local ALT_FALL_ID = 0 -- I
 local ALT_M1_ID = 0 -- L
 
 -- EMOTES (movement cancels)
@@ -31,12 +33,13 @@ local TRANSFORMATION_DURATION = 5
 local BASE_WALK_SPEED = 100
 local SPRINT_SPEED = 300
 
--- ANIMATION SPEEDS
+-- Animation Playback Speeds
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 0.7
 local SPRINT_ANIM_SPEED = 1
 local JUMP_ANIM_SPEED = 1
+local FALL_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
 
 -----------------------------
@@ -65,6 +68,7 @@ local useAltIdle = false
 local useAltWalk = false
 local useAltSprint = false
 local useAltJump = false
+local useAltFall = false
 local useAltM1 = false
 
 -- Track reload detection
@@ -72,7 +76,7 @@ local lastUseAltIdle = false
 local lastUseAltWalk = false
 local lastUseAltSprint = false
 
-local idleTrack, walkTrack, sprintTrack, jumpTrack
+local idleTrack, walkTrack, sprintTrack, jumpTrack, fallTrack
 local transformationTrack
 local actionTrack
 local emoteTrack
@@ -200,6 +204,29 @@ local function playJump()
 	end
 end
 
+local function playFall()
+	if not transformed then return end
+
+	local animId = (useAltFall and isValidId(ALT_FALL_ID)) and ALT_FALL_ID or FALL_ID
+	if not isValidId(animId) then return end
+
+	-- Stop movement animations while falling
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+	destroyTrack(jumpTrack); jumpTrack = nil
+
+	currentState = "Fall"
+
+	destroyTrack(fallTrack)
+	fallTrack = loadAnimation(animId, true, Enum.AnimationPriority.Action)
+
+	if fallTrack then
+		fallTrack:Play()
+		fallTrack:AdjustSpeed(FALL_ANIM_SPEED)
+	end
+end
+
 -----------------------------
 -- M1
 -----------------------------
@@ -307,6 +334,8 @@ UserInputService.InputBegan:Connect(function(input, gp)
 		refreshState()
 	elseif input.KeyCode == Enum.KeyCode.K then
 		useAltJump = not useAltJump
+	elseif input.KeyCode == Enum.KeyCode.I then
+		useAltFall = not useAltFall
 	elseif input.KeyCode == Enum.KeyCode.L then
 		useAltM1 = not useAltM1
 	end
@@ -343,9 +372,14 @@ humanoid.StateChanged:Connect(function(_, new)
 	if new == Enum.HumanoidStateType.Jumping then
 		playJump()
 
+	elseif new == Enum.HumanoidStateType.Freefall then
+		playFall()
+
 	elseif new == Enum.HumanoidStateType.Landed then
 		destroyTrack(jumpTrack)
 		jumpTrack = nil
+		destroyTrack(fallTrack)
+		fallTrack = nil
 		currentState = "None"
 		refreshState()
 	end
