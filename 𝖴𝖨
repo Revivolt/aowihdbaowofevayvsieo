@@ -1,3 +1,5 @@
+// --test
+
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"))()
 local gui = Library:create{
     Theme = Library.Themes.Serika
@@ -16,15 +18,14 @@ tab:button({
 
 -- Toggle button outside the UI
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
+local UIS = game:GetService("UserInputService")
 
 local toggleGui = Instance.new("ScreenGui")
 toggleGui.Name = "ToggleGui"
 toggleGui.ResetOnSpawn = false
 toggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-toggleGui.Parent = (RunService:IsStudio() and LocalPlayer.PlayerGui) or game:GetService("CoreGui")
+toggleGui.Parent = (game:GetService("RunService"):IsStudio() and LocalPlayer.PlayerGui) or game:GetService("CoreGui")
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Name = "ToggleButton"
@@ -47,43 +48,51 @@ stroke.Color = Color3.fromRGB(226, 183, 20)
 stroke.Thickness = 1
 stroke.Parent = toggleButton
 
--- Dragging logic
+-- Toggle functionality
+toggleButton.MouseButton1Click:Connect(function()
+    Library.Toggled = not Library.Toggled
+    Library:show(Library.Toggled)
+    toggleButton.Text = Library.Toggled and "Hide UI" or "Show UI"
+end)
+
+-- DRAG SYSTEM
 local dragging = false
-local dragStartPos
-local buttonStartPos
+local dragInput
+local dragStart
+local startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    toggleButton.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + delta.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + delta.Y
+    )
+end
 
 toggleButton.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
-        dragStartPos = input.Position
-        buttonStartPos = toggleButton.Position
+        dragStart = input.Position
+        startPos = toggleButton.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
 end)
 
-toggleButton.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
+toggleButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
     end
 end)
 
-RunService.RenderStepped:Connect(function()
-    if dragging then
-        local delta = UserInputService:GetMouseLocation() - Vector2.new(dragStartPos.X, dragStartPos.Y)
-        toggleButton.Position = UDim2.fromOffset(
-            buttonStartPos.X.Offset + delta.X,
-            buttonStartPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
--- Toggle click (only fires if not dragged)
-local dragThreshold = 5
-toggleButton.MouseButton1Click:Connect(function()
-    local mousePos = UserInputService:GetMouseLocation()
-    local dist = (mousePos - Vector2.new(dragStartPos.X, dragStartPos.Y)).Magnitude
-    if dist <= dragThreshold then
-        Library.Toggled = not Library.Toggled
-        Library:show(Library.Toggled)
-        toggleButton.Text = Library.Toggled and "Hide UI" or "Show UI"
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
     end
 end)
