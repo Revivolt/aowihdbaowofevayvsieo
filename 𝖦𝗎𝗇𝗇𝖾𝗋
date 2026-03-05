@@ -10,6 +10,7 @@ local IDLE_ID = 130128432111327
 local WALK_ID = 99498309796580
 local SPRINT_ID = 70636286183373
 local JUMP_ID = 0
+local FALL_ID = 0
 local M1_ID = 121573002971812
 
 -- ALTERNATE ANIMATIONS
@@ -17,6 +18,7 @@ local ALT_IDLE_ID = 0 -- G
 local ALT_WALK_ID = 0 -- H
 local ALT_SPRINT_ID = 0 -- J
 local ALT_JUMP_ID = 0 -- K
+local ALT_FALL_ID = 0 -- I
 local ALT_M1_ID = 73468073017890 -- L
 
 -- EMOTES (movement cancels)
@@ -28,7 +30,7 @@ local EMOTE_U_ID = 0
 local TRANSFORMATION_DURATION = 0
 
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 16
+local BASE_WALK_SPEED = 10
 local SPRINT_SPEED = 28
 
 -- ANIMATION SPEEDS
@@ -37,6 +39,7 @@ local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 1
 local SPRINT_ANIM_SPEED = 1.2
 local JUMP_ANIM_SPEED = 1
+local FALL_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
 local M1_LOOP = false
 
