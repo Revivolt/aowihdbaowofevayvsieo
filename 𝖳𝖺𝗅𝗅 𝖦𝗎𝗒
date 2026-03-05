@@ -29,13 +29,13 @@ local TRANSFORMATION_DURATION = 8
 
 -- Movement Speeds
 local BASE_WALK_SPEED = 16
-local SPRINT_SPEED = 28
+local SPRINT_SPEED = 40
 
 -- Animation Playback Speeds
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 1
-local SPRINT_ANIM_SPEED = 2
+local SPRINT_ANIM_SPEED = 1.3
 local JUMP_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
 
