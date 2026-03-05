@@ -7,7 +7,7 @@ local gui = Library:create{
 }
 
 local tab = gui:tab{
-    Icon = "rbxassetid://75693497840290",
+    Icon = "rbxassetid://88705951992158",
     Name = "Admin"
 }
 
