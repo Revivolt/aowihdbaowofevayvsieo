@@ -1,10 +1,17 @@
--- // B
+-- // U
 
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"))()
 
 local gui = Library:create{
     Theme = Library.Themes.Serika
 }
+
+-- Wrap the close function so destroying the UI also removes the toggle button
+local originalClose = getgenv().MercuryUI
+getgenv().MercuryUI = function()
+    if originalClose then originalClose() end
+    toggleGui:Destroy() -- toggleGui is referenced below
+end
 
 local tab = gui:tab{
     Icon = "rbxassetid://6034996695",
@@ -38,7 +45,7 @@ toggleGui.Parent = (RunService:IsStudio() and LocalPlayer.PlayerGui) or game:Get
 -- Toggle Button (Square Image Button)
 local toggleButton = Instance.new("ImageButton")
 toggleButton.Name = "ToggleButton"
-toggleButton.Size = UDim2.fromOffset(40, 40) -- square
+toggleButton.Size = UDim2.fromOffset(40, 40)
 toggleButton.Position = UDim2.fromOffset(10, 10)
 toggleButton.BackgroundColor3 = Color3.fromRGB(50, 52, 55)
 toggleButton.BorderSizePixel = 0
@@ -76,8 +83,7 @@ end)
 toggleButton.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragging = false
-		
-		-- Only toggle if the button wasn't dragged
+
 		if not moved then
 			Library.Toggled = not Library.Toggled
 			Library:show(Library.Toggled)
