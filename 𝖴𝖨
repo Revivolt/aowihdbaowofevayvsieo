@@ -26,7 +26,7 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ICON YOU CAN CHANGE
-local ICON_ID = "rbxassetid://82213030031204"
+local ICON_ID = "rbxassetid://1736404044"
 
 -- Toggle GUI
 local toggleGui = Instance.new("ScreenGui")
