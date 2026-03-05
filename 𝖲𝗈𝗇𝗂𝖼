@@ -117,13 +117,21 @@ local mouse = player:GetMouse()
 
 local hiddenfling = false
 local flinging = false
+local flingConnection
 
--- Hidden fling physics
+local TWEEN_SPEED = 0.6 -- slower tween
+local FLING_DISTANCE = 1000 -- studs required to stop
+
+-----------------------------
+-- HIDDEN FLING
+-----------------------------
 local function startHiddenFling()
+
 	if hiddenfling then return end
 	hiddenfling = true
 
 	task.spawn(function()
+
 		local hrp, c, vel, movel = nil, nil, nil, 0.1
 
 		while hiddenfling do
@@ -140,11 +148,13 @@ local function startHiddenFling()
 			hrp.Velocity = vel * 10000 + Vector3.new(0,10000,0)
 
 			RunService.RenderStepped:Wait()
+
 			if hrp then
 				hrp.Velocity = vel
 			end
 
 			RunService.Stepped:Wait()
+
 			if hrp then
 				hrp.Velocity = vel + Vector3.new(0,movel,0)
 				movel = movel * -1
@@ -153,11 +163,14 @@ local function startHiddenFling()
 	end)
 end
 
+
 local function stopHiddenFling()
 	hiddenfling = false
 end
 
-
+-----------------------------
+-- FLING PLAYER
+-----------------------------
 local function flingPlayer(targetPlayer)
 
 	if flinging then return end
@@ -176,43 +189,57 @@ local function flingPlayer(targetPlayer)
 	if not targetHRP then return end
 
 	local oldCFrame = hrp.CFrame
+	local startPos = targetHRP.Position
 
-	-- Tween to target
-	local tween = TweenService:Create(
-		hrp,
-		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{CFrame = targetHRP.CFrame}
-	)
-
-	tween:Play()
-	tween.Completed:Wait()
-
-	-- Activate fling
 	startHiddenFling()
 
-	for i = 1,10 do
-		task.wait(0.02)
+	flingConnection = RunService.Heartbeat:Connect(function()
 
-		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,4)
-		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-2)
-		hrp.CFrame = targetHRP.CFrame
-		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-3)
-		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,2)
-	end
+		if not hiddenfling then return end
+		if not targetHRP or not targetHRP.Parent then return end
 
-	-- Stop fling
-	stopHiddenFling()
+		local distance = (targetHRP.Position - startPos).Magnitude
 
-	task.wait(0.1)
+		-- stop if launched far enough
+		if distance >= FLING_DISTANCE then
 
-	-- Return to original position
-	hrp.CFrame = oldCFrame
+			stopHiddenFling()
 
-	flinging = false
+			if flingConnection then
+				flingConnection:Disconnect()
+				flingConnection = nil
+			end
+
+			task.wait(0.1)
+
+			if hrp and hrp.Parent then
+				hrp.CFrame = oldCFrame
+			end
+
+			flinging = false
+			return
+		end
+
+		-- keep tweening to player
+		local tween = TweenService:Create(
+			hrp,
+			TweenInfo.new(TWEEN_SPEED, Enum.EasingStyle.Linear),
+			{CFrame = targetHRP.CFrame}
+		)
+
+		tween:Play()
+
+	end)
+
 end
 
-
+-----------------------------
+-- CLICK DETECTION
+-----------------------------
 mouse.Button1Down:Connect(function()
+
+	if not player.Character then return end
+	if flinging then return end
 
 	local target = mouse.Target
 	if not target then return end
@@ -225,6 +252,22 @@ mouse.Button1Down:Connect(function()
 	if targetPlayer == player then return end
 
 	flingPlayer(targetPlayer)
+
+end)
+
+-----------------------------
+-- STOP IF PLAYER RESETS
+-----------------------------
+player.CharacterAdded:Connect(function()
+
+	stopHiddenFling()
+
+	if flingConnection then
+		flingConnection:Disconnect()
+		flingConnection = nil
+	end
+
+	flinging = false
 
 end)
 
