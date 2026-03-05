@@ -23,7 +23,7 @@ tab:button({
     Name = "Infinite Yield",
     Description = "",
     Callback = function()
-        print("Button clicked")
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
     end,
 })
 
