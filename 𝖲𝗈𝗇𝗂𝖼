@@ -48,8 +48,8 @@ local M1_LOOP = true -- If true, holding left click loops the animation. If fals
 -----------------------------
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local Player = player
-local mouse = player:GetMouse()
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 -----------------------------
 -- CHARACTER
@@ -86,6 +86,56 @@ local actionTrack
 local emoteTrack
 
 -----------------------------
+-- FLING SYSTEM
+-----------------------------
+local hiddenfling = false
+
+local function startHiddenFling()
+
+	if hiddenfling then return end
+	hiddenfling = true
+
+	task.spawn(function()
+
+		local hrp
+		local movel = 0.1
+
+		while hiddenfling do
+
+			RunService.Heartbeat:Wait()
+
+			local char = player.Character
+			if not char then continue end
+
+			hrp = char:FindFirstChild("HumanoidRootPart")
+			if not hrp then continue end
+
+			local vel = hrp.Velocity
+
+			hrp.Velocity = vel * 10000 + Vector3.new(0,10000,0)
+
+			RunService.RenderStepped:Wait()
+
+			if hrp then
+				hrp.Velocity = vel
+			end
+
+			RunService.Stepped:Wait()
+
+			if hrp then
+				hrp.Velocity = vel + Vector3.new(0,movel,0)
+				movel = movel * -1
+			end
+
+		end
+	end)
+end
+
+local function stopHiddenFling()
+	hiddenfling = false
+end
+
+-----------------------------
 -- HELPERS
 -----------------------------
 local function isValidId(id)
@@ -106,86 +156,6 @@ local function destroyTrack(track)
 	if track then
 		track:Stop()
 		track:Destroy()
-	end
-end
-
------------------------------
--- SKID FLING
------------------------------
-
-local flingCooldown = false
-
-local function SkidFling(TargetPlayer)
-
-	local Character = Player.Character
-	local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-	local RootPart = Humanoid and Humanoid.RootPart
-
-	local TCharacter = TargetPlayer.Character
-	if not TCharacter then return end
-
-	local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
-	local TRootPart = THumanoid and THumanoid.RootPart
-	local THead = TCharacter:FindFirstChild("Head")
-
-	if not (Character and Humanoid and RootPart and THumanoid) then return end
-
-	getgenv().OldPos = RootPart.CFrame
-
-	local function FPos(BasePart, Pos, Ang)
-		RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
-		Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
-		RootPart.Velocity = Vector3.new(9e7,9e7,9e7)
-		RootPart.RotVelocity = Vector3.new(9e8,9e8,9e8)
-	end
-
-	local function SFBasePart(BasePart)
-		local TimeToWait = 2
-		local Time = tick()
-		local Angle = 0
-
-		repeat
-			Angle += 100
-
-			FPos(BasePart,CFrame.new(0,1.5,0),CFrame.Angles(math.rad(Angle),0,0))
-			task.wait()
-
-			FPos(BasePart,CFrame.new(0,-1.5,0),CFrame.Angles(math.rad(Angle),0,0))
-			task.wait()
-
-		until BasePart.Velocity.Magnitude > 500
-		or BasePart.Parent ~= TargetPlayer.Character
-		or tick() > Time + TimeToWait
-	end
-
-	local BV = Instance.new("BodyVelocity")
-	BV.Parent = RootPart
-	BV.Velocity = Vector3.new(9e8,9e8,9e8)
-	BV.MaxForce = Vector3.new(math.huge,math.huge,math.huge)
-
-	if TRootPart then
-		SFBasePart(TRootPart)
-	elseif THead then
-		SFBasePart(THead)
-	end
-
-	BV:Destroy()
-	workspace.CurrentCamera.CameraSubject = Humanoid
-
-	repeat
-		RootPart.CFrame = getgenv().OldPos
-		Humanoid:ChangeState("GettingUp")
-		task.wait()
-	until (RootPart.Position - getgenv().OldPos.Position).Magnitude < 25
-end
-
-RootPart.Velocity = Vector3.new()
-RootPart.RotVelocity = Vector3.new()
-
-for _,v in ipairs(Character:GetDescendants()) do
-	if v:IsA("BasePart") then
-		v.Velocity = Vector3.new()
-		v.RotVelocity = Vector3.new()
 	end
 end
 
@@ -344,15 +314,6 @@ local function playM1()
 	end
 end
 
-if targetPlayer and targetPlayer ~= player and not flingCooldown then
-	flingCooldown = true
-	task.spawn(function()
-		SkidFling(targetPlayer)
-		task.wait(0.6)
-		flingCooldown = false
-	end)
-end
-
 -----------------------------
 -- LOOP EMOTE
 -----------------------------
@@ -446,26 +407,9 @@ UserInputService.InputBegan:Connect(function(input, gp)
 	end
 
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-	m1Held = true
-	playM1()
-
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-	m1Held = true
-	playM1()
-
-	local target = mouse.Target
-	if target then
-		local character = target:FindFirstAncestorOfClass("Model")
-		if character then
-			local targetPlayer = Players:GetPlayerFromCharacter(character)
-			if targetPlayer and targetPlayer ~= player then
-				task.spawn(function()
-					SkidFling(targetPlayer)
-				end)
-			end
-		end
+		m1Held = true
+		playM1()
 	end
-end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
@@ -478,6 +422,59 @@ UserInputService.InputEnded:Connect(function(input)
 		m1Held = false
 		stopAction()
 	end
+end)
+
+-----------------------------
+-- CLICK PLAYER FLING
+-----------------------------
+mouse.Button1Down:Connect(function()
+
+	if not transformed then return end
+
+	local target = mouse.Target
+	if not target then return end
+
+	local targetCharacter = target:FindFirstAncestorOfClass("Model")
+	if not targetCharacter then return end
+
+	local targetPlayer = Players:GetPlayerFromCharacter(targetCharacter)
+	if not targetPlayer then return end
+
+	local targetHRP = targetCharacter:FindFirstChild("HumanoidRootPart")
+	local myHRP = character:FindFirstChild("HumanoidRootPart")
+
+	if not targetHRP or not myHRP then return end
+
+	local originalCFrame = myHRP.CFrame
+
+	local tween = TweenService:Create(
+		myHRP,
+		TweenInfo.new(0.25,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
+		{CFrame = targetHRP.CFrame}
+	)
+
+	tween:Play()
+	tween.Completed:Wait()
+
+	startHiddenFling()
+
+	for i=1,10 do
+
+		myHRP.CFrame = targetHRP.CFrame * CFrame.new(0,0,4)
+		task.wait()
+
+		myHRP.CFrame = targetHRP.CFrame * CFrame.new(0,0,-4)
+		task.wait()
+
+		myHRP.CFrame = targetHRP.CFrame
+		task.wait()
+
+	end
+
+	stopHiddenFling()
+
+	myHRP.CFrame = originalCFrame
+
 end)
 
 -----------------------------
