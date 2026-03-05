@@ -48,8 +48,6 @@ local M1_LOOP = true -- If true, holding left click loops the animation. If fals
 -----------------------------
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 
 -----------------------------
 -- CHARACTER
@@ -86,56 +84,6 @@ local actionTrack
 local emoteTrack
 
 -----------------------------
--- FLING SYSTEM
------------------------------
-local hiddenfling = false
-
-local function startHiddenFling()
-
-	if hiddenfling then return end
-	hiddenfling = true
-
-	task.spawn(function()
-
-		local hrp
-		local movel = 0.1
-
-		while hiddenfling do
-
-			RunService.Heartbeat:Wait()
-
-			local char = player.Character
-			if not char then continue end
-
-			hrp = char:FindFirstChild("HumanoidRootPart")
-			if not hrp then continue end
-
-			local vel = hrp.Velocity
-
-			hrp.Velocity = vel * 10000 + Vector3.new(0,10000,0)
-
-			RunService.RenderStepped:Wait()
-
-			if hrp then
-				hrp.Velocity = vel
-			end
-
-			RunService.Stepped:Wait()
-
-			if hrp then
-				hrp.Velocity = vel + Vector3.new(0,movel,0)
-				movel = movel * -1
-			end
-
-		end
-	end)
-end
-
-local function stopHiddenFling()
-	hiddenfling = false
-end
-
------------------------------
 -- HELPERS
 -----------------------------
 local function isValidId(id)
@@ -158,6 +106,127 @@ local function destroyTrack(track)
 		track:Destroy()
 	end
 end
+
+-----------------------------
+-- CLICK FLING
+-----------------------------
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local mouse = player:GetMouse()
+
+local hiddenfling = false
+local flinging = false
+
+-- Hidden fling physics
+local function startHiddenFling()
+	if hiddenfling then return end
+	hiddenfling = true
+
+	task.spawn(function()
+		local hrp, c, vel, movel = nil, nil, nil, 0.1
+
+		while hiddenfling do
+			RunService.Heartbeat:Wait()
+
+			local lp = Players.LocalPlayer
+			c = lp.Character
+			if not c then continue end
+
+			hrp = c:FindFirstChild("HumanoidRootPart")
+			if not hrp then continue end
+
+			vel = hrp.Velocity
+			hrp.Velocity = vel * 10000 + Vector3.new(0,10000,0)
+
+			RunService.RenderStepped:Wait()
+			if hrp then
+				hrp.Velocity = vel
+			end
+
+			RunService.Stepped:Wait()
+			if hrp then
+				hrp.Velocity = vel + Vector3.new(0,movel,0)
+				movel = movel * -1
+			end
+		end
+	end)
+end
+
+local function stopHiddenFling()
+	hiddenfling = false
+end
+
+
+local function flingPlayer(targetPlayer)
+
+	if flinging then return end
+	flinging = true
+
+	local char = player.Character
+	if not char then return end
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local targetChar = targetPlayer.Character
+	if not targetChar then return end
+
+	local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+	if not targetHRP then return end
+
+	local oldCFrame = hrp.CFrame
+
+	-- Tween to target
+	local tween = TweenService:Create(
+		hrp,
+		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{CFrame = targetHRP.CFrame}
+	)
+
+	tween:Play()
+	tween.Completed:Wait()
+
+	-- Activate fling
+	startHiddenFling()
+
+	for i = 1,10 do
+		task.wait(0.02)
+
+		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,4)
+		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-2)
+		hrp.CFrame = targetHRP.CFrame
+		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-3)
+		hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,2)
+	end
+
+	-- Stop fling
+	stopHiddenFling()
+
+	task.wait(0.1)
+
+	-- Return to original position
+	hrp.CFrame = oldCFrame
+
+	flinging = false
+end
+
+
+mouse.Button1Down:Connect(function()
+
+	local target = mouse.Target
+	if not target then return end
+
+	local model = target:FindFirstAncestorOfClass("Model")
+	if not model then return end
+
+	local targetPlayer = Players:GetPlayerFromCharacter(model)
+	if not targetPlayer then return end
+	if targetPlayer == player then return end
+
+	flingPlayer(targetPlayer)
+
+end)
 
 -----------------------------
 -- ACTION STOP
@@ -422,59 +491,6 @@ UserInputService.InputEnded:Connect(function(input)
 		m1Held = false
 		stopAction()
 	end
-end)
-
------------------------------
--- CLICK PLAYER FLING
------------------------------
-mouse.Button1Down:Connect(function()
-
-	if not transformed then return end
-
-	local target = mouse.Target
-	if not target then return end
-
-	local targetCharacter = target:FindFirstAncestorOfClass("Model")
-	if not targetCharacter then return end
-
-	local targetPlayer = Players:GetPlayerFromCharacter(targetCharacter)
-	if not targetPlayer then return end
-
-	local targetHRP = targetCharacter:FindFirstChild("HumanoidRootPart")
-	local myHRP = character:FindFirstChild("HumanoidRootPart")
-
-	if not targetHRP or not myHRP then return end
-
-	local originalCFrame = myHRP.CFrame
-
-	local tween = TweenService:Create(
-		myHRP,
-		TweenInfo.new(0.25,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
-		{CFrame = targetHRP.CFrame}
-	)
-
-	tween:Play()
-	tween.Completed:Wait()
-
-	startHiddenFling()
-
-	for i=1,10 do
-
-		myHRP.CFrame = targetHRP.CFrame * CFrame.new(0,0,4)
-		task.wait()
-
-		myHRP.CFrame = targetHRP.CFrame * CFrame.new(0,0,-4)
-		task.wait()
-
-		myHRP.CFrame = targetHRP.CFrame
-		task.wait()
-
-	end
-
-	stopHiddenFling()
-
-	myHRP.CFrame = originalCFrame
-
 end)
 
 -----------------------------
