@@ -26,7 +26,7 @@ local Library = {
 		Serika = {
 			Main = Color3.fromRGB(41, 37, 37),
 			Secondary = Color3.fromRGB(41, 37, 37),
-			Tertiary = Color3.fromRGB(255, 255, 255),
+			Tertiary = Color3.fromRGB(0, 0, 0),
 
 			StrongText = Color3.fromRGB(255, 255, 255),		
 			WeakText = Color3.fromRGB(255, 255, 255)
