@@ -1,4 +1,4 @@
---// test3
+--// test4
 
 -----------------------------
 -- CONFIG
@@ -42,7 +42,6 @@ local SPRINT_ANIM_SPEED = 1.2
 local JUMP_ANIM_SPEED = 1
 local FALL_ANIM_SPEED = 1
 local M1_ANIM_SPEED = 1
-local M1_LOOP = true -- If true, holding left click loops the animation. If false, each click plays it once.
 
 -----------------------------
 -- SERVICES
