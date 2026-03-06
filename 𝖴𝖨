@@ -33,6 +33,14 @@ local tab = gui:tab{
 }
 
 tab:button({
+    Name = "Animation Asset ID Printer",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/FD2Team/Nameless-Admin-No-Byfron-Kick/main/Source"))()
+    end,
+})
+
+tab:button({
     Name = "Sonic",
     Description = "",
     Callback = function()
