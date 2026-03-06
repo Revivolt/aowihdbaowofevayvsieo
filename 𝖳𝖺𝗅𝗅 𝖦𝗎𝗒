@@ -15,7 +15,7 @@ local M1_ID = 0
 local M1_LOOP = false
 
 -- ALT ANIMS (TOGGLES)
-local ALT_IDLE_ID = 0 -- X
+local ALT_IDLE_ID = 97102311507506 -- X
 local ALT_WALK_ID = 0 -- C
 local ALT_SPRINT_ID = 0 -- V
 local ALT_JUMP_ID = 0 -- B
