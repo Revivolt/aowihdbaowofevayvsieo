@@ -1,21 +1,24 @@
+-- // Cars
+
 -----------------------------
 -- CONFIG
 -----------------------------
 local WALK_ANIMS = {
-	{ id = 0, key = Enum.KeyCode.U},
-	{ id = 0, key = Enum.KeyCode.X},
-	{ id = 0, key = Enum.KeyCode.C},
-	{ id = 0, key = Enum.KeyCode.V},
-	{ id = 0, key = Enum.KeyCode.B},
-	{ id = 0, key = Enum.KeyCode.N},
-	{ id = 0, key = Enum.KeyCode.M},
-	{ id = 0, key = Enum.KeyCode.G},
-	{ id = 0, key = Enum.KeyCode.H},
-	{ id = 0, key = Enum.KeyCode.J},
-	{ id = 0, key = Enum.KeyCode.K},
-	{ id = 0, key = Enum.KeyCode.L},
-	{ id = 0, key = Enum.KeyCode.T},
-	{ id = 0, key = Enum.KeyCode.Y},
+	{ id = 113181071290859, key = Enum.KeyCode.U},
+	{ id = 108229133345486, key = Enum.KeyCode.X},
+	{ id = 116625361313832, key = Enum.KeyCode.C},
+	{ id = 94158447866656, key = Enum.KeyCode.V},
+	{ id = 138003068153218, key = Enum.KeyCode.B},
+	{ id = 116772752010894, key = Enum.KeyCode.N},
+	{ id = 77909769246497, key = Enum.KeyCode.M},
+	{ id = 83944222262771, key = Enum.KeyCode.G},
+	{ id = 115260380433565, key = Enum.KeyCode.H},
+	{ id = 127805235430271, key = Enum.KeyCode.J},
+	{ id = 108747312576405, key = Enum.KeyCode.K},
+	{ id = 81388785824317, key = Enum.KeyCode.L},
+	{ id = 110164018940338, key = Enum.KeyCode.T},
+	{ id = 97246018303948, key = Enum.KeyCode.Y},
+	{ id = 136602708709098, key = Enum.KeyCode.Z},
 }
 
 -- Movement speeds
@@ -23,8 +26,8 @@ local BASE_WALK_SPEED = 16
 local SPRINT_SPEED    = 28
 
 -- Animation playback speeds
-local WALK_ANIM_SPEED   = 1
-local SPRINT_ANIM_SPEED = 1
+local WALK_ANIM_SPEED   = 3
+local SPRINT_ANIM_SPEED = 3
 
 -----------------------------
 -- SERVICES
