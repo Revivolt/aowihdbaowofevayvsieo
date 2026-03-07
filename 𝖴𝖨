@@ -27,6 +27,14 @@ tab:button({
     end,
 })
 
+tab:button({
+    Name = "Chat Command Line",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%97%81%F0%9D%96%BA%F0%9D%97%8D%20%F0%9D%96%A2%F0%9D%97%88%F0%9D%97%86%F0%9D%97%86%F0%9D%96%BA%F0%9D%97%87%F0%9D%96%BD%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%97%87%F0%9D%96%BE"))()
+    end,
+})
+
 local tab = gui:tab{
     Icon = "rbxassetid://82130614869496",
     Name = "FE"
