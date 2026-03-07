@@ -22,12 +22,12 @@ local WALK_ANIMS = {
 }
 
 -- Movement speeds
-local BASE_WALK_SPEED = 16
-local SPRINT_SPEED    = 28
+local BASE_WALK_SPEED = 40
+local SPRINT_SPEED    = 80
 
 -- Animation playback speeds
-local WALK_ANIM_SPEED   = 1
-local SPRINT_ANIM_SPEED = 1
+local WALK_ANIM_SPEED   = 3
+local SPRINT_ANIM_SPEED = 3
 
 -----------------------------
 -- SERVICES
