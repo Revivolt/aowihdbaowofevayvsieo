@@ -2,7 +2,7 @@
 --  CHAT COMMAND SENDER  v2  |  LocalScript
 --  Place in: StarterPlayer → StarterPlayerScripts
 -- ============================================================
---  Press [P]     → open/close command bar
+--  Press [;]     → open/close command bar
 --  Press [Enter] → send command & hide bar
 --  Press [Esc]   → cancel
 -- ============================================================
@@ -73,7 +73,7 @@ TextBox.Size                = UDim2.new(1, -55, 1, -10)
 TextBox.Position            = UDim2.new(0, 42, 0, 5)
 TextBox.BackgroundTransparency = 1
 TextBox.Text                = ""
-TextBox.PlaceholderText     = "Type command (e.g. /clone) then press Enter…"
+TextBox.PlaceholderText     = "Type command, then press Enter…"
 TextBox.PlaceholderColor3   = Color3.fromRGB(100, 100, 120)
 TextBox.TextColor3          = Color3.fromRGB(230, 230, 255)
 TextBox.Font                = Enum.Font.Gotham
@@ -203,7 +203,7 @@ end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.P then
+    if input.KeyCode == Enum.KeyCode.Semicolon then
         if isOpen then closeBar() else openBar() end
     end
     if input.KeyCode == Enum.KeyCode.Escape and isOpen then
@@ -225,4 +225,4 @@ TextBox.FocusLost:Connect(function(enterPressed)
     closeBar()
 end)
 
-print("[ChatCmd] Ready — Press [P] to open | Chat system:", usingNewChat and "NEW" or "LEGACY")
+print("[ChatCmd] Ready — Press [;] to open | Chat system:", usingNewChat and "NEW" or "LEGACY")
