@@ -1,4 +1,4 @@
--- // Cars
+-- // test
 
 -----------------------------
 -- CONFIG
@@ -26,8 +26,8 @@ local BASE_WALK_SPEED = 16
 local SPRINT_SPEED    = 28
 
 -- Animation playback speeds
-local WALK_ANIM_SPEED   = 3
-local SPRINT_ANIM_SPEED = 3
+local WALK_ANIM_SPEED   = 1
+local SPRINT_ANIM_SPEED = 1
 
 -----------------------------
 -- SERVICES
@@ -92,9 +92,10 @@ local function playWalkAnim(speed)
 	end
 end
 
-local function stopWalkAnim()
-	destroyTrack(walkTrack)
-	walkTrack = nil
+local function freezeWalkAnim()
+	if walkTrack and walkTrack.IsPlaying then
+		walkTrack:AdjustSpeed(0)
+	end
 end
 
 -----------------------------
@@ -110,7 +111,9 @@ local function switchToAnim(index)
 	if humanoid.MoveDirection.Magnitude > 0.1 then
 		playWalkAnim(humanoid.WalkSpeed)
 	else
-		stopWalkAnim()
+		-- Not moving: destroy old track so the new anim loads frozen on next move
+		destroyTrack(walkTrack)
+		walkTrack = nil
 	end
 end
 
@@ -154,8 +157,14 @@ end)
 -----------------------------
 humanoid.Running:Connect(function(speed)
 	if speed > 0.1 then
-		playWalkAnim(speed)
+		-- If a track is already loaded and just frozen, resume it at the right speed
+		if walkTrack and walkTrack.IsPlaying then
+			local baseSpeed = sprinting and SPRINT_ANIM_SPEED or WALK_ANIM_SPEED
+			walkTrack:AdjustSpeed(baseSpeed * speed / BASE_WALK_SPEED)
+		else
+			playWalkAnim(speed)
+		end
 	else
-		stopWalkAnim()
+		freezeWalkAnim()
 	end
 end)
