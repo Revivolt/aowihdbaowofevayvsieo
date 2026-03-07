@@ -1,10 +1,6 @@
--- ============================================================
---  CHAT COMMAND SENDER  v2  |  LocalScript
---  Place in: StarterPlayer → StarterPlayerScripts
--- ============================================================
+--  Useful for games that have chat commands, such as CAC private servers (not guaranteed to work for all games)
+--  Type [--set key __ ] to change the toggle key to open and close the command bar
 --  Press [;]     → open/close command bar
---  Press [Enter] → send command & hide bar
---  Press [Esc]   → cancel
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -73,7 +69,7 @@ TextBox.Size                = UDim2.new(1, -55, 1, -10)
 TextBox.Position            = UDim2.new(0, 42, 0, 5)
 TextBox.BackgroundTransparency = 1
 TextBox.Text                = ""
-TextBox.PlaceholderText     = "Type command, then press Enter…"
+TextBox.PlaceholderText     = "Type command (e.g. /clone) then press Enter…"
 TextBox.PlaceholderColor3   = Color3.fromRGB(100, 100, 120)
 TextBox.TextColor3          = Color3.fromRGB(230, 230, 255)
 TextBox.Font                = Enum.Font.Gotham
@@ -199,11 +195,63 @@ local function flashStatus(msg, success)
     task.delay(2.5, function() StatusLabel.Text = "" end)
 end
 
+-- ── Toggle key (changeable at runtime) ───────────────────
+local toggleKey     = Enum.KeyCode.Semicolon
+local toggleKeyName = ";"  -- display name
+
+local function setToggleKey(keyName)
+    -- Accept common shorthand names as well as exact Enum names
+    local aliases = {
+        [";"]           = "Semicolon",
+        ["semicolon"]   = "Semicolon",
+        ["/"]           = "Slash",
+        ["slash"]       = "Slash",
+        ["'"]           = "Quote",
+        ["quote"]       = "Quote",
+        [","]           = "Comma",
+        ["comma"]       = "Comma",
+        ["."]           = "Period",
+        ["period"]      = "Period",
+        ["`"]           = "BackQuote",
+        ["backquote"]   = "BackQuote",
+        ["grave"]       = "BackQuote",
+        ["tab"]         = "Tab",
+        ["capslock"]    = "CapsLock",
+        ["caps"]        = "CapsLock",
+        ["\\"]          = "BackSlash",
+        ["backslash"]   = "BackSlash",
+        ["["]           = "LeftBracket",
+        ["]"]           = "RightBracket",
+        ["-"]           = "Minus",
+        ["="]           = "Equals",
+    }
+
+    local enumName = aliases[keyName:lower()] or keyName
+    -- Capitalise first letter for single-letter keys (e.g. "p" → "P")
+    if #enumName == 1 then
+        enumName = enumName:upper()
+    end
+
+    local ok, result = pcall(function()
+        return Enum.KeyCode[enumName]
+    end)
+
+    if ok and result then
+        toggleKey     = result
+        toggleKeyName = keyName
+        print("[ChatCmd] Toggle key changed to:", keyName, "(Enum.KeyCode." .. enumName .. ")")
+        return true, keyName
+    else
+        print("[ChatCmd] Unknown key:", keyName)
+        return false, keyName
+    end
+end
+
 -- ── Keybinds ──────────────────────────────────────────────
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.Semicolon then
+    if input.KeyCode == toggleKey then
         if isOpen then closeBar() else openBar() end
     end
     if input.KeyCode == Enum.KeyCode.Escape and isOpen then
@@ -216,6 +264,21 @@ TextBox.FocusLost:Connect(function(enterPressed)
     local msg = TextBox.Text:match("^%s*(.-)%s*$")
     if msg == "" then closeBar(); return end
 
+    -- ── Handle --set key X ───────────────────────────────
+    local newKey = msg:match("^%-%-set%s+key%s+(%S+)$")
+
+    if newKey then
+        local ok, name = setToggleKey(newKey)
+        if ok then
+            flashStatus("✓ Toggle key set to [" .. name .. "]", true)
+        else
+            flashStatus("✗ Unknown key: \"" .. name .. "\" — try e.g. ; / P Tab", false)
+        end
+        closeBar()
+        return
+    end
+
+    -- ── Normal chat send ──────────────────────────────────
     local ok = sendMessage(msg)
     if ok then
         flashStatus("✓ Sent: " .. msg, true)
@@ -226,3 +289,4 @@ TextBox.FocusLost:Connect(function(enterPressed)
 end)
 
 print("[ChatCmd] Ready — Press [;] to open | Chat system:", usingNewChat and "NEW" or "LEGACY")
+print("[ChatCmd] Tip: type  --set key G  to change the toggle key")
