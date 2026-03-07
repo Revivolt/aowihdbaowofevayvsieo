@@ -128,6 +128,14 @@ tab:button({
     end,
 })
 
+tab:button({
+    Name = "Cars",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%8C"))()
+    end,
+})
+
 -- Services
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
