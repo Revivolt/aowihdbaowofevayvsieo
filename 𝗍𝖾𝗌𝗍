@@ -1,0 +1,253 @@
+-- ============================================================
+--  CHAT COMMAND SENDER  |  LocalScript
+--  Place in: StarterPlayerScripts or StarterCharacterScripts
+-- ============================================================
+--  USAGE:
+--    Press [/]  to open the command bar
+--    Type your command (e.g. /tp, /give, etc.)
+--    Press [Enter] to send  |  Press [Escape] to cancel
+-- ============================================================
+
+local Players            = game:GetService("Players")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local UserInputService   = game:GetService("UserInputService")
+local RunService         = game:GetService("RunService")
+local TweenService       = game:GetService("TweenService")
+
+local LocalPlayer        = Players.LocalPlayer
+local PlayerGui          = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ── Config ────────────────────────────────────────────────
+local TOGGLE_KEY   = Enum.KeyCode.Slash   -- key to open bar
+local SEND_KEY     = Enum.KeyCode.Return  -- key to send
+local CLOSE_KEY    = Enum.KeyCode.Escape  -- key to cancel
+local CHAT_CHANNEL = "All"               -- chat channel target
+-- ──────────────────────────────────────────────────────────
+
+
+-- ── Build GUI ─────────────────────────────────────────────
+
+local ScreenGui        = Instance.new("ScreenGui")
+ScreenGui.Name         = "ChatCommandGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent       = PlayerGui
+
+-- Dark translucent backdrop frame
+local Frame            = Instance.new("Frame")
+Frame.Name             = "CommandFrame"
+Frame.Size             = UDim2.new(0, 500, 0, 42)
+Frame.Position         = UDim2.new(0.5, -250, 1, -90)  -- bottom-center
+Frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+Frame.BackgroundTransparency = 0.15
+Frame.BorderSizePixel  = 0
+Frame.Visible          = false
+Frame.Parent           = ScreenGui
+
+-- Rounded corners
+local UICorner         = Instance.new("UICorner")
+UICorner.CornerRadius  = UDim.new(0, 8)
+UICorner.Parent        = Frame
+
+-- Accent left border
+local Accent           = Instance.new("Frame")
+Accent.Name            = "Accent"
+Accent.Size            = UDim2.new(0, 4, 1, 0)
+Accent.Position        = UDim2.new(0, 0, 0, 0)
+Accent.BackgroundColor3 = Color3.fromRGB(80, 200, 255)
+Accent.BorderSizePixel = 0
+Accent.Parent          = Frame
+
+local AccentCorner     = Instance.new("UICorner")
+AccentCorner.CornerRadius = UDim.new(0, 8)
+AccentCorner.Parent    = Accent
+
+-- Prefix label  "> "
+local Prefix           = Instance.new("TextLabel")
+Prefix.Name            = "Prefix"
+Prefix.Size            = UDim2.new(0, 28, 1, 0)
+Prefix.Position        = UDim2.new(0, 12, 0, 0)
+Prefix.BackgroundTransparency = 1
+Prefix.Text            = "›"
+Prefix.TextColor3      = Color3.fromRGB(80, 200, 255)
+Prefix.Font            = Enum.Font.GothamBold
+Prefix.TextSize        = 20
+Prefix.TextXAlignment  = Enum.TextXAlignment.Center
+Prefix.Parent          = Frame
+
+-- Text input box
+local TextBox          = Instance.new("TextBox")
+TextBox.Name           = "Input"
+TextBox.Size           = UDim2.new(1, -52, 1, -10)
+TextBox.Position       = UDim2.new(0, 40, 0, 5)
+TextBox.BackgroundTransparency = 1
+TextBox.Text           = ""
+TextBox.PlaceholderText = "Type a chat command and press Enter…"
+TextBox.PlaceholderColor3 = Color3.fromRGB(110, 110, 130)
+TextBox.TextColor3     = Color3.fromRGB(230, 230, 255)
+TextBox.Font           = Enum.Font.Gotham
+TextBox.TextSize       = 15
+TextBox.ClearTextOnFocus = false
+TextBox.TextXAlignment = Enum.TextXAlignment.Left
+TextBox.TextTruncate   = Enum.TextTruncate.AtEnd
+TextBox.Parent         = Frame
+
+-- Hint label (shown briefly after sending)
+local HintLabel        = Instance.new("TextLabel")
+HintLabel.Name         = "Hint"
+HintLabel.Size         = UDim2.new(1, 0, 0, 18)
+HintLabel.Position     = UDim2.new(0, 0, 1, 4)
+HintLabel.BackgroundTransparency = 1
+HintLabel.Text         = ""
+HintLabel.TextColor3   = Color3.fromRGB(80, 200, 120)
+HintLabel.Font         = Enum.Font.Gotham
+HintLabel.TextSize     = 12
+HintLabel.TextXAlignment = Enum.TextXAlignment.Center
+HintLabel.Parent       = Frame
+
+-- ──────────────────────────────────────────────────────────
+
+
+-- ── Chat Sender ───────────────────────────────────────────
+
+local function sendChatMessage(message)
+    if not message or message == "" then return false end
+
+    -- Method 1: DefaultChatSystemChatEvents (works on most Roblox games)
+    local success1, err1 = pcall(function()
+        local chatEvents = ReplicatedStorage:WaitForChild("DefaultChatSystemChatEvents", 3)
+        if chatEvents then
+            local sayRequest = chatEvents:WaitForChild("SayMessageRequest", 3)
+            if sayRequest then
+                sayRequest:FireServer(message, CHAT_CHANNEL)
+            end
+        end
+    end)
+
+    if success1 then return true end
+
+    -- Method 2: Fallback – use the deprecated LocalPlayer:Chat() (still works in some games)
+    local success2, err2 = pcall(function()
+        LocalPlayer:Chat(message)
+    end)
+
+    if success2 then return true end
+
+    -- Method 3: Try TextChatService (newer Roblox chat system)
+    local success3, err3 = pcall(function()
+        local TextChatService = game:GetService("TextChatService")
+        local channels = TextChatService:WaitForChild("TextChannels", 3)
+        if channels then
+            local general = channels:FindFirstChild("RBXGeneral")
+            if general then
+                general:SendAsync(message)
+            end
+        end
+    end)
+
+    if success3 then return true end
+
+    return false -- all methods failed
+end
+
+-- ──────────────────────────────────────────────────────────
+
+
+-- ── Open / Close helpers ──────────────────────────────────
+
+local isOpen = false
+local tweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function openBar()
+    if isOpen then return end
+    isOpen = true
+    Frame.Visible = true
+    TextBox.Text = ""
+    HintLabel.Text = ""
+    -- Animate in (slide up)
+    Frame.Position = UDim2.new(0.5, -250, 1, -70)
+    local t = TweenService:Create(Frame, tweenInfo, {
+        Position = UDim2.new(0.5, -250, 1, -90)
+    })
+    t:Play()
+    task.defer(function() TextBox:CaptureFocus() end)
+end
+
+local function closeBar(clearText)
+    if not isOpen then return end
+    isOpen = false
+    if clearText then TextBox.Text = "" end
+    -- Animate out
+    local t = TweenService:Create(Frame, tweenInfo, {
+        Position = UDim2.new(0.5, -250, 1, -70)
+    })
+    t:Play()
+    t.Completed:Wait()
+    Frame.Visible = false
+    TextBox:ReleaseFocus()
+end
+
+local function flashHint(msg, color)
+    HintLabel.TextColor3 = color or Color3.fromRGB(80, 200, 120)
+    HintLabel.Text = msg
+    task.delay(2, function()
+        HintLabel.Text = ""
+    end)
+end
+
+-- ──────────────────────────────────────────────────────────
+
+
+-- ── Input Handling ────────────────────────────────────────
+
+-- Toggle bar open with [/]
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    -- Don't trigger if already typing in something else
+    if gameProcessed then return end
+
+    if input.KeyCode == TOGGLE_KEY then
+        if isOpen then
+            closeBar(true)
+        else
+            openBar()
+        end
+    end
+end)
+
+-- Send on Enter, cancel on Escape (while TextBox is focused)
+TextBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local msg = TextBox.Text:match("^%s*(.-)%s*$")  -- trim whitespace
+        if msg ~= "" then
+            local ok = sendChatMessage(msg)
+            if ok then
+                flashHint("✓  Sent: " .. msg, Color3.fromRGB(80, 200, 120))
+            else
+                flashHint("✗  Could not send (chat may be restricted)", Color3.fromRGB(255, 100, 100))
+            end
+            task.delay(0.8, function() closeBar(true) end)
+        else
+            closeBar(true)
+        end
+    end
+end)
+
+-- Capture Escape to close without sending
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == CLOSE_KEY and isOpen then
+        closeBar(true)
+    end
+end)
+
+-- Also allow pressing [/] inside the textbox to not re-trigger toggle
+TextBox:GetPropertyChangedSignal("Text"):Connect(function()
+    -- Prevent the slash key itself from appearing in the box when opening
+    if TextBox.Text == "/" then
+        TextBox.Text = ""
+        TextBox.CursorPosition = 1
+    end
+end)
+
+-- ──────────────────────────────────────────────────────────
+
+print("[ChatCommandScript] Loaded — Press [/] to open the command bar.")
