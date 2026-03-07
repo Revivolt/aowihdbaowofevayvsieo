@@ -1,19 +1,462 @@
-local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
+-- AnimationDetector GUI LocalScript
+-- Place in StarterPlayerScripts or StarterCharacterScripts
 
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ============================================================
+-- DEFAULT ROBLOX ANIMATION IDs TO FILTER OUT
+-- ============================================================
+local DEFAULT_ANIMATION_IDS = {
+    -- R6 Defaults
+    ["http://www.roblox.com/asset/?id=180435571"] = true,
+    ["rbxassetid://180435571"] = true,
+    -- R15 Defaults (Walk, Run, Jump, Idle, Fall, Swim, Climb, etc.)
+    ["rbxassetid://507767714"] = true,  -- Run
+    ["rbxassetid://507767791"] = true,  -- RunR15
+    ["rbxassetid://507767792"] = true,  -- Walk
+    ["rbxassetid://507765000"] = true,  -- Jump
+    ["rbxassetid://507765644"] = true,  -- Climb
+    ["rbxassetid://507766388"] = true,  -- Idle1
+    ["rbxassetid://507766666"] = true,  -- Idle2
+    ["rbxassetid://507767968"] = true,  -- Fall
+    ["rbxassetid://507784897"] = true,  -- Swim
+    ["rbxassetid://507784897"] = true,  -- SwimIdle
+    ["rbxassetid://507770239"] = true,  -- ToolNone
+    ["rbxassetid://507768375"] = true,  -- ToolSlash
+    ["rbxassetid://522635514"] = true,  -- ToolLunge
+    ["rbxassetid://507768375"] = true,  -- Wave
+    -- Catalog Avatar Animations (common defaults)
+    ["rbxassetid://616010382"] = true,
+    ["rbxassetid://616006778"] = true,
+    ["rbxassetid://616008087"] = true,
+    ["rbxassetid://616013216"] = true,
+    ["rbxassetid://616015781"] = true,
+    ["rbxassetid://616016027"] = true,
+    ["rbxassetid://616000974"] = true,
+    ["rbxassetid://616007727"] = true,
+    -- Additional known defaults
+    ["rbxassetid://2510235"] = true,
+    ["rbxassetid://2506281"] = true,
+    ["rbxassetid://2510238"] = true,
+    ["rbxassetid://2506268"] = true,
+    ["rbxassetid://182393478"] = true,
+    ["rbxassetid://182494918"] = true,
+    ["rbxassetid://182494909"] = true,
+    ["rbxassetid://182494910"] = true,
+}
+
+-- Also filter by numeric ID for robustness
+local DEFAULT_NUMERIC_IDS = {
+    [507767714]  = true, [507767791]  = true, [507767792]  = true,
+    [507765000]  = true, [507765644]  = true, [507766388]  = true,
+    [507766666]  = true, [507767968]  = true, [507784897]  = true,
+    [507770239]  = true, [507768375]  = true, [522635514]  = true,
+    [616010382]  = true, [616006778]  = true, [616008087]  = true,
+    [616013216]  = true, [616015781]  = true, [616016027]  = true,
+    [616000974]  = true, [616007727]  = true, [2510235]    = true,
+    [2506281]    = true, [2510238]    = true, [2506268]    = true,
+    [182393478]  = true, [182494918]  = true, [182494909]  = true,
+    [182494910]  = true, [180435571]  = true,
+}
+
+local function isDefaultAnimation(animId)
+    if DEFAULT_ANIMATION_IDS[animId] then return true end
+    -- Extract numeric ID and check
+    local numId = tonumber(animId:match("%d+$"))
+    if numId and DEFAULT_NUMERIC_IDS[numId] then return true end
+    return false
+end
+
+local function extractNumericId(animId)
+    return animId:match("%d+$") or animId
+end
+
+-- ============================================================
+-- GUI CONSTRUCTION
+-- ============================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AnimDetectorGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- Main frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 340, 0, 460)
+mainFrame.Position = UDim2.new(0, 20, 0.5, -230)
+mainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+-- Outer glow / border
+local border = Instance.new("UIStroke")
+border.Color = Color3.fromRGB(90, 60, 200)
+border.Thickness = 1.5
+border.Parent = mainFrame
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = mainFrame
+
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 44)
+titleBar.BackgroundColor3 = Color3.fromRGB(20, 14, 40)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+-- Fix bottom corners of title bar
+local titleFix = Instance.new("Frame")
+titleFix.Size = UDim2.new(1, 0, 0.5, 0)
+titleFix.Position = UDim2.new(0, 0, 0.5, 0)
+titleFix.BackgroundColor3 = Color3.fromRGB(20, 14, 40)
+titleFix.BorderSizePixel = 0
+titleFix.Parent = titleBar
+
+-- Accent dot
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 8, 0, 8)
+dot.Position = UDim2.new(0, 16, 0.5, -4)
+dot.BackgroundColor3 = Color3.fromRGB(120, 80, 255)
+dot.BorderSizePixel = 0
+dot.Parent = titleBar
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(1, 0)
+dotCorner.Parent = dot
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -80, 1, 0)
+titleLabel.Position = UDim2.new(0, 32, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "ANIM DETECTOR"
+titleLabel.TextColor3 = Color3.fromRGB(220, 210, 255)
+titleLabel.TextSize = 13
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- Close button
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
+closeBtn.BackgroundColor3 = Color3.fromRGB(40, 30, 60)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(180, 160, 255)
+closeBtn.TextSize = 12
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = titleBar
+local closeBtnCorner = Instance.new("UICorner")
+closeBtnCorner.CornerRadius = UDim.new(0, 6)
+closeBtnCorner.Parent = closeBtn
+
+closeBtn.MouseButton1Click:Connect(function()
+    mainFrame.Visible = false
+end)
+
+-- Stats bar
+local statsBar = Instance.new("Frame")
+statsBar.Size = UDim2.new(1, -24, 0, 32)
+statsBar.Position = UDim2.new(0, 12, 0, 52)
+statsBar.BackgroundColor3 = Color3.fromRGB(22, 16, 38)
+statsBar.BorderSizePixel = 0
+statsBar.Parent = mainFrame
+local statsCorner = Instance.new("UICorner")
+statsCorner.CornerRadius = UDim.new(0, 7)
+statsCorner.Parent = statsBar
+
+local countLabel = Instance.new("TextLabel")
+countLabel.Size = UDim2.new(0.5, 0, 1, 0)
+countLabel.Position = UDim2.new(0, 10, 0, 0)
+countLabel.BackgroundTransparency = 1
+countLabel.Text = "Captured: 0"
+countLabel.TextColor3 = Color3.fromRGB(140, 120, 220)
+countLabel.TextSize = 11
+countLabel.Font = Enum.Font.Gotham
+countLabel.TextXAlignment = Enum.TextXAlignment.Left
+countLabel.Parent = statsBar
+
+-- Clear button
+local clearBtn = Instance.new("TextButton")
+clearBtn.Size = UDim2.new(0, 70, 0, 22)
+clearBtn.Position = UDim2.new(1, -78, 0.5, -11)
+clearBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+clearBtn.Text = "CLEAR ALL"
+clearBtn.TextColor3 = Color3.fromRGB(255, 120, 120)
+clearBtn.TextSize = 10
+clearBtn.Font = Enum.Font.GothamBold
+clearBtn.BorderSizePixel = 0
+clearBtn.Parent = statsBar
+local clearCorner = Instance.new("UICorner")
+clearCorner.CornerRadius = UDim.new(0, 5)
+clearCorner.Parent = clearBtn
+
+-- Scroll container
+local scrollContainer = Instance.new("Frame")
+scrollContainer.Size = UDim2.new(1, -24, 0, 320)
+scrollContainer.Position = UDim2.new(0, 12, 0, 92)
+scrollContainer.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+scrollContainer.BorderSizePixel = 0
+scrollContainer.ClipsDescendants = true
+scrollContainer.Parent = mainFrame
+local scrollCorner = Instance.new("UICorner")
+scrollCorner.CornerRadius = UDim.new(0, 8)
+scrollCorner.Parent = scrollContainer
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, 0, 1, 0)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 3
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(90, 60, 200)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent = scrollContainer
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 5)
+listLayout.Parent = scrollFrame
+
+local listPadding = Instance.new("UIPadding")
+listPadding.PaddingTop = UDim.new(0, 6)
+listPadding.PaddingLeft = UDim.new(0, 6)
+listPadding.PaddingRight = UDim.new(0, 6)
+listPadding.Parent = scrollFrame
+
+-- Empty state label
+local emptyLabel = Instance.new("TextLabel")
+emptyLabel.Size = UDim2.new(1, 0, 0, 300)
+emptyLabel.BackgroundTransparency = 1
+emptyLabel.Text = "No emotes detected yet.\nPlay an emote or animation\nto see it appear here."
+emptyLabel.TextColor3 = Color3.fromRGB(60, 50, 90)
+emptyLabel.TextSize = 13
+emptyLabel.Font = Enum.Font.Gotham
+emptyLabel.TextWrapped = true
+emptyLabel.Parent = scrollContainer
+
+-- Status bar
+local statusBar = Instance.new("Frame")
+statusBar.Size = UDim2.new(1, -24, 0, 28)
+statusBar.Position = UDim2.new(0, 12, 1, -38)
+statusBar.BackgroundColor3 = Color3.fromRGB(16, 12, 30)
+statusBar.BorderSizePixel = 0
+statusBar.Parent = mainFrame
+local statusCorner = Instance.new("UICorner")
+statusCorner.CornerRadius = UDim.new(0, 6)
+statusCorner.Parent = statusBar
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -10, 1, 0)
+statusLabel.Position = UDim2.new(0, 10, 0, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "● LISTENING"
+statusLabel.TextColor3 = Color3.fromRGB(80, 200, 120)
+statusLabel.TextSize = 11
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = statusBar
+
+-- ============================================================
+-- TOGGLING WITH RIGHTSHIFT (can change)
+-- ============================================================
+local isVisible = true
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        isVisible = not isVisible
+        mainFrame.Visible = isVisible
+    end
+end)
+
+-- ============================================================
+-- ANIMATION ENTRY LOGIC
+-- ============================================================
+local capturedCount = 0
+local seenIds = {}
+
+local function flashStatus(message, color)
+    statusLabel.Text = message
+    statusLabel.TextColor3 = color
+    task.delay(2, function()
+        statusLabel.Text = "● LISTENING"
+        statusLabel.TextColor3 = Color3.fromRGB(80, 200, 120)
+    end)
+end
+
+local function addAnimationEntry(animId)
+    local numericId = extractNumericId(animId)
+
+    -- Deduplicate
+    if seenIds[numericId] then
+        flashStatus("↑ Already captured: " .. numericId, Color3.fromRGB(180, 160, 80))
+        return
+    end
+
+    seenIds[numericId] = true
+    capturedCount = capturedCount + 1
+    emptyLabel.Visible = false
+    countLabel.Text = "Captured: " .. capturedCount
+
+    -- Row frame
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 52)
+    row.BackgroundColor3 = Color3.fromRGB(18, 14, 32)
+    row.BorderSizePixel = 0
+    row.Parent = scrollFrame
+
+    local rowCorner = Instance.new("UICorner")
+    rowCorner.CornerRadius = UDim.new(0, 7)
+    rowCorner.Parent = row
+
+    local rowStroke = Instance.new("UIStroke")
+    rowStroke.Color = Color3.fromRGB(50, 35, 90)
+    rowStroke.Thickness = 1
+    rowStroke.Parent = row
+
+    -- Number badge
+    local badge = Instance.new("Frame")
+    badge.Size = UDim2.new(0, 28, 0, 28)
+    badge.Position = UDim2.new(0, 10, 0.5, -14)
+    badge.BackgroundColor3 = Color3.fromRGB(60, 40, 120)
+    badge.BorderSizePixel = 0
+    badge.Parent = row
+    local badgeCorner = Instance.new("UICorner")
+    badgeCorner.CornerRadius = UDim.new(0, 5)
+    badgeCorner.Parent = badge
+
+    local badgeNum = Instance.new("TextLabel")
+    badgeNum.Size = UDim2.new(1, 0, 1, 0)
+    badgeNum.BackgroundTransparency = 1
+    badgeNum.Text = tostring(capturedCount)
+    badgeNum.TextColor3 = Color3.fromRGB(180, 150, 255)
+    badgeNum.TextSize = 11
+    badgeNum.Font = Enum.Font.GothamBold
+    badgeNum.Parent = badge
+
+    -- ID label
+    local idLabel = Instance.new("TextLabel")
+    idLabel.Size = UDim2.new(1, -130, 0, 18)
+    idLabel.Position = UDim2.new(0, 46, 0, 8)
+    idLabel.BackgroundTransparency = 1
+    idLabel.Text = numericId
+    idLabel.TextColor3 = Color3.fromRGB(220, 210, 255)
+    idLabel.TextSize = 12
+    idLabel.Font = Enum.Font.GothamBold
+    idLabel.TextXAlignment = Enum.TextXAlignment.Left
+    idLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    idLabel.Parent = row
+
+    -- Full ID sub-label
+    local fullLabel = Instance.new("TextLabel")
+    fullLabel.Size = UDim2.new(1, -130, 0, 16)
+    fullLabel.Position = UDim2.new(0, 46, 0, 28)
+    fullLabel.BackgroundTransparency = 1
+    fullLabel.Text = "rbxassetid://" .. numericId
+    fullLabel.TextColor3 = Color3.fromRGB(80, 70, 120)
+    fullLabel.TextSize = 9
+    fullLabel.Font = Enum.Font.Gotham
+    fullLabel.TextXAlignment = Enum.TextXAlignment.Left
+    fullLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    fullLabel.Parent = row
+
+    -- Copy button (numeric ID)
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(0, 60, 0, 34)
+    copyBtn.Position = UDim2.new(1, -72, 0.5, -17)
+    copyBtn.BackgroundColor3 = Color3.fromRGB(70, 45, 150)
+    copyBtn.Text = "COPY"
+    copyBtn.TextColor3 = Color3.fromRGB(210, 190, 255)
+    copyBtn.TextSize = 10
+    copyBtn.Font = Enum.Font.GothamBold
+    copyBtn.BorderSizePixel = 0
+    copyBtn.Parent = row
+
+    local copyCorner = Instance.new("UICorner")
+    copyCorner.CornerRadius = UDim.new(0, 6)
+    copyCorner.Parent = copyBtn
+
+    copyBtn.MouseButton1Click:Connect(function()
+        setclipboard(numericId)
+        copyBtn.Text = "✓ OK"
+        copyBtn.BackgroundColor3 = Color3.fromRGB(30, 100, 60)
+        copyBtn.TextColor3 = Color3.fromRGB(100, 255, 140)
+        flashStatus("✓ Copied: " .. numericId, Color3.fromRGB(80, 220, 120))
+        task.delay(1.5, function()
+            copyBtn.Text = "COPY"
+            copyBtn.BackgroundColor3 = Color3.fromRGB(70, 45, 150)
+            copyBtn.TextColor3 = Color3.fromRGB(210, 190, 255)
+        end)
+    end)
+
+    -- Hover effect
+    copyBtn.MouseEnter:Connect(function()
+        TweenService:Create(copyBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(95, 65, 190)}):Play()
+    end)
+    copyBtn.MouseLeave:Connect(function()
+        if copyBtn.Text == "COPY" then
+            TweenService:Create(copyBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(70, 45, 150)}):Play()
+        end
+    end)
+
+    -- Slide-in animation
+    row.BackgroundTransparency = 1
+    TweenService:Create(row, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundTransparency = 0}):Play()
+
+    -- Auto-scroll to bottom
+    task.defer(function()
+        scrollFrame.CanvasPosition = Vector2.new(0, math.huge)
+    end)
+end
+
+-- Clear all entries
+clearBtn.MouseButton1Click:Connect(function()
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        if child:IsA("Frame") then
+            child:Destroy()
+        end
+    end
+    seenIds = {}
+    capturedCount = 0
+    countLabel.Text = "Captured: 0"
+    emptyLabel.Visible = true
+    flashStatus("Cleared all entries", Color3.fromRGB(180, 100, 100))
+end)
+
+-- ============================================================
+-- ANIMATION DETECTION
+-- ============================================================
 local function onAnimationPlayed(track)
     if track.Animation then
-
-        local assetId = track.Animation.AnimationId
-        print("Emote/Animation played! Asset ID:", assetId)
+        local animId = track.Animation.AnimationId
+        if animId and animId ~= "" and not isDefaultAnimation(animId) then
+            addAnimationEntry(animId)
+        end
     end
 end
 
-humanoid.AnimationPlayed:Connect(onAnimationPlayed)
+local character = player.Character or player.CharacterAdded:Wait()
+local function connectHumanoid(char)
+    local humanoid = char:WaitForChild("Humanoid")
+    humanoid.AnimationPlayed:Connect(onAnimationPlayed)
+end
+
+connectHumanoid(character)
 
 player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid = character:WaitForChild("Humanoid")
-    humanoid.AnimationPlayed:Connect(onAnimationPlayed)
+    connectHumanoid(newChar)
 end)
+
+print("[AnimDetector] GUI loaded. Press RightShift to toggle visibility.")
