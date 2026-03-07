@@ -2,7 +2,7 @@
 --  CHAT COMMAND SENDER  v2  |  LocalScript
 --  Place in: StarterPlayer → StarterPlayerScripts
 -- ============================================================
---  Press [Alt]   → open/close command bar
+--  Press [Ctrl]   → open/close command bar
 --  Press [Enter] → send command & hide bar
 --  Press [Esc]   → cancel
 -- ============================================================
@@ -203,7 +203,7 @@ end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+    if input.KeyCode == Enum.KeyCode.LeftCtrl or input.KeyCode == Enum.KeyCode.RightCtrl then
         if isOpen then closeBar() else openBar() end
     end
     if input.KeyCode == Enum.KeyCode.Escape and isOpen then
