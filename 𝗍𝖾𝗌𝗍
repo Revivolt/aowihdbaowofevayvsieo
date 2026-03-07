@@ -242,7 +242,7 @@ end)
 -- Also allow pressing [/] inside the textbox to not re-trigger toggle
 TextBox:GetPropertyChangedSignal("Text"):Connect(function()
     -- Prevent the slash key itself from appearing in the box when opening
-    if TextBox.Text == "/" then
+    if TextBox.Text == "m" then
         TextBox.Text = ""
         TextBox.CursorPosition = 1
     end
