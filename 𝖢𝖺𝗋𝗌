@@ -9,7 +9,7 @@
 -- Add or remove as many slots as you need.
 
 local WALK_ANIMS = {
-	{ id = 113181071290859, key = Enum.KeyCode.U},
+	{ id = 113181071290859, key = Enum.KeyCode.Z},
 	{ id = 108229133345486, key = Enum.KeyCode.X},
 	{ id = 116625361313832, key = Enum.KeyCode.C},
 	{ id = 94158447866656, key = Enum.KeyCode.V},
@@ -23,7 +23,7 @@ local WALK_ANIMS = {
 	{ id = 81388785824317, key = Enum.KeyCode.L},
 	{ id = 110164018940338, key = Enum.KeyCode.T},
 	{ id = 97246018303948, key = Enum.KeyCode.Y},
-	{ id = 136602708709098, key = Enum.KeyCode.Z},
+	{ id = 136602708709098, key = Enum.KeyCode.U},
 }
 
 -- Movement speeds
