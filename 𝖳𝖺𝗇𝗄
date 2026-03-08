@@ -9,9 +9,9 @@
 -- Add or remove as many slots as you need.
 
 local WALK_ANIMS = {
-	{ id = 108716025720327, key = Enum.KeyCode.Z},
-	{ id = 121107013783398, key = Enum.KeyCode.X},
-	{ id = 78141481814457, key = Enum.KeyCode.C},
+	{ id = 126802967133813, key = Enum.KeyCode.Z},
+	{ id = 115951523870527, key = Enum.KeyCode.X},
+	{ id = 0, key = Enum.KeyCode.C},
 	{ id = 0, key = Enum.KeyCode.V},
 	{ id = 0, key = Enum.KeyCode.B},
 	{ id = 0, key = Enum.KeyCode.N},
