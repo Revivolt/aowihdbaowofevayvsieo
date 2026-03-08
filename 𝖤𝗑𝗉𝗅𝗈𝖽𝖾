@@ -1,11 +1,10 @@
--- test
-
 -----------------------------
 -- CONFIG
 -----------------------------
 local ANIMATION_ID = 135373056067761
 local EXPLOSION_DURATION = 3   -- Seconds before parts fly off
 local HIGH_SPEED = 10           -- Animation playback speed
+local FLING_VIEW_TIME = 3      -- Seconds to watch parts fly before respawn
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
 local SPRINT_SPEED = 3
@@ -33,38 +32,43 @@ local function playAndExplode()
 	track.Looped = true
 	track.Priority = Enum.AnimationPriority.Action
 	track:Play()
-	track:AdjustSpeed(HIGH_SPEED) -- After Play() so it actually takes effect
+	track:AdjustSpeed(HIGH_SPEED)
 
 	task.delay(EXPLOSION_DURATION, function()
 		track:Stop()
 
-		-- Break all Motor6D joints so parts detach from each other
+		-- Prevent auto-respawn from health changes
+		humanoid.HealthChanged:Connect(function() end)
+		humanoid.AutoRotate = false
+
+		-- Break all Motor6D joints so limbs detach
 		for _, desc in ipairs(character:GetDescendants()) do
 			if desc:IsA("Motor6D") then
 				desc.Enabled = false
 			end
 		end
 
-		-- Fling every part in a random direction
+		-- Fling every part outward
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
 				part.Anchored = false
+				part.CanCollide = true
 				part.AssemblyLinearVelocity = Vector3.new(
-					math.random(-120, 120),
-					math.random(60, 180),
-					math.random(-120, 120)
+					math.random(-150, 150),
+					math.random(80, 220),
+					math.random(-150, 150)
 				)
 				part.AssemblyAngularVelocity = Vector3.new(
-					math.random(-20, 20),
-					math.random(-20, 20),
-					math.random(-20, 20)
+					math.random(-30, 30),
+					math.random(-30, 30),
+					math.random(-30, 30)
 				)
 			end
 		end
 
-		-- Wait so the fling is visible, then reset
-		task.wait(1.5)
-		humanoid.Health = 0
+		-- Wait to watch the chaos, THEN respawn (no health = 0)
+		task.wait(FLING_VIEW_TIME)
+		player:LoadCharacter()
 	end)
 end
 -----------------------------
