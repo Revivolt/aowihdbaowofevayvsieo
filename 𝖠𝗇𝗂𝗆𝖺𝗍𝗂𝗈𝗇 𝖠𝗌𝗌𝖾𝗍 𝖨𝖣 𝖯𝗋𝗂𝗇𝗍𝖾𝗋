@@ -1,8 +1,6 @@
--- AnimationDetector GUI LocalScript
--- Place in StarterPlayerScripts or StarterCharacterScripts
+-- test
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -88,7 +86,7 @@ screenGui.Parent = playerGui
 -- Main frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 340, 0, 460)
+mainFrame.Size = UDim2.new(0, 290, 0, 390)
 mainFrame.Position = UDim2.new(0, 20, 0.5, -230)
 mainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 mainFrame.BorderSizePixel = 0
@@ -108,7 +106,7 @@ mainCorner.Parent = mainFrame
 
 -- Title bar
 local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 44)
+titleBar.Size = UDim2.new(1, 0, 0, 38)
 titleBar.BackgroundColor3 = Color3.fromRGB(20, 14, 40)
 titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
@@ -163,13 +161,13 @@ closeBtnCorner.CornerRadius = UDim.new(0, 6)
 closeBtnCorner.Parent = closeBtn
 
 closeBtn.MouseButton1Click:Connect(function()
-    mainFrame.Visible = false
+    screenGui:Destroy()
 end)
 
 -- Stats bar
 local statsBar = Instance.new("Frame")
-statsBar.Size = UDim2.new(1, -24, 0, 32)
-statsBar.Position = UDim2.new(0, 12, 0, 52)
+statsBar.Size = UDim2.new(1, -24, 0, 28)
+statsBar.Position = UDim2.new(0, 12, 0, 46)
 statsBar.BackgroundColor3 = Color3.fromRGB(22, 16, 38)
 statsBar.BorderSizePixel = 0
 statsBar.Parent = mainFrame
@@ -205,8 +203,8 @@ clearCorner.Parent = clearBtn
 
 -- Scroll container
 local scrollContainer = Instance.new("Frame")
-scrollContainer.Size = UDim2.new(1, -24, 0, 320)
-scrollContainer.Position = UDim2.new(0, 12, 0, 92)
+scrollContainer.Size = UDim2.new(1, -24, 0, 262)
+scrollContainer.Position = UDim2.new(0, 12, 0, 82)
 scrollContainer.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
 scrollContainer.BorderSizePixel = 0
 scrollContainer.ClipsDescendants = true
@@ -267,19 +265,6 @@ statusLabel.TextSize = 11
 statusLabel.Font = Enum.Font.GothamBold
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = statusBar
-
--- ============================================================
--- TOGGLING WITH RIGHTSHIFT (can change)
--- ============================================================
-local isVisible = true
-
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        isVisible = not isVisible
-        mainFrame.Visible = isVisible
-    end
-end)
 
 -- ============================================================
 -- ANIMATION ENTRY LOGIC
@@ -459,4 +444,4 @@ player.CharacterAdded:Connect(function(newChar)
     connectHumanoid(newChar)
 end)
 
-print("[AnimDetector] GUI loaded. Press RightShift to toggle visibility.")
+print("[AnimDetector] GUI loaded. Press X to close.")
