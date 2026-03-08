@@ -1,0 +1,176 @@
+-- // Tank
+
+-----------------------------
+-- CONFIG
+-----------------------------
+
+-- Define your walk animations and their keybinds here.
+-- Each entry is { id = ANIMATION_ID, key = Enum.KeyCode.XXX }
+-- Add or remove as many slots as you need.
+
+local WALK_ANIMS = {
+	{ id = 108716025720327, key = Enum.KeyCode.Z},
+	{ id = 121107013783398, key = Enum.KeyCode.X},
+	{ id = 78141481814457, key = Enum.KeyCode.C},
+	{ id = 0, key = Enum.KeyCode.V},
+	{ id = 0, key = Enum.KeyCode.B},
+	{ id = 0, key = Enum.KeyCode.N},
+	{ id = 0, key = Enum.KeyCode.M},
+	{ id = 0, key = Enum.KeyCode.G},
+	{ id = 0, key = Enum.KeyCode.H},
+	{ id = 0, key = Enum.KeyCode.J},
+	{ id = 0, key = Enum.KeyCode.K},
+	{ id = 0, key = Enum.KeyCode.L},
+	{ id = 0, key = Enum.KeyCode.T},
+	{ id = 0, key = Enum.KeyCode.Y},
+	{ id = 0, key = Enum.KeyCode.U},
+}
+
+-- Movement speeds
+local BASE_WALK_SPEED = 40
+local SPRINT_SPEED    = 80
+
+-- Animation playback speeds
+local WALK_ANIM_SPEED   = 1
+local SPRINT_ANIM_SPEED = 1
+
+-----------------------------
+-- SERVICES
+-----------------------------
+local Players          = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+-----------------------------
+-- CHARACTER
+-----------------------------
+local player    = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid  = character:WaitForChild("Humanoid")
+local animator  = humanoid:WaitForChild("Animator")
+humanoid.AutoRotate = true
+
+-----------------------------
+-- STATE
+-----------------------------
+local sprinting      = false
+local currentAnimIdx = 1
+local walkTrack      = nil
+
+-----------------------------
+-- HELPERS
+-----------------------------
+local function isValidId(id)
+	return typeof(id) == "number" and id > 0
+end
+
+local function loadAnimation(assetId, looped, priority)
+	if not isValidId(assetId) then return nil end
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. assetId
+	local track = animator:LoadAnimation(anim)
+	track.Looped   = looped
+	track.Priority = priority
+	return track
+end
+
+local function destroyTrack(track)
+	if track then
+		track:Stop()
+		track:Destroy()
+	end
+end
+
+-----------------------------
+-- WALK PLAYBACK
+-----------------------------
+local function playWalkAnim(speed)
+	local slot = WALK_ANIMS[currentAnimIdx]
+	if not slot or not isValidId(slot.id) then return end
+
+	destroyTrack(walkTrack)
+	walkTrack = loadAnimation(slot.id, true, Enum.AnimationPriority.Movement)
+
+	if walkTrack then
+		local baseSpeed = sprinting and SPRINT_ANIM_SPEED or WALK_ANIM_SPEED
+		walkTrack:Play()
+		walkTrack:AdjustSpeed(baseSpeed * speed / BASE_WALK_SPEED)
+	end
+end
+
+local function freezeWalkAnim()
+	if walkTrack and walkTrack.IsPlaying then
+		walkTrack:AdjustSpeed(0)
+	end
+end
+
+-----------------------------
+-- ANIMATION SWITCH
+-----------------------------
+local function switchToAnim(index)
+	if not WALK_ANIMS[index] then return end
+	if not isValidId(WALK_ANIMS[index].id) then return end
+	if index == currentAnimIdx then return end
+
+	currentAnimIdx = index
+	print(string.format("[WalkAnims] Switched to slot %d (ID: %d)", index, WALK_ANIMS[index].id))
+
+	if humanoid.MoveDirection.Magnitude > 0.1 then
+		playWalkAnim(humanoid.WalkSpeed)
+	else
+		-- Not moving: destroy old track so the new anim loads frozen on next move
+		destroyTrack(walkTrack)
+		walkTrack = nil
+	end
+end
+
+-----------------------------
+-- INPUT
+-----------------------------
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+
+	-- Sprint
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = true
+		humanoid.WalkSpeed = SPRINT_SPEED
+		if humanoid.MoveDirection.Magnitude > 0.1 then
+			playWalkAnim(humanoid.WalkSpeed)
+		end
+		return
+	end
+
+	-- Check each slot's custom keybind
+	for i, slot in ipairs(WALK_ANIMS) do
+		if input.KeyCode == slot.key then
+			switchToAnim(i)
+			break
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = false
+		humanoid.WalkSpeed = BASE_WALK_SPEED
+		if humanoid.MoveDirection.Magnitude > 0.1 then
+			playWalkAnim(humanoid.WalkSpeed)
+		end
+	end
+end)
+
+-----------------------------
+-- MOVEMENT DETECTION
+-----------------------------
+humanoid.Running:Connect(function(speed)
+	if speed > 0.1 then
+		-- If a track is already loaded and just frozen, resume it at the right speed
+		if walkTrack and walkTrack.IsPlaying then
+			local baseSpeed = sprinting and SPRINT_ANIM_SPEED or WALK_ANIM_SPEED
+			walkTrack:AdjustSpeed(baseSpeed * speed / BASE_WALK_SPEED)
+		else
+			playWalkAnim(speed)
+		end
+	else
+		freezeWalkAnim()
+	end
+end)
