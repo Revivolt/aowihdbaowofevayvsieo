@@ -51,3 +51,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowof
 
 Skateboard
 loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%84%F0%9D%96%BA%F0%9D%97%8D%F0%9D%96%BE%F0%9D%96%BB%F0%9D%97%88%F0%9D%96%BA%F0%9D%97%8B%F0%9D%96%BD"))()
+
+Human Wheel
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%97%8E%F0%9D%97%86%F0%9D%96%BA%F0%9D%97%87%20%F0%9D%96%B6%F0%9D%97%81%F0%9D%96%BE%F0%9D%96%BE%F0%9D%97%85"))()
