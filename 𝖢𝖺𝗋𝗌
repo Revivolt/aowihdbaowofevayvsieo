@@ -3,6 +3,11 @@
 -----------------------------
 -- CONFIG
 -----------------------------
+
+-- Define your walk animations and their keybinds here.
+-- Each entry is { id = ANIMATION_ID, key = Enum.KeyCode.XXX }
+-- Add or remove as many slots as you need.
+
 local WALK_ANIMS = {
 	{ id = 113181071290859, key = Enum.KeyCode.U},
 	{ id = 108229133345486, key = Enum.KeyCode.X},
@@ -22,12 +27,12 @@ local WALK_ANIMS = {
 }
 
 -- Movement speeds
-local BASE_WALK_SPEED = 40
-local SPRINT_SPEED    = 80
+local BASE_WALK_SPEED = 16
+local SPRINT_SPEED    = 28
 
 -- Animation playback speeds
-local WALK_ANIM_SPEED   = 3
-local SPRINT_ANIM_SPEED = 3
+local WALK_ANIM_SPEED   = 1
+local SPRINT_ANIM_SPEED = 1
 
 -----------------------------
 -- SERVICES
@@ -103,6 +108,7 @@ end
 -----------------------------
 local function switchToAnim(index)
 	if not WALK_ANIMS[index] then return end
+	if not isValidId(WALK_ANIMS[index].id) then return end
 	if index == currentAnimIdx then return end
 
 	currentAnimIdx = index
