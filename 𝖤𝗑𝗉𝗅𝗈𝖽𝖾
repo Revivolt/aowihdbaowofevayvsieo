@@ -1,9 +1,11 @@
+-- // test
+
 -----------------------------
 -- CONFIG
 -----------------------------
 local ANIMATION_ID = 135373056067761
-local EXPLOSION_DURATION = 3   -- Seconds the fast animation plays before exploding
-local FAST_ANIM_SPEED = 100      -- Multiplier for the sped-up animation
+local EXPLOSION_DURATION = 3   -- Seconds the animation plays before kaboom
+local HIGH_SPEED = 50           -- How fast the animation plays
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
 local SPRINT_SPEED = 28
@@ -20,9 +22,9 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 -----------------------------
--- PLAY FAST THEN EXPLODE
+-- PLAY & EXPLODE
 -----------------------------
-local function playThenExplode()
+local function playAndExplode()
 	if ANIMATION_ID == 0 then return end
 
 	local anim = Instance.new("Animation")
@@ -30,27 +32,23 @@ local function playThenExplode()
 	local track = animator:LoadAnimation(anim)
 	track.Looped = true
 	track.Priority = Enum.AnimationPriority.Action
-	track:AdjustSpeed(FAST_ANIM_SPEED)
+	track:AdjustSpeed(HIGH_SPEED)
 	track:Play()
 
 	task.delay(EXPLOSION_DURATION, function()
-		-- Stop the animation
-		if track and track.IsPlaying then
-			track:Stop()
-		end
-
 		-- Launch all body parts in random directions
-		for _, part in ipairs(character:GetDescendants()) do
+		for _, part in ipairs(character:GetChildren()) do
 			if part:IsA("BasePart") then
 				part.Velocity = Vector3.new(
-					math.random(-80, 80),
-					math.random(40, 120),
-					math.random(-80, 80)
+					math.random(-120, 120),
+					math.random(80, 200),
+					math.random(-120, 120)
 				)
 			end
 		end
 
-		-- Kill the character to reset
+		-- Small delay so the launch is visible before death reset
+		task.wait(0.1)
 		humanoid.Health = 0
 	end)
 end
@@ -72,4 +70,4 @@ end)
 -----------------------------
 -- START
 -----------------------------
-playThenExplode()
+playAndExplode()
