@@ -1,14 +1,12 @@
--- // test
-
 -----------------------------
 -- CONFIG
 -----------------------------
 local ANIMATION_ID = 135373056067761
-local EXPLOSION_DURATION = 3   -- Seconds the animation plays before kaboom
-local HIGH_SPEED = 50           -- How fast the animation plays
+local EXPLOSION_DURATION = 3   -- Seconds before parts fly off
+local HIGH_SPEED = 10           -- Animation playback speed
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
-local SPRINT_SPEED = 28
+local SPRINT_SPEED = 3
 -----------------------------
 -- SERVICES
 -----------------------------
@@ -36,19 +34,35 @@ local function playAndExplode()
 	track:Play()
 
 	task.delay(EXPLOSION_DURATION, function()
-		-- Launch all body parts in random directions
-		for _, part in ipairs(character:GetChildren()) do
+		-- Stop the animation
+		track:Stop()
+
+		-- Break all Motor6D joints so parts detach from each other
+		for _, desc in ipairs(character:GetDescendants()) do
+			if desc:IsA("Motor6D") then
+				desc.Enabled = false
+			end
+		end
+
+		-- Fling every part in a random direction
+		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				part.Velocity = Vector3.new(
+				part.Anchored = false
+				part.AssemblyLinearVelocity = Vector3.new(
 					math.random(-120, 120),
-					math.random(80, 200),
+					math.random(60, 180),
 					math.random(-120, 120)
+				)
+				part.AssemblyAngularVelocity = Vector3.new(
+					math.random(-20, 20),
+					math.random(-20, 20),
+					math.random(-20, 20)
 				)
 			end
 		end
 
-		-- Small delay so the launch is visible before death reset
-		task.wait(0.1)
+		-- Wait so the fling is visible, then reset
+		task.wait(1.5)
 		humanoid.Health = 0
 	end)
 end
