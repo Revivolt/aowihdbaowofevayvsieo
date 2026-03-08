@@ -78,3 +78,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowof
 
 Snail
 loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%87%F0%9D%96%BA%F0%9D%97%82%F0%9D%97%85"))()
+
+Among Us
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A0%F0%9D%97%86%F0%9D%97%88%F0%9D%97%87%F0%9D%97%80%20%F0%9D%96%B4%F0%9D%97%8C"))()
