@@ -1,26 +1,17 @@
 -----------------------------
 -- CONFIG
 -----------------------------
-local ANIMATION_1_ID = 83940178849662
-local ANIMATION_2_ID = 135373056067761
-
-local ANIM_1_DURATION = 3
-local ANIM_2_DURATION = 0.5
-local ANIM_2_SPEED = 100
-
--- LAUNCH FORCE (higher = more explosive)
-local LAUNCH_FORCE = 120
-
+local ANIMATION_ID = 135373056067761
+local EXPLOSION_DURATION = 3   -- Seconds the fast animation plays before exploding
+local FAST_ANIM_SPEED = 100      -- Multiplier for the sped-up animation
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
 local SPRINT_SPEED = 28
-
 -----------------------------
 -- SERVICES
 -----------------------------
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-
 -----------------------------
 -- CHARACTER
 -----------------------------
@@ -28,86 +19,57 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
+-----------------------------
+-- PLAY FAST THEN EXPLODE
+-----------------------------
+local function playThenExplode()
+	if ANIMATION_ID == 0 then return end
 
------------------------------
--- HELPERS
------------------------------
-local function loadAnimation(assetId, looped, priority)
 	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. assetId
+	anim.AnimationId = "rbxassetid://" .. ANIMATION_ID
 	local track = animator:LoadAnimation(anim)
-	track.Looped = looped
-	track.Priority = priority
-	return track
-end
+	track.Looped = true
+	track.Priority = Enum.AnimationPriority.Action
+	track:AdjustSpeed(FAST_ANIM_SPEED)
+	track:Play()
 
-local function launchBodyParts()
-	-- Disconnect all joints so parts separate
-	for _, motor in ipairs(character:GetDescendants()) do
-		if motor:IsA("Motor6D") then
-			motor.Parent = nil
+	task.delay(EXPLOSION_DURATION, function()
+		-- Stop the animation
+		if track and track.IsPlaying then
+			track:Stop()
 		end
-	end
 
-	-- Small wait so physics registers the disconnected parts
-	task.wait()
-
-	-- Fling every part in its own unique random direction
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.AssemblyLinearVelocity = Vector3.new(
-				math.random(-LAUNCH_FORCE, LAUNCH_FORCE),
-				math.random(LAUNCH_FORCE / 2, LAUNCH_FORCE),
-				math.random(-LAUNCH_FORCE, LAUNCH_FORCE)
-			)
+		-- Launch all body parts in random directions
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Velocity = Vector3.new(
+					math.random(-80, 80),
+					math.random(40, 120),
+					math.random(-80, 80)
+				)
+			end
 		end
-	end
-end
 
------------------------------
--- SEQUENCE
------------------------------
-local function playSequence()
-	local track1 = loadAnimation(ANIMATION_1_ID, true, Enum.AnimationPriority.Action)
-	track1:Play()
-
-	task.delay(ANIM_1_DURATION, function()
-		track1:Stop()
-		track1:Destroy()
-
-		local track2 = loadAnimation(ANIMATION_2_ID, true, Enum.AnimationPriority.Action)
-		track2:Play()
-		track2:AdjustSpeed(ANIM_2_SPEED)
-
-		task.delay(ANIM_2_DURATION, function()
-			track2:Stop()
-			track2:Destroy()
-			launchBodyParts()
-			task.wait(0.1)
-			humanoid.Health = 0
-		end)
+		-- Kill the character to reset
+		humanoid.Health = 0
 	end)
 end
-
 -----------------------------
 -- SPRINT INPUT
 -----------------------------
 humanoid.WalkSpeed = BASE_WALK_SPEED
-
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp then return end
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		humanoid.WalkSpeed = SPRINT_SPEED
 	end
 end)
-
 UserInputService.InputEnded:Connect(function(input)
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		humanoid.WalkSpeed = BASE_WALK_SPEED
 	end
 end)
-
 -----------------------------
 -- START
 -----------------------------
-playSequence()
+playThenExplode()
