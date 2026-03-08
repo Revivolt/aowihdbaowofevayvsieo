@@ -1,12 +1,15 @@
 -----------------------------
 -- CONFIG
 -----------------------------
-local ANIMATION_1_ID = 87040558780407        -- First animation asset ID
-local ANIMATION_2_ID = 135373056067761        -- Second animation asset ID
+local ANIMATION_1_ID = 87040558780407
+local ANIMATION_2_ID = 135373056067761
 
-local ANIM_1_DURATION = 3       -- Seconds before switching to second animation
-local ANIM_2_DURATION = 0.5       -- Seconds before resetting character
-local ANIM_2_SPEED = 5         -- Playback speed of the second animation
+local ANIM_1_DURATION = 3
+local ANIM_2_DURATION = 0.5
+local ANIM_2_SPEED = 100
+
+-- LAUNCH FORCE (higher = more explosive)
+local LAUNCH_FORCE = 120
 
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
@@ -38,16 +41,34 @@ local function loadAnimation(assetId, looped, priority)
 	return track
 end
 
+local function launchBodyParts()
+	-- Disconnect all joints so parts separate
+	for _, motor in ipairs(character:GetDescendants()) do
+		if motor:IsA("Motor6D") then
+			motor.Parent = nil
+		end
+	end
+
+	-- Fling every part in a random direction
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Velocity = Vector3.new(
+				math.random(-LAUNCH_FORCE, LAUNCH_FORCE),
+				math.random(LAUNCH_FORCE / 2, LAUNCH_FORCE),
+				math.random(-LAUNCH_FORCE, LAUNCH_FORCE)
+			)
+		end
+	end
+end
+
 -----------------------------
 -- SEQUENCE
 -----------------------------
 local function playSequence()
-	-- Play first animation
 	local track1 = loadAnimation(ANIMATION_1_ID, true, Enum.AnimationPriority.Action)
 	track1:Play()
 
 	task.delay(ANIM_1_DURATION, function()
-		-- Stop first, play second at higher speed
 		track1:Stop()
 		track1:Destroy()
 
@@ -56,9 +77,10 @@ local function playSequence()
 		track2:AdjustSpeed(ANIM_2_SPEED)
 
 		task.delay(ANIM_2_DURATION, function()
-			-- Kill character to trigger respawn
 			track2:Stop()
 			track2:Destroy()
+			launchBodyParts()
+			task.wait(0.1) -- brief pause so parts have time to fly before dying
 			humanoid.Health = 0
 		end)
 	end)
