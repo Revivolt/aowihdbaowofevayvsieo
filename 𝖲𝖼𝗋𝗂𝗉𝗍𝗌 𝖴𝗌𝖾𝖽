@@ -57,3 +57,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowof
 
 Boxer
 loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%97%88%F0%9D%97%91%F0%9D%96%BE%F0%9D%97%8B"))()
+
+Dog
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%97%88%F0%9D%97%80"))()
