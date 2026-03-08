@@ -11,7 +11,7 @@ local WALK_ID = 137223234687220
 local SPRINT_ID = 86531876354645
 local JUMP_ID = 0
 local FALL_ID = 0
-local M1_ID = 0
+local M1_ID = 70735660905476
 local M1_LOOP = false
 
 -- ALT ANIMS (TOGGLES)
@@ -20,12 +20,12 @@ local ALT_WALK_ID = 0 -- C
 local ALT_SPRINT_ID = 0 -- V
 local ALT_JUMP_ID = 0 -- B
 local ALT_FALL_ID = 0 -- N
-local ALT_M1_ID = 0 -- M
+local ALT_M1_ID = 104962316700738 -- M
 
 -- EMOTES (movement cancels)
 local EMOTE_T_ID = 126292183414189
-local EMOTE_Y_ID = 70735660905476
-local EMOTE_U_ID = 104962316700738
+local EMOTE_Y_ID = 0
+local EMOTE_U_ID = 0
 
 -- TIMING
 local TRANSFORMATION_DURATION = 0
