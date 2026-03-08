@@ -1,4 +1,4 @@
--- test2
+-- Animation Asset ID Printer
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
