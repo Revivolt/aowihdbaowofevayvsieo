@@ -6,7 +6,7 @@ local ANIMATION_2_ID = 80627968348042        -- Second animation asset ID
 
 local ANIM_1_DURATION = 3       -- Seconds before switching to second animation
 local ANIM_2_DURATION = 0.5       -- Seconds before resetting character
-local ANIM_2_SPEED = 300          -- Playback speed of the second animation
+local ANIM_2_SPEED = 100          -- Playback speed of the second animation
 
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
