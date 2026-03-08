@@ -1,7 +1,7 @@
 -----------------------------
 -- CONFIG
 -----------------------------
-local ANIMATION_1_ID = 87040558780407
+local ANIMATION_1_ID = 83940178849662
 local ANIMATION_2_ID = 135373056067761
 
 local ANIM_1_DURATION = 3
@@ -9,7 +9,7 @@ local ANIM_2_DURATION = 0.5
 local ANIM_2_SPEED = 100
 
 -- LAUNCH FORCE (higher = more explosive)
-local LAUNCH_FORCE = 999
+local LAUNCH_FORCE = 120
 
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
@@ -49,10 +49,13 @@ local function launchBodyParts()
 		end
 	end
 
-	-- Fling every part in a random direction
+	-- Small wait so physics registers the disconnected parts
+	task.wait()
+
+	-- Fling every part in its own unique random direction
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
-			part.Velocity = Vector3.new(
+			part.AssemblyLinearVelocity = Vector3.new(
 				math.random(-LAUNCH_FORCE, LAUNCH_FORCE),
 				math.random(LAUNCH_FORCE / 2, LAUNCH_FORCE),
 				math.random(-LAUNCH_FORCE, LAUNCH_FORCE)
@@ -80,7 +83,7 @@ local function playSequence()
 			track2:Stop()
 			track2:Destroy()
 			launchBodyParts()
-			task.wait(0.1) -- brief pause so parts have time to fly before dying
+			task.wait(0.1)
 			humanoid.Health = 0
 		end)
 	end)
