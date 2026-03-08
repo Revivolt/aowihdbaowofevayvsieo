@@ -1,3 +1,5 @@
+-- test
+
 -----------------------------
 -- CONFIG
 -----------------------------
@@ -30,11 +32,10 @@ local function playAndExplode()
 	local track = animator:LoadAnimation(anim)
 	track.Looped = true
 	track.Priority = Enum.AnimationPriority.Action
-	track:AdjustSpeed(HIGH_SPEED)
 	track:Play()
+	track:AdjustSpeed(HIGH_SPEED) -- After Play() so it actually takes effect
 
 	task.delay(EXPLOSION_DURATION, function()
-		-- Stop the animation
 		track:Stop()
 
 		-- Break all Motor6D joints so parts detach from each other
