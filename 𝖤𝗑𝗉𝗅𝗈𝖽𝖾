@@ -1,0 +1,90 @@
+-- // Explode
+
+-----------------------------
+-- CONFIG
+-----------------------------
+local ANIMATION_1_ID = 87040558780407        -- First animation asset ID
+local ANIMATION_2_ID = 80627968348042        -- Second animation asset ID
+
+local ANIM_1_DURATION = 3       -- Seconds before switching to second animation
+local ANIM_2_DURATION = 1       -- Seconds before resetting character
+local ANIM_2_SPEED = 100          -- Playback speed of the second animation
+
+-- MOVEMENT SPEEDS
+local BASE_WALK_SPEED = 16
+local SPRINT_SPEED = 28
+
+-----------------------------
+-- SERVICES
+-----------------------------
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+-----------------------------
+-- CHARACTER
+-----------------------------
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local animator = humanoid:WaitForChild("Animator")
+
+-----------------------------
+-- HELPERS
+-----------------------------
+local function loadAnimation(assetId, looped, priority)
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. assetId
+	local track = animator:LoadAnimation(anim)
+	track.Looped = looped
+	track.Priority = priority
+	return track
+end
+
+-----------------------------
+-- SEQUENCE
+-----------------------------
+local function playSequence()
+	-- Play first animation
+	local track1 = loadAnimation(ANIMATION_1_ID, true, Enum.AnimationPriority.Action)
+	track1:Play()
+
+	task.delay(ANIM_1_DURATION, function()
+		-- Stop first, play second at higher speed
+		track1:Stop()
+		track1:Destroy()
+
+		local track2 = loadAnimation(ANIMATION_2_ID, true, Enum.AnimationPriority.Action)
+		track2:Play()
+		track2:AdjustSpeed(ANIM_2_SPEED)
+
+		task.delay(ANIM_2_DURATION, function()
+			-- Reset character
+			track2:Stop()
+			track2:Destroy()
+			player:LoadCharacter()
+		end)
+	end)
+end
+
+-----------------------------
+-- SPRINT INPUT
+-----------------------------
+humanoid.WalkSpeed = BASE_WALK_SPEED
+
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		humanoid.WalkSpeed = SPRINT_SPEED
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		humanoid.WalkSpeed = BASE_WALK_SPEED
+	end
+end)
+
+-----------------------------
+-- START
+-----------------------------
+playSequence()
