@@ -9,7 +9,7 @@ local ANIM_2_DURATION = 0.5
 local ANIM_2_SPEED = 100
 
 -- LAUNCH FORCE (higher = more explosive)
-local LAUNCH_FORCE = 120
+local LAUNCH_FORCE = 999
 
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
