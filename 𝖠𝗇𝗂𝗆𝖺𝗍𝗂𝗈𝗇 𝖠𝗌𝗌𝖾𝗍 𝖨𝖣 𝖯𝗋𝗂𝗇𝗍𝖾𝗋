@@ -1,4 +1,4 @@
--- test
+-- test2
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -28,6 +28,8 @@ local DEFAULT_ANIMATION_IDS = {
     ["rbxassetid://507768375"] = true,  -- ToolSlash
     ["rbxassetid://522635514"] = true,  -- ToolLunge
     ["rbxassetid://507768375"] = true,  -- Wave
+    ["rbxassetid://913402848"] = true,
+    ["rbxassetid://913376220"] = true,
     -- Catalog Avatar Animations (common defaults)
     ["rbxassetid://616010382"] = true,
     ["rbxassetid://616006778"] = true,
