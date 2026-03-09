@@ -270,6 +270,14 @@ tab:button({
 })
 
 tab:button({
+    Name = "Lay Down",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AB%F0%9D%96%BA%F0%9D%97%92%20%F0%9D%96%A3%F0%9D%97%88%F0%9D%97%90%F0%9D%97%87"))()
+    end,
+})
+
+tab:button({
     Name = "Take A Sip",
     Description = "",
     Callback = function()
