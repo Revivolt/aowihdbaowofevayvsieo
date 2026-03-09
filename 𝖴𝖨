@@ -270,6 +270,14 @@ tab:button({
 })
 
 tab:button({
+    Name = "Punches",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AF%F0%9D%97%8E%F0%9D%97%87%F0%9D%96%BC%F0%9D%97%81%F0%9D%96%BE%F0%9D%97%8C"))()
+    end,
+})
+
+tab:button({
     Name = "Tool Lunge",
     Description = "",
     Callback = function()
