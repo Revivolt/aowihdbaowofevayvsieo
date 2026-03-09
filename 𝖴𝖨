@@ -270,6 +270,78 @@ tab:button({
 })
 
 tab:button({
+    Name = "Air Pump",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A0%F0%9D%97%82%F0%9D%97%8B%20%F0%9D%96%AF%F0%9D%97%8E%F0%9D%97%86%F0%9D%97%89"))()
+    end,
+})
+
+tab:button({
+    Name = "Drive",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%97%8B%F0%9D%97%82%F0%9D%97%8F%F0%9D%96%BE"))()
+    end,
+})
+
+tab:button({
+    Name = "Bang",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%96%BA%F0%9D%97%87%F0%9D%97%80"))()
+    end,
+})
+
+tab:button({
+    Name = "Float Sit",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A5%F0%9D%97%85%F0%9D%97%88%F0%9D%96%BA%F0%9D%97%8D%20%F0%9D%96%B2%F0%9D%97%82%F0%9D%97%8D"))()
+    end,
+})
+
+tab:button({
+    Name = "Hold This",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%97%88%F0%9D%97%85%F0%9D%96%BD%20%F0%9D%96%B3%F0%9D%97%81%F0%9D%97%82%F0%9D%97%8C"))()
+    end,
+})
+
+tab:button({
+    Name = "Crouch",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%97%8B%F0%9D%97%88%F0%9D%97%8E%F0%9D%96%BC%F0%9D%97%81"))()
+    end,
+})
+
+tab:button({
+    Name = "Crawl",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%90%F0%9D%97%85"))()
+    end,
+})
+
+tab:button({
+    Name = "Levitate",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AB%F0%9D%96%BE%F0%9D%97%8F%F0%9D%97%82%F0%9D%97%8D%F0%9D%96%BA%F0%9D%97%8D%F0%9D%96%BE"))()
+    end,
+})
+
+tab:button({
+    Name = "Right Head Twist",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B1%F0%9D%97%82%F0%9D%97%80%F0%9D%97%81%F0%9D%97%8D%20%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD%20%F0%9D%96%B3%F0%9D%97%90%F0%9D%97%82%F0%9D%97%8C%F0%9D%97%8D"))()
+    end,
+})
+
+tab:button({
     Name = "Punch",
     Description = "",
     Callback = function()
