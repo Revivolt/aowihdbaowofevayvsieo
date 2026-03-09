@@ -36,7 +36,7 @@ tab:button({
 })
 
 local tab = gui:tab{
-    Icon = "rbxassetid://82130614869496",
+    Icon = "rbxassetid://82680787978049",
     Name = "R15 FE"
 }
 
@@ -257,9 +257,17 @@ tab:button({
 })
 
 local tab = gui:tab{
-    Icon = "rbxassetid://71261959291728",
+    Icon = "rbxassetid://110018033390032",
     Name = "R6 FE"
 }
+
+tab:button({
+    Name = "Sinister GUI",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://github.com/Sinister-Scripts/Roblox-Exploits/raw/refs/heads/main/FE-Animation-GUI-R6"))()
+    end,
+})
 
 tab:button({
     Name = "Dab",
