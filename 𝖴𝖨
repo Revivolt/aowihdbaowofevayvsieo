@@ -270,6 +270,30 @@ tab:button({
 })
 
 tab:button({
+    Name = "Punch",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AF%F0%9D%97%8E%F0%9D%97%87%F0%9D%96%BC%F0%9D%97%81"))()
+    end,
+})
+
+tab:button({
+    Name = "Floating Head",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A5%F0%9D%97%85%F0%9D%97%88%F0%9D%96%BA%F0%9D%97%8D%F0%9D%97%82%F0%9D%97%87%F0%9D%97%80%20%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD"))()
+    end,
+})
+
+tab:button({
+    Name = "Jerking",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A9%F0%9D%96%BE%F0%9D%97%8B%F0%9D%97%84%F0%9D%97%82%F0%9D%97%87%F0%9D%97%80"))()
+    end,
+})
+
+tab:button({
     Name = "T",
     Description = "",
     Callback = function()
@@ -318,8 +342,8 @@ tab:button({
 })
 
 tab:button({
-    Name = "",
-    Description = "Spin",
+    Name = "Spin",
+    Description = "",
     Callback = function()
         loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%89%F0%9D%97%82%F0%9D%97%87"))()
     end,
