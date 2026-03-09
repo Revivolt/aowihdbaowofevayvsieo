@@ -270,6 +270,62 @@ tab:button({
 })
 
 tab:button({
+    Name = "T",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3"))()
+    end,
+})
+
+tab:button({
+    Name = "Arms Up",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A0%F0%9D%97%8B%F0%9D%97%86%F0%9D%97%8C%20%F0%9D%96%B4%F0%9D%97%89"))()
+    end,
+})
+
+tab:button({
+    Name = "Backpack",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%96%BA%F0%9D%96%BC%F0%9D%97%84%F0%9D%97%89%F0%9D%96%BA%F0%9D%96%BC%F0%9D%97%84%20(%F0%9D%97%8B6)"))()
+    end,
+})
+
+tab:button({
+    Name = "Tool Slash",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3%F0%9D%97%88%F0%9D%97%88%F0%9D%97%85%20%F0%9D%96%B2%F0%9D%97%85%F0%9D%96%BA%F0%9D%97%8C%F0%9D%97%81"))()
+    end,
+})
+
+tab:button({
+    Name = "Head Throw",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD%20%F0%9D%96%B3%F0%9D%97%81%F0%9D%97%8B%F0%9D%97%88%F0%9D%97%90"))()
+    end,
+})
+
+tab:button({
+    Name = "Groovy!",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A6%F0%9D%97%8B%F0%9D%97%88%F0%9D%97%88%F0%9D%97%8F%F0%9D%97%92!"))()
+    end,
+})
+
+tab:button({
+    Name = "",
+    Description = "Spin",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%89%F0%9D%97%82%F0%9D%97%87"))()
+    end,
+})
+
+tab:button({
     Name = "Punches",
     Description = "",
     Callback = function()
