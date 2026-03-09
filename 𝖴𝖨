@@ -270,6 +270,14 @@ tab:button({
 })
 
 tab:button({
+    Name = "2013 Dance",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/2013%20%F0%9D%96%A3%F0%9D%96%BA%F0%9D%97%87%F0%9D%96%BC%F0%9D%96%BE"))()
+    end,
+})
+
+tab:button({
     Name = "Point",
     Description = "",
     Callback = function()
