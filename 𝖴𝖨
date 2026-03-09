@@ -277,6 +277,14 @@ tab:button({
     end,
 })
 
+tab:button({
+    Name = "Dino Walk",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%97%82%F0%9D%97%87%F0%9D%97%88%20%F0%9D%96%B6%F0%9D%96%BA%F0%9D%97%85%F0%9D%97%84"))()
+    end,
+})
+
 -- Services
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
