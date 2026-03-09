@@ -4,8 +4,8 @@
 local ANIMATION_ID_1 = 72042024     
 local ANIMATION_ID_2 = 168268306
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 1
-local SPRINT_SPEED = 3
+local BASE_WALK_SPEED = 16
+local SPRINT_SPEED = 28
 -----------------------------
 -- SERVICES
 -----------------------------
