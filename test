@@ -1,53 +1,288 @@
------------------------------
--- CONFIG
------------------------------
-local ANIMATION_ID = 114036336168567          -- Your animation asset ID
--- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 16
-local SPRINT_SPEED = 28
------------------------------
--- SERVICES
------------------------------
+-- AlphabetAnimationGUI LocalScript
+-- Place this inside StarterPlayerScripts or StarterCharacterScripts
+-- IMPORTANT: Replace the animation IDs below with your actual Roblox animation asset IDs!
+
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
------------------------------
--- CHARACTER
------------------------------
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 
--- Ensure the character is R6
-humanoid.RigType = Enum.HumanoidRigType.R6
------------------------------
--- PLAY ANIMATION
------------------------------
-local function playAnimation()
-	if ANIMATION_ID == 0 then return end
-	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. ANIMATION_ID
-	local track = animator:LoadAnimation(anim)
-	track.Looped = true
-	track.Priority = Enum.AnimationPriority.Action
-	track:Play()
+-- ============================================================
+--  ANIMATION ID MAP
+--  Replace each value with your actual animation asset ID.
+--  Format: "rbxassetid://YOUR_ID_HERE"
+-- ============================================================
+local ANIMATION_IDS = {
+    ["A"] = "rbxassetid://138338789917579",
+    ["B"] = "rbxassetid://103407550536788",
+    ["C"] = "rbxassetid://134768482273846",
+    ["D"] = "rbxassetid://77360018107011",
+    ["E"] = "rbxassetid://126576517182219",
+    ["F"] = "rbxassetid://135227259060683",
+    ["G"] = "rbxassetid://71035736575796",
+    ["H"] = "rbxassetid://136251435074700",
+    ["I"] = "rbxassetid://139968424935712",
+    ["J"] = "rbxassetid://110276817462232",
+    ["K"] = "rbxassetid://120953677535193",
+    ["L"] = "rbxassetid://128492197469048",
+    ["M"] = "rbxassetid://98288662279156",
+    ["N"] = "rbxassetid://82503474144449",
+    ["O"] = "rbxassetid://116812902734931",
+    ["P"] = "rbxassetid://101283801577322",
+    ["Q"] = "rbxassetid://70764209868433",
+    ["R"] = "rbxassetid://92461304465888",
+    ["S"] = "rbxassetid://122443734972375",
+    ["T"] = "rbxassetid://105838262954463",
+    ["U"] = "rbxassetid://135824595429758",
+    ["V"] = "rbxassetid://119340476183690",
+    ["W"] = "rbxassetid://126908006538812",
+    ["X"] = "rbxassetid://83068327805565",
+    ["Y"] = "rbxassetid://121054460098923",
+    ["Z"] = "rbxassetid://137589447206293",
+    ["?"] = "rbxassetid://106990707061639",
+    ["!"] = "rbxassetid://129519406702058",
+    [" "] = "rbxassetid://128941887300629",
+}
+
+local ANIM_DURATION = 0.6 -- seconds each animation plays
+
+-- ============================================================
+--  PRE-LOAD ANIMATION OBJECTS
+-- ============================================================
+local loadedAnimations = {}
+for char, id in pairs(ANIMATION_IDS) do
+    local anim = Instance.new("Animation")
+    anim.AnimationId = id
+    loadedAnimations[char] = anim
 end
------------------------------
--- SPRINT INPUT
------------------------------
-humanoid.WalkSpeed = BASE_WALK_SPEED
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then return end
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		humanoid.WalkSpeed = SPRINT_SPEED
-	end
+
+-- ============================================================
+--  ANIMATION PLAYBACK
+-- ============================================================
+local isPlaying = false
+local currentTrack = nil
+
+local function stopCurrentTrack()
+    if currentTrack and currentTrack.IsPlaying then
+        currentTrack:Stop(0)
+    end
+    currentTrack = nil
+end
+
+local function playAnimationsForText(text)
+    if isPlaying then return end
+    isPlaying = true
+
+    local upperText = string.upper(text)
+
+    for i = 1, #upperText do
+        local char = string.sub(upperText, i, i)
+        local animObject = loadedAnimations[char]
+
+        if animObject then
+            stopCurrentTrack()
+            local track = animator:LoadAnimation(animObject)
+            track.Priority = Enum.AnimationPriority.Action
+            track:Play(0) -- fadeTime = 0 for instant transition
+            currentTrack = track
+            task.wait(ANIM_DURATION)
+        else
+            -- Character has no animation (e.g. numbers, punctuation not mapped)
+            -- Just wait a moment so the sequence still flows
+            task.wait(0.2)
+        end
+    end
+
+    stopCurrentTrack()
+    isPlaying = false
+end
+
+-- ============================================================
+--  GUI SETUP
+-- ============================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AlphabetAnimGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player.PlayerGui
+
+-- Background frame
+local frame = Instance.new("Frame")
+frame.Name = "MainFrame"
+frame.Size = UDim2.new(0, 420, 0, 160)
+frame.Position = UDim2.new(0.5, -210, 1, -200)
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+
+-- Rounded corners
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 12)
+uiCorner.Parent = frame
+
+-- Stroke / border
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Color = Color3.fromRGB(100, 100, 220)
+uiStroke.Thickness = 2
+uiStroke.Parent = frame
+
+-- Title label
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Size = UDim2.new(1, 0, 0, 36)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "✦  Alphabet Animator  ✦"
+titleLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
+titleLabel.TextSize = 17
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = frame
+
+-- Status label (shows what is currently being played)
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "Status"
+statusLabel.Size = UDim2.new(1, -20, 0, 24)
+statusLabel.Position = UDim2.new(0, 10, 0, 38)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Type a word and press Enter or Play"
+statusLabel.TextColor3 = Color3.fromRGB(140, 200, 140)
+statusLabel.TextSize = 13
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = frame
+
+-- TextBox
+local textBox = Instance.new("TextBox")
+textBox.Name = "InputBox"
+textBox.Size = UDim2.new(1, -120, 0, 40)
+textBox.Position = UDim2.new(0, 10, 0, 72)
+textBox.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+textBox.BorderSizePixel = 0
+textBox.PlaceholderText = "Type here..."
+textBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 130)
+textBox.Text = ""
+textBox.TextColor3 = Color3.fromRGB(240, 240, 255)
+textBox.TextSize = 16
+textBox.Font = Enum.Font.Gotham
+textBox.ClearTextOnFocus = false
+textBox.Parent = frame
+
+local tbCorner = Instance.new("UICorner")
+tbCorner.CornerRadius = UDim.new(0, 8)
+tbCorner.Parent = textBox
+
+local tbStroke = Instance.new("UIStroke")
+tbStroke.Color = Color3.fromRGB(80, 80, 180)
+tbStroke.Thickness = 1.5
+tbStroke.Parent = textBox
+
+-- Play button
+local playButton = Instance.new("TextButton")
+playButton.Name = "PlayButton"
+playButton.Size = UDim2.new(0, 96, 0, 40)
+playButton.Position = UDim2.new(1, -106, 0, 72)
+playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+playButton.BorderSizePixel = 0
+playButton.Text = "▶  Play"
+playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+playButton.TextSize = 15
+playButton.Font = Enum.Font.GothamBold
+playButton.Parent = frame
+
+local pbCorner = Instance.new("UICorner")
+pbCorner.CornerRadius = UDim.new(0, 8)
+pbCorner.Parent = playButton
+
+-- Stop button
+local stopButton = Instance.new("TextButton")
+stopButton.Name = "StopButton"
+stopButton.Size = UDim2.new(1, -20, 0, 32)
+stopButton.Position = UDim2.new(0, 10, 0, 120)
+stopButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+stopButton.BorderSizePixel = 0
+stopButton.Text = "■  Stop"
+stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+stopButton.TextSize = 14
+stopButton.Font = Enum.Font.GothamBold
+stopButton.Parent = frame
+
+local sbCorner = Instance.new("UICorner")
+sbCorner.CornerRadius = UDim.new(0, 8)
+sbCorner.Parent = stopButton
+
+-- ============================================================
+--  BUTTON / INPUT LOGIC
+-- ============================================================
+local function triggerPlay()
+    if isPlaying then
+        statusLabel.Text = "⏳ Already playing — press Stop first"
+        return
+    end
+    local input = textBox.Text
+    if input == "" then
+        statusLabel.Text = "⚠  Please type something first!"
+        return
+    end
+    statusLabel.Text = '▶ Playing: "' .. input .. '"'
+    playButton.BackgroundColor3 = Color3.fromRGB(50, 50, 140)
+    task.spawn(function()
+        playAnimationsForText(input)
+        statusLabel.Text = '✔ Done: "' .. input .. '"'
+        playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+    end)
+end
+
+-- Press Enter inside the text box
+textBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        triggerPlay()
+    end
 end)
-UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		humanoid.WalkSpeed = BASE_WALK_SPEED
-	end
+
+-- Click Play button
+playButton.MouseButton1Click:Connect(triggerPlay)
+
+-- Hover effects for Play button
+playButton.MouseEnter:Connect(function()
+    if not isPlaying then
+        playButton.BackgroundColor3 = Color3.fromRGB(100, 100, 230)
+    end
 end)
------------------------------
--- START
------------------------------
-playAnimation()
+playButton.MouseLeave:Connect(function()
+    if not isPlaying then
+        playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+    end
+end)
+
+-- Click Stop button
+stopButton.MouseButton1Click:Connect(function()
+    if isPlaying then
+        isPlaying = false
+        stopCurrentTrack()
+        statusLabel.Text = "⏹ Stopped."
+        playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+    end
+end)
+
+-- Hover effects for Stop button
+stopButton.MouseEnter:Connect(function()
+    stopButton.BackgroundColor3 = Color3.fromRGB(210, 70, 70)
+end)
+stopButton.MouseLeave:Connect(function()
+    stopButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+end)
+
+-- ============================================================
+--  Handle character respawn (re-grab humanoid/animator)
+-- ============================================================
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = newChar:WaitForChild("Humanoid")
+    animator = humanoid:WaitForChild("Animator")
+    isPlaying = false
+    currentTrack = nil
+    statusLabel.Text = "Character respawned — ready!"
+end)
