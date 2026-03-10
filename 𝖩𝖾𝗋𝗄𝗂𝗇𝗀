@@ -1,8 +1,8 @@
 -----------------------------
 -- CONFIG
 -----------------------------
-local ANIMATION_ID_1 = 72042024     
-local ANIMATION_ID_2 = 168268306
+local ANIMATION_ID_1 = 72042024        -- First animation asset ID
+local ANIMATION_ID_2 = 168268306                     -- Second animation asset ID
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
 local SPRINT_SPEED = 28
@@ -24,24 +24,41 @@ humanoid.RigType = Enum.HumanoidRigType.R6
 -----------------------------
 -- PLAY ANIMATIONS
 -----------------------------
-local function playAnimation(animationId)
-	if animationId == 0 then return end
+local track1, track2
+local animationsPlaying = false
+
+local function loadAnimation(animationId)
+	if animationId == 0 then return nil end
 	local anim = Instance.new("Animation")
 	anim.AnimationId = "rbxassetid://" .. animationId
 	local track = animator:LoadAnimation(anim)
 	track.Looped = true
 	track.Priority = Enum.AnimationPriority.Action
-	track:Play()
 	return track
 end
+
+local function toggleAnimations()
+	if animationsPlaying then
+		if track1 then track1:Stop() end
+		if track2 then track2:Stop() end
+		animationsPlaying = false
+	else
+		if track1 then track1:Play() end
+		if track2 then track2:Play() end
+		animationsPlaying = true
+	end
+end
 -----------------------------
--- SPRINT INPUT
+-- INPUT
 -----------------------------
 humanoid.WalkSpeed = BASE_WALK_SPEED
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp then return end
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		humanoid.WalkSpeed = SPRINT_SPEED
+	end
+	if input.KeyCode == Enum.KeyCode.T then
+		toggleAnimations()
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
@@ -52,5 +69,5 @@ end)
 -----------------------------
 -- START
 -----------------------------
-local track1 = playAnimation(ANIMATION_ID_1)
-local track2 = playAnimation(ANIMATION_ID_2)
+track1 = loadAnimation(ANIMATION_ID_1)
+track2 = loadAnimation(ANIMATION_ID_2)
