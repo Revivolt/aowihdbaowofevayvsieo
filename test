@@ -1,9 +1,7 @@
--- AlphabetAnimationGUI LocalScript
--- Place this inside StarterPlayerScripts or StarterCharacterScripts
--- IMPORTANT: Replace the animation IDs below with your actual Roblox animation asset IDs!
+-- test
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -44,7 +42,7 @@ local ANIMATION_IDS = {
     ["Z"] = "rbxassetid://137589447206293",
     ["?"] = "rbxassetid://106990707061639",
     ["!"] = "rbxassetid://129519406702058",
-    [" "] = "rbxassetid://128941887300629",
+    [" "] = "rbxassetid://114843861796790",
 }
 
 local ANIM_DURATION = 0.6 -- seconds each animation plays
@@ -79,6 +77,7 @@ local function playAnimationsForText(text)
     local upperText = string.upper(text)
 
     for i = 1, #upperText do
+        if not isPlaying then break end -- respect Stop mid-sequence
         local char = string.sub(upperText, i, i)
         local animObject = loadedAnimations[char]
 
@@ -86,12 +85,10 @@ local function playAnimationsForText(text)
             stopCurrentTrack()
             local track = animator:LoadAnimation(animObject)
             track.Priority = Enum.AnimationPriority.Action
-            track:Play(0) -- fadeTime = 0 for instant transition
+            track:Play(0)
             currentTrack = track
             task.wait(ANIM_DURATION)
         else
-            -- Character has no animation (e.g. numbers, punctuation not mapped)
-            -- Just wait a moment so the sequence still flows
             task.wait(0.2)
         end
     end
@@ -101,7 +98,7 @@ local function playAnimationsForText(text)
 end
 
 -- ============================================================
---  GUI SETUP
+--  GUI SETUP  (compact size: 280 x 120)
 -- ============================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AlphabetAnimGUI"
@@ -109,47 +106,52 @@ screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = player.PlayerGui
 
--- Background frame
+-- Main frame
 local frame = Instance.new("Frame")
 frame.Name = "MainFrame"
-frame.Size = UDim2.new(0, 420, 0, 160)
-frame.Position = UDim2.new(0.5, -210, 1, -200)
+frame.Size = UDim2.new(0, 280, 0, 120)
+frame.Position = UDim2.new(0.5, -140, 1, -150)
 frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 frame.BorderSizePixel = 0
+frame.Active = true  -- required for drag input to register
 frame.Parent = screenGui
 
--- Rounded corners
 local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(0, 12)
+uiCorner.CornerRadius = UDim.new(0, 10)
 uiCorner.Parent = frame
 
--- Stroke / border
 local uiStroke = Instance.new("UIStroke")
 uiStroke.Color = Color3.fromRGB(100, 100, 220)
-uiStroke.Thickness = 2
+uiStroke.Thickness = 1.5
 uiStroke.Parent = frame
 
--- Title label
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "Title"
-titleLabel.Size = UDim2.new(1, 0, 0, 36)
-titleLabel.Position = UDim2.new(0, 0, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "✦  Alphabet Animator  ✦"
-titleLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
-titleLabel.TextSize = 17
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Parent = frame
+-- Title bar (drag handle)
+local titleBar = Instance.new("TextButton")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 26)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 60)
+titleBar.BorderSizePixel = 0
+titleBar.Text = "✦ Alphabet Animator  —  drag me ✦"
+titleBar.TextColor3 = Color3.fromRGB(180, 180, 255)
+titleBar.TextSize = 11
+titleBar.Font = Enum.Font.GothamBold
+titleBar.AutoButtonColor = false
+titleBar.Parent = frame
 
--- Status label (shows what is currently being played)
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+-- Status label
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "Status"
-statusLabel.Size = UDim2.new(1, -20, 0, 24)
-statusLabel.Position = UDim2.new(0, 10, 0, 38)
+statusLabel.Size = UDim2.new(1, -8, 0, 16)
+statusLabel.Position = UDim2.new(0, 4, 0, 28)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Type a word and press Enter or Play"
 statusLabel.TextColor3 = Color3.fromRGB(140, 200, 140)
-statusLabel.TextSize = 13
+statusLabel.TextSize = 10
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = frame
@@ -157,76 +159,113 @@ statusLabel.Parent = frame
 -- TextBox
 local textBox = Instance.new("TextBox")
 textBox.Name = "InputBox"
-textBox.Size = UDim2.new(1, -120, 0, 40)
-textBox.Position = UDim2.new(0, 10, 0, 72)
+textBox.Size = UDim2.new(1, -74, 0, 28)
+textBox.Position = UDim2.new(0, 6, 0, 48)
 textBox.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
 textBox.BorderSizePixel = 0
 textBox.PlaceholderText = "Type here..."
 textBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 130)
 textBox.Text = ""
 textBox.TextColor3 = Color3.fromRGB(240, 240, 255)
-textBox.TextSize = 16
+textBox.TextSize = 13
 textBox.Font = Enum.Font.Gotham
 textBox.ClearTextOnFocus = false
 textBox.Parent = frame
 
 local tbCorner = Instance.new("UICorner")
-tbCorner.CornerRadius = UDim.new(0, 8)
+tbCorner.CornerRadius = UDim.new(0, 6)
 tbCorner.Parent = textBox
 
 local tbStroke = Instance.new("UIStroke")
 tbStroke.Color = Color3.fromRGB(80, 80, 180)
-tbStroke.Thickness = 1.5
+tbStroke.Thickness = 1
 tbStroke.Parent = textBox
 
 -- Play button
 local playButton = Instance.new("TextButton")
 playButton.Name = "PlayButton"
-playButton.Size = UDim2.new(0, 96, 0, 40)
-playButton.Position = UDim2.new(1, -106, 0, 72)
+playButton.Size = UDim2.new(0, 60, 0, 28)
+playButton.Position = UDim2.new(1, -66, 0, 48)
 playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
 playButton.BorderSizePixel = 0
-playButton.Text = "▶  Play"
+playButton.Text = "▶ Play"
 playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-playButton.TextSize = 15
+playButton.TextSize = 12
 playButton.Font = Enum.Font.GothamBold
 playButton.Parent = frame
 
 local pbCorner = Instance.new("UICorner")
-pbCorner.CornerRadius = UDim.new(0, 8)
+pbCorner.CornerRadius = UDim.new(0, 6)
 pbCorner.Parent = playButton
 
 -- Stop button
 local stopButton = Instance.new("TextButton")
 stopButton.Name = "StopButton"
-stopButton.Size = UDim2.new(1, -20, 0, 32)
-stopButton.Position = UDim2.new(0, 10, 0, 120)
+stopButton.Size = UDim2.new(1, -12, 0, 22)
+stopButton.Position = UDim2.new(0, 6, 0, 90)
 stopButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
 stopButton.BorderSizePixel = 0
-stopButton.Text = "■  Stop"
+stopButton.Text = "■ Stop"
 stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-stopButton.TextSize = 14
+stopButton.TextSize = 12
 stopButton.Font = Enum.Font.GothamBold
 stopButton.Parent = frame
 
 local sbCorner = Instance.new("UICorner")
-sbCorner.CornerRadius = UDim.new(0, 8)
+sbCorner.CornerRadius = UDim.new(0, 6)
 sbCorner.Parent = stopButton
+
+-- ============================================================
+--  DRAG LOGIC
+-- ============================================================
+local dragging = false
+local dragStartPos
+local frameStartPos
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStartPos = input.Position
+        frameStartPos = frame.Position
+    end
+end)
+
+titleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not dragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch then
+        local delta = input.Position - dragStartPos
+        frame.Position = UDim2.new(
+            frameStartPos.X.Scale,
+            frameStartPos.X.Offset + delta.X,
+            frameStartPos.Y.Scale,
+            frameStartPos.Y.Offset + delta.Y
+        )
+    end
+end)
 
 -- ============================================================
 --  BUTTON / INPUT LOGIC
 -- ============================================================
 local function triggerPlay()
     if isPlaying then
-        statusLabel.Text = "⏳ Already playing — press Stop first"
+        statusLabel.Text = "⏳ Already playing — Stop first"
         return
     end
     local input = textBox.Text
     if input == "" then
-        statusLabel.Text = "⚠  Please type something first!"
+        statusLabel.Text = "⚠ Please type something first!"
         return
     end
-    statusLabel.Text = '▶ Playing: "' .. input .. '"'
+    statusLabel.Text = '▶ "' .. input .. '"'
     playButton.BackgroundColor3 = Color3.fromRGB(50, 50, 140)
     task.spawn(function()
         playAnimationsForText(input)
@@ -235,29 +274,19 @@ local function triggerPlay()
     end)
 end
 
--- Press Enter inside the text box
 textBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        triggerPlay()
-    end
+    if enterPressed then triggerPlay() end
 end)
 
--- Click Play button
 playButton.MouseButton1Click:Connect(triggerPlay)
 
--- Hover effects for Play button
 playButton.MouseEnter:Connect(function()
-    if not isPlaying then
-        playButton.BackgroundColor3 = Color3.fromRGB(100, 100, 230)
-    end
+    if not isPlaying then playButton.BackgroundColor3 = Color3.fromRGB(100, 100, 230) end
 end)
 playButton.MouseLeave:Connect(function()
-    if not isPlaying then
-        playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
-    end
+    if not isPlaying then playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200) end
 end)
 
--- Click Stop button
 stopButton.MouseButton1Click:Connect(function()
     if isPlaying then
         isPlaying = false
@@ -267,16 +296,11 @@ stopButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Hover effects for Stop button
-stopButton.MouseEnter:Connect(function()
-    stopButton.BackgroundColor3 = Color3.fromRGB(210, 70, 70)
-end)
-stopButton.MouseLeave:Connect(function()
-    stopButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-end)
+stopButton.MouseEnter:Connect(function() stopButton.BackgroundColor3 = Color3.fromRGB(210, 70, 70) end)
+stopButton.MouseLeave:Connect(function() stopButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50) end)
 
 -- ============================================================
---  Handle character respawn (re-grab humanoid/animator)
+--  Handle character respawn
 -- ============================================================
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
@@ -284,5 +308,5 @@ player.CharacterAdded:Connect(function(newChar)
     animator = humanoid:WaitForChild("Animator")
     isPlaying = false
     currentTrack = nil
-    statusLabel.Text = "Character respawned — ready!"
+    statusLabel.Text = "Respawned — ready!"
 end)
