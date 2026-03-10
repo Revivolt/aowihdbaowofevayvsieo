@@ -1,4 +1,4 @@
--- FE Chat
+-- test 5
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -73,9 +73,32 @@ local function stopCurrentTrack()
     currentTrack = nil
 end
 
+-- Freeze all Motor6D joints to remove physics wobble
+local function setLimbStiffness(stiff)
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("Motor6D") then
+            desc.MaxVelocity = stiff and 0 or 0.1
+        end
+    end
+end
+
+-- Stop every animation track except our own
+local function stopAllOtherTracks()
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        if track ~= currentTrack then
+            track:Stop(0)
+        end
+    end
+end
+
 local function playAnimationsForText(text)
     if isPlaying then return end
     isPlaying = true
+
+    -- Freeze limbs and kill all running animations (idle, walk, etc.)
+    setLimbStiffness(true)
+    stopAllOtherTracks()
+
     local upperText = string.upper(text)
     for i = 1, #upperText do
         if not isPlaying then break end
@@ -83,16 +106,20 @@ local function playAnimationsForText(text)
         local animObject = loadedAnimations[char]
         if animObject then
             stopCurrentTrack()
+            stopAllOtherTracks()
             local track = animator:LoadAnimation(animObject)
-            track.Priority = Enum.AnimationPriority.Action
+            track.Priority = Enum.AnimationPriority.Action4  -- highest priority, overrides everything
             track:Play(0)
             currentTrack = track
-            task.wait(ANIM_DURATION)   -- uses live slider value
+            task.wait(ANIM_DURATION)
         else
             task.wait(0.2)
         end
     end
+
     stopCurrentTrack()
+    -- Unfreeze limbs so normal movement resumes
+    setLimbStiffness(false)
     isPlaying = false
 end
 
@@ -459,6 +486,7 @@ end)
 closeButton.MouseButton1Click:Connect(function()
     isPlaying = false
     stopCurrentTrack()
+    setLimbStiffness(false)
     screenGui:Destroy()
 end)
 
@@ -470,6 +498,7 @@ stopButton.MouseButton1Click:Connect(function()
     if isPlaying then
         isPlaying = false
         stopCurrentTrack()
+        setLimbStiffness(false)
         statusLabel.Text = "⏹ Stopped."
         playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
     end
@@ -487,5 +516,6 @@ player.CharacterAdded:Connect(function(newChar)
     animator = humanoid:WaitForChild("Animator")
     isPlaying = false
     currentTrack = nil
+    setLimbStiffness(false)
     statusLabel.Text = "Respawned — ready!"
 end)
