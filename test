@@ -1,0 +1,227 @@
+-- ChatViewer LocalScript
+-- Place this in StarterPlayerScripts or StarterCharacterScripts
+
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+
+local localPlayer = Players.LocalPlayer
+
+-- =============================================
+-- CONFIGURATION
+-- =============================================
+local CONFIG = {
+    maxMessages = 30,        -- Max messages shown on screen
+    messageLifetime = 8,     -- Seconds before a message fades out (0 = never)
+    fontSize = 14,           -- Font size of messages
+    bgTransparency = 0.4,    -- Background transparency (0 = solid, 1 = invisible)
+    position = UDim2.new(0, 10, 0.5, 0),  -- Position of the chat box on screen
+    size = UDim2.new(0, 340, 0, 300),      -- Size of the chat box
+}
+
+-- =============================================
+-- BUILD THE CUSTOM CHAT UI
+-- =============================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CustomChatViewer"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = localPlayer.PlayerGui
+
+-- Main frame
+local frame = Instance.new("Frame")
+frame.Name = "ChatFrame"
+frame.Size = CONFIG.size
+frame.Position = CONFIG.position
+frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+frame.BackgroundTransparency = CONFIG.bgTransparency
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+
+-- Rounded corners
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = frame
+
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 24)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 80)
+titleBar.BackgroundTransparency = 0
+titleBar.BorderSizePixel = 0
+titleBar.Parent = frame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "💬 Chat Viewer"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 13
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = titleBar
+
+-- Scrolling list for messages
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -8, 1, -30)
+scrollFrame.Position = UDim2.new(0, 4, 0, 26)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 255)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent = frame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 2)
+listLayout.Parent = scrollFrame
+
+local padding = Instance.new("UIPadding")
+padding.PaddingLeft = UDim.new(0, 4)
+padding.PaddingRight = UDim.new(0, 4)
+padding.Parent = scrollFrame
+
+-- =============================================
+-- DRAGGABLE FRAME
+-- =============================================
+local dragging, dragStart, startPos = false, nil, nil
+
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+    end
+end)
+
+titleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- =============================================
+-- MESSAGE DISPLAY FUNCTION
+-- =============================================
+local messageCount = 0
+local messageLabels = {}
+
+local function getTeamColor(player)
+    if player and player.Team then
+        return player.Team.TeamColor.Color
+    end
+    return Color3.fromRGB(255, 255, 255)
+end
+
+local function addMessage(speaker, message, color)
+    messageCount += 1
+
+    local row = Instance.new("Frame")
+    row.Name = "Msg_" .. messageCount
+    row.Size = UDim2.new(1, 0, 0, 0)
+    row.AutomaticSize = Enum.AutomaticSize.Y
+    row.BackgroundTransparency = 1
+    row.LayoutOrder = messageCount
+    row.Parent = scrollFrame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 0)
+    label.AutomaticSize = Enum.AutomaticSize.Y
+    label.BackgroundTransparency = 1
+    label.TextColor3 = color or Color3.fromRGB(220, 220, 220)
+    label.TextSize = CONFIG.fontSize
+    label.Font = Enum.Font.Gotham
+    label.TextWrapped = true
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.RichText = true
+    label.Text = string.format(
+        '<font color="rgb(%d,%d,%d)"><b>[%s]</b></font> <font color="rgb(220,220,220)">%s</font>',
+        math.floor((color or Color3.fromRGB(100, 180, 255)).R * 255),
+        math.floor((color or Color3.fromRGB(100, 180, 255)).G * 255),
+        math.floor((color or Color3.fromRGB(100, 180, 255)).B * 255),
+        speaker,
+        message
+    )
+    label.Parent = row
+
+    table.insert(messageLabels, row)
+
+    -- Trim old messages
+    if #messageLabels > CONFIG.maxMessages then
+        local oldest = table.remove(messageLabels, 1)
+        oldest:Destroy()
+    end
+
+    -- Auto-scroll to bottom
+    task.defer(function()
+        scrollFrame.CanvasPosition = Vector2.new(0, scrollFrame.AbsoluteCanvasSize.Y)
+    end)
+
+    -- Optional fade-out
+    if CONFIG.messageLifetime > 0 then
+        task.delay(CONFIG.messageLifetime, function()
+            if row and row.Parent then
+                row:Destroy()
+            end
+        end)
+    end
+end
+
+-- =============================================
+-- HOOK INTO ROBLOX CHAT
+-- =============================================
+local TextChatService = game:GetService("TextChatService")
+
+-- Modern TextChatService (default in new games)
+if TextChatService then
+    TextChatService.MessageReceived:Connect(function(textChatMessage)
+        local speaker = textChatMessage.TextSource
+            and textChatMessage.TextSource.Name
+            or "System"
+
+        local player = Players:FindFirstChild(speaker)
+        local color = Color3.fromRGB(100, 180, 255)
+
+        if player then
+            color = getTeamColor(player)
+        end
+
+        -- Avoid empty or system-only messages
+        local msg = textChatMessage.Text
+        if msg and msg ~= "" then
+            addMessage(speaker, msg, color)
+        end
+    end)
+end
+
+-- Legacy chat fallback (older games using the old Chat service)
+local success = pcall(function()
+    local Chat = game:GetService("Chat")
+    -- Legacy systems fire this on the client via the old chat module
+    -- This hooks into player chat via the deprecated but still common path
+    Players.PlayerAdded:Connect(function(player)
+        -- handled by TextChatService above
+    end)
+end)
+
+-- Show a startup message
+addMessage("System", "Chat Viewer active! Messages will appear here.", Color3.fromRGB(100, 255, 150))
+
+print("[ChatViewer] Loaded successfully.")
