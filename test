@@ -1,4 +1,4 @@
--- test
+--test 2
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -45,7 +45,7 @@ local ANIMATION_IDS = {
     [" "] = "rbxassetid://114843861796790",
 }
 
-local ANIM_DURATION = 0.6 -- seconds each animation plays
+local ANIM_DURATION = 0.5 -- seconds each animation plays
 
 -- ============================================================
 --  PRE-LOAD ANIMATION OBJECTS
@@ -274,8 +274,16 @@ local function triggerPlay()
     end)
 end
 
+-- Method 1: FocusLost fires when Enter causes the textbox to lose focus
 textBox.FocusLost:Connect(function(enterPressed)
     if enterPressed then triggerPlay() end
+end)
+
+-- Method 2: Direct key listener while the textbox is focused (more reliable)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.Return and textBox:IsFocused() then
+        triggerPlay()
+    end
 end)
 
 playButton.MouseButton1Click:Connect(triggerPlay)
