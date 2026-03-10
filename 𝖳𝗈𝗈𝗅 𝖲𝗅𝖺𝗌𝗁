@@ -21,25 +21,41 @@ local animator = humanoid:WaitForChild("Animator")
 -- Ensure the character is R6
 humanoid.RigType = Enum.HumanoidRigType.R6
 -----------------------------
--- PLAY ANIMATION
+-- ANIMATION
 -----------------------------
-local function playAnimation()
-	if ANIMATION_ID == 0 then return end
+local track
+local animationPlaying = false
+
+local function loadAnimation(animationId)
+	if animationId == 0 then return nil end
 	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. ANIMATION_ID
-	local track = animator:LoadAnimation(anim)
-	track.Looped = true
-	track.Priority = Enum.AnimationPriority.Action
-	track:Play()
+	anim.AnimationId = "rbxassetid://" .. animationId
+	local t = animator:LoadAnimation(anim)
+	t.Looped = true
+	t.Priority = Enum.AnimationPriority.Action
+	return t
+end
+
+local function toggleAnimation()
+	if animationPlaying then
+		if track then track:Stop() end
+		animationPlaying = false
+	else
+		if track then track:Play() end
+		animationPlaying = true
+	end
 end
 -----------------------------
--- SPRINT INPUT
+-- INPUT
 -----------------------------
 humanoid.WalkSpeed = BASE_WALK_SPEED
 UserInputService.InputBegan:Connect(function(input, gp)
 	if gp then return end
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		humanoid.WalkSpeed = SPRINT_SPEED
+	end
+	if input.KeyCode == Enum.KeyCode.T then
+		toggleAnimation()
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
@@ -50,4 +66,4 @@ end)
 -----------------------------
 -- START
 -----------------------------
-playAnimation()
+track = loadAnimation(ANIMATION_ID)
