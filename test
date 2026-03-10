@@ -1,4 +1,4 @@
---test 3
+-- test 4
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -108,8 +108,8 @@ screenGui.Parent = player.PlayerGui
 -- Main frame
 local frame = Instance.new("Frame")
 frame.Name = "MainFrame"
-frame.Size = UDim2.new(0, 280, 0, 145)
-frame.Position = UDim2.new(0.5, -140, 1, -165)
+frame.Size = UDim2.new(0, 280, 0, 155)
+frame.Position = UDim2.new(0.5, -140, 1, -175)
 frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -215,20 +215,36 @@ local pbCorner = Instance.new("UICorner")
 pbCorner.CornerRadius = UDim.new(0, 6)
 pbCorner.Parent = playButton
 
+-- ── Stop button (left side of bottom row) ───────────────────
+local stopButton = Instance.new("TextButton")
+stopButton.Name = "StopButton"
+stopButton.Size = UDim2.new(0, 58, 0, 50)
+stopButton.Position = UDim2.new(0, 6, 0, 88)
+stopButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+stopButton.BorderSizePixel = 0
+stopButton.Text = "■ Stop"
+stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+stopButton.TextSize = 12
+stopButton.Font = Enum.Font.GothamBold
+stopButton.Parent = frame
+
+local sbCorner = Instance.new("UICorner")
+sbCorner.CornerRadius = UDim.new(0, 6)
+sbCorner.Parent = stopButton
+
 -- ============================================================
---  SPEED SLIDER  (replaces stop button)
+--  SPEED SLIDER  (right side of bottom row)
 -- ============================================================
--- Row: "Speed:" label  |  track  |  value label
-local TRACK_LEFT   = 52   -- px from left where track starts
-local TRACK_RIGHT  = 16   -- px from right where track ends
-local TRACK_W      = 280 - TRACK_LEFT - TRACK_RIGHT  -- ~212px
-local KNOB_SIZE    = 14
-local SLIDER_Y     = 90
+local SLIDER_X    = 70
+local SLIDER_END  = 274
+local TRACK_W     = SLIDER_END - SLIDER_X  -- 204px
+local KNOB_SIZE   = 14
+local SLIDER_Y    = 88
 
 -- "Speed:" label
 local speedLabel = Instance.new("TextLabel")
-speedLabel.Size = UDim2.new(0, TRACK_LEFT - 4, 0, 20)
-speedLabel.Position = UDim2.new(0, 4, 0, SLIDER_Y + 4)
+speedLabel.Size = UDim2.new(0, 44, 0, 14)
+speedLabel.Position = UDim2.new(0, SLIDER_X, 0, SLIDER_Y + 2)
 speedLabel.BackgroundTransparency = 1
 speedLabel.Text = "Speed:"
 speedLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
@@ -237,10 +253,10 @@ speedLabel.Font = Enum.Font.GothamBold
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 speedLabel.Parent = frame
 
--- Value label  e.g. "1.0s"
+-- Value label e.g. "1.0s"
 local speedValueLabel = Instance.new("TextLabel")
-speedValueLabel.Size = UDim2.new(0, TRACK_RIGHT + 8, 0, 20)
-speedValueLabel.Position = UDim2.new(1, -(TRACK_RIGHT + 10), 0, SLIDER_Y + 4)
+speedValueLabel.Size = UDim2.new(0, 34, 0, 14)
+speedValueLabel.Position = UDim2.new(0, SLIDER_END - 34, 0, SLIDER_Y + 2)
 speedValueLabel.BackgroundTransparency = 1
 speedValueLabel.Text = "1.0s"
 speedValueLabel.TextColor3 = Color3.fromRGB(240, 200, 100)
@@ -253,10 +269,11 @@ speedValueLabel.Parent = frame
 local sliderTrack = Instance.new("Frame")
 sliderTrack.Name = "SliderTrack"
 sliderTrack.Size = UDim2.new(0, TRACK_W, 0, 6)
-sliderTrack.Position = UDim2.new(0, TRACK_LEFT, 0, SLIDER_Y + 11)
+sliderTrack.Position = UDim2.new(0, SLIDER_X, 0, SLIDER_Y + 24)
 sliderTrack.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
 sliderTrack.BorderSizePixel = 0
 sliderTrack.Parent = frame
+
 
 local trackCorner = Instance.new("UICorner")
 trackCorner.CornerRadius = UDim.new(1, 0)
@@ -447,6 +464,19 @@ end)
 
 closeButton.MouseEnter:Connect(function() closeButton.BackgroundColor3 = Color3.fromRGB(230, 70, 70) end)
 closeButton.MouseLeave:Connect(function() closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50) end)
+
+-- Stop button
+stopButton.MouseButton1Click:Connect(function()
+    if isPlaying then
+        isPlaying = false
+        stopCurrentTrack()
+        statusLabel.Text = "⏹ Stopped."
+        playButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+    end
+end)
+
+stopButton.MouseEnter:Connect(function() stopButton.BackgroundColor3 = Color3.fromRGB(210, 70, 70) end)
+stopButton.MouseLeave:Connect(function() stopButton.BackgroundColor3 = Color3.fromRGB(180, 50, 50) end)
 
 -- ============================================================
 --  Handle character respawn
