@@ -22,7 +22,7 @@
 
 local SECRET_TAG    = "◈SC◈"                    -- Unique tag embedded in all SC messages.
                                                   -- Must be the same in every copy of the script.
-local TOGGLE_KEY    = Enum.KeyCode.Apostrophe    -- Hotkey to show / hide the SC window
+local TOGGLE_KEY    = Enum.KeyCode.P    -- Hotkey to show / hide the SC window
 local MAX_MESSAGES  = 50                          -- Max messages kept in the log
 local CHAT_CHANNEL  = "RBXGeneral"               -- Roblox channel used to carry SC messages
 
