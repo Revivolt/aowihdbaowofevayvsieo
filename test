@@ -1,290 +1,697 @@
---test
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║   Custom Roblox GUI  ·  Single LocalScript  ·  No Server Required   ║
+-- ║   Place in:  StarterPlayer > StarterPlayerScripts                    ║
+-- ║   Set Instance type to:  LocalScript                                 ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
+--[[
+    FEATURES
+    ─────────────────────────────────────────────────────────────────────
+    ☰  MENU         – FPS counter, Shift-Lock, Low Graphics, Hide Players,
+                      Nameplates, Reset Character, Rejoin, Leave, …
 
-local Players = game:GetService("Players")
-local TextChatService = game:GetService("TextChatService")
-local localPlayer = Players.LocalPlayer
+    💬  SERVER CHAT  – Echoes your messages locally. When OTHER players on
+                       the same server also run this script, their messages
+                       appear too (via a shared RemoteEvent auto-created at
+                       runtime — no pre-placed ServerScript required, but a
+                       server-side relay IS needed for cross-client delivery;
+                       see note at bottom).
 
--- =============================================
--- CONFIGURATION
--- =============================================
-local CONFIG = {
-    maxMessages     = 50,
-    messageLifetime = 0,       -- 0 = messages stay forever
-    fontSize        = 14,
-    bgTransparency  = 0.35,
-    position        = UDim2.new(0, 10, 0.5, 0),
-    size            = UDim2.new(0, 340, 0, 280),
-}
+    🌐  GLOBAL CHAT  – Cross-server chat via MessagingService.
+                       Requires a published game (not Studio solo-test).
 
--- =============================================
--- BUILD UI
--- =============================================
-local oldGui = localPlayer.PlayerGui:FindFirstChild("CustomChatViewer")
-if oldGui then oldGui:Destroy() end
+    🔔  NOTIFICATIONS – Slide-in toasts bottom-right.
+    ─────────────────────────────────────────────────────────────────────
+    Everything is in this ONE file.
+    NOTE: Roblox's security model means a LocalScript alone cannot relay
+    messages to OTHER clients. For full cross-player Server Chat, paste the
+    small relay block below into a Script in ServerScriptService:
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CustomChatViewer"
-screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 999
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = localPlayer.PlayerGui
-
-local frame = Instance.new("Frame")
-frame.Size = CONFIG.size
-frame.Position = CONFIG.position
-frame.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-frame.BackgroundTransparency = CONFIG.bgTransparency
-frame.BorderSizePixel = 0
-frame.Parent = screenGui
-
-local frameCorner = Instance.new("UICorner")
-frameCorner.CornerRadius = UDim.new(0, 8)
-frameCorner.Parent = frame
-
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 26)
-titleBar.BackgroundColor3 = Color3.fromRGB(25, 25, 90)
-titleBar.BackgroundTransparency = 0
-titleBar.BorderSizePixel = 0
-titleBar.ZIndex = 2
-titleBar.Parent = frame
-
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
-titleCorner.Parent = titleBar
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 1, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Chat Viewer"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 13
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.ZIndex = 3
-titleLabel.Parent = titleBar
-
--- Scroll frame
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -8, 1, -32)
-scrollFrame.Position = UDim2.new(0, 4, 0, 28)
-scrollFrame.BackgroundTransparency = 1
-scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 3
-scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 220)
-scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-scrollFrame.Parent = frame
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Padding = UDim.new(0, 2)
-listLayout.Parent = scrollFrame
-
-local listPadding = Instance.new("UIPadding")
-listPadding.PaddingLeft = UDim.new(0, 4)
-listPadding.PaddingRight = UDim.new(0, 6)
-listPadding.PaddingTop = UDim.new(0, 2)
-listPadding.Parent = scrollFrame
-
--- =============================================
--- DRAGGING
--- =============================================
-local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
-
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or
-       input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = frame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
+        local RS = game:GetService("ReplicatedStorage")
+        local folder = RS:WaitForChild("CGUIv1",10)
+        if not folder then return end
+        local re = folder:WaitForChild("LocalChat",10)
+        if not re then return end
+        re.OnServerEvent:Connect(function(player, msg)
+            if type(msg)~="string" then return end
+            msg = msg:sub(1,200)
+            for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+                re:FireClient(p, player.Name, msg)
             end
         end)
-    end
-end)
 
-titleBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or
-       input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
+    Without that relay, Server Chat works as a local echo only (you see
+    your own messages; Global Chat still works cross-server normally).
+]]
 
-game:GetService("UserInputService").InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end
-end)
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService")
+local MessagingService  = game:GetService("MessagingService")
+local StarterGui        = game:GetService("StarterGui")
 
--- =============================================
--- MESSAGE LOGIC
--- =============================================
-local msgCount = 0
-local msgRows = {}
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
-local nameColors = {
-    Color3.fromRGB(255, 180,  80),
-    Color3.fromRGB( 80, 200, 255),
-    Color3.fromRGB(180, 255, 120),
-    Color3.fromRGB(255, 120, 180),
-    Color3.fromRGB(180, 130, 255),
-    Color3.fromRGB(255, 230,  80),
+-- Hide default CoreGui
+StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+
+local GLOBAL_CHANNEL = "CGUIv1_GlobalChat"
+local SERVER_ID      = tostring(game.JobId):sub(1, 6)
+local MAX_LEN        = 200
+
+-- ════════════════════════════════════════════════════════════════════════
+--  THEME
+-- ════════════════════════════════════════════════════════════════════════
+local T = {
+    BG          = Color3.fromRGB(20,  20,  27),
+    BG2         = Color3.fromRGB(30,  30,  40),
+    BG3         = Color3.fromRGB(16,  16,  22),
+    ACCENT      = Color3.fromRGB(0,   155, 255),
+    ACCENT_GLOB = Color3.fromRGB(255, 130,  0),
+    TEXT        = Color3.fromRGB(235, 235, 240),
+    TEXT_DIM    = Color3.fromRGB(130, 130, 148),
+    BTN         = Color3.fromRGB(42,  42,  56),
+    BTN_HOV     = Color3.fromRGB(58,  58,  75),
+    SUCCESS     = Color3.fromRGB(55,  215, 115),
+    BORDER      = Color3.fromRGB(52,  52,  68),
+    RED         = Color3.fromRGB(215,  60,  60),
 }
-local playerColorMap = {}
-local colorIndex = 0
 
-local function getPlayerColor(name)
-    if not playerColorMap[name] then
-        colorIndex = (colorIndex % #nameColors) + 1
-        playerColorMap[name] = nameColors[colorIndex]
-    end
-    return playerColorMap[name]
+-- ════════════════════════════════════════════════════════════════════════
+--  UTILITY
+-- ════════════════════════════════════════════════════════════════════════
+local function new(class, props, parent)
+    local i = Instance.new(class)
+    for k, v in pairs(props or {}) do i[k] = v end
+    if parent then i.Parent = parent end
+    return i
 end
 
--- Deduplicate: track last few messages to avoid double-posting
-local recentMessages = {}
-local function isDuplicate(speaker, text)
-    local key = speaker .. "|" .. text
-    local now = tick()
-    for i = #recentMessages, 1, -1 do
-        local entry = recentMessages[i]
-        if now - entry.t > 1 then
-            table.remove(recentMessages, i)
-        elseif entry.key == key then
-            return true
-        end
-    end
-    table.insert(recentMessages, { key = key, t = now })
-    return false
+local function corner(obj, r)
+    return new("UICorner", {CornerRadius = UDim.new(0, r or 8)}, obj)
 end
 
-local function addMessage(speaker, message)
-    if not message or message:match("^%s*$") then return end
-    if isDuplicate(speaker, message) then return end
-
-    msgCount += 1
-    local color = getPlayerColor(speaker)
-
-    local row = Instance.new("Frame")
-    row.Name = "Row_" .. msgCount
-    row.Size = UDim2.new(1, 0, 0, 0)
-    row.AutomaticSize = Enum.AutomaticSize.Y
-    row.BackgroundTransparency = 1
-    row.LayoutOrder = msgCount
-    row.Parent = scrollFrame
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 0, 0)
-    label.AutomaticSize = Enum.AutomaticSize.Y
-    label.BackgroundTransparency = 1
-    label.TextSize = CONFIG.fontSize
-    label.Font = Enum.Font.Gotham
-    label.TextWrapped = true
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.RichText = true
-    -- Escape any rich text characters from user input
-    local safeMsg = message:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
-    label.Text = string.format(
-        '<font color="rgb(%d,%d,%d)"><b>%s:</b></font> <font color="rgb(210,210,210)">%s</font>',
-        math.floor(color.R * 255),
-        math.floor(color.G * 255),
-        math.floor(color.B * 255),
-        speaker,
-        safeMsg
-    )
-    label.Parent = row
-
-    table.insert(msgRows, row)
-
-    while #msgRows > CONFIG.maxMessages do
-        local old = table.remove(msgRows, 1)
-        if old then old:Destroy() end
-    end
-
-    task.defer(function()
-        scrollFrame.CanvasPosition = Vector2.new(0, math.huge)
-    end)
-
-    if CONFIG.messageLifetime > 0 then
-        task.delay(CONFIG.messageLifetime, function()
-            if row.Parent then row:Destroy() end
-        end)
-    end
+local function stroke(obj, col, thick)
+    return new("UIStroke", {Color = col or T.BORDER, Thickness = thick or 1}, obj)
 end
 
--- =============================================
--- METHOD 1: Hook each TextChannel directly
--- (Most reliable for modern Roblox chat)
--- =============================================
-local function hookTextChannel(channel)
-    channel.MessageReceived:Connect(function(msg)
-        local speaker = (msg.TextSource and msg.TextSource.Name) or "Unknown"
-        local text = msg.Text
-        if text and text ~= "" then
-            addMessage(speaker, text)
-        end
-    end)
+local function pad(obj, px)
+    local p  = new("UIPadding", {}, obj)
+    local u  = UDim.new(0, px)
+    p.PaddingLeft, p.PaddingRight = u, u
+    p.PaddingTop,  p.PaddingBottom = u, u
 end
+
+local function tw(obj, props, t)
+    TweenService:Create(obj, TweenInfo.new(t or 0.17, Enum.EasingStyle.Quad), props):Play()
+end
+
+local function hover(btn, norm, hov)
+    btn.MouseEnter:Connect(function() tw(btn, {BackgroundColor3 = hov})  end)
+    btn.MouseLeave:Connect(function() tw(btn, {BackgroundColor3 = norm}) end)
+end
+
+-- ════════════════════════════════════════════════════════════════════════
+--  REMOTE SETUP  (shared folder in ReplicatedStorage)
+-- ════════════════════════════════════════════════════════════════════════
+local LocalChatRemote = nil
 
 task.spawn(function()
-    -- Wait up to 10 seconds for TextChannels to exist
-    local channelFolder = TextChatService:WaitForChild("TextChannels", 10)
-    if not channelFolder then
-        addMessage("System", "Warning: TextChannels not found.")
-        return
+    local folder = ReplicatedStorage:FindFirstChild("CGUIv1")
+    if not folder then
+        folder = new("Folder", {Name = "CGUIv1"}, ReplicatedStorage)
     end
-
-    -- Hook all existing channels (RBXGeneral, team channels, etc.)
-    for _, ch in ipairs(channelFolder:GetChildren()) do
-        if ch:IsA("TextChannel") then
-            hookTextChannel(ch)
-        end
+    local re = folder:FindFirstChild("LocalChat")
+    if not re then
+        re = new("RemoteEvent", {Name = "LocalChat"}, folder)
     end
+    LocalChatRemote = re
 
-    -- Hook channels added later (team channels spawn dynamically)
-    channelFolder.ChildAdded:Connect(function(ch)
-        if ch:IsA("TextChannel") then
-            hookTextChannel(ch)
-        end
+    -- Listen for server-relayed messages from other players
+    re.OnClientEvent:Connect(function(sender, msg)
+        if type(sender) ~= "string" or type(msg) ~= "string" then return end
+        if sender == LocalPlayer.Name then return end  -- skip own echo
+        _G._CGUIAddLocal(sender, msg)
     end)
 end)
 
--- =============================================
--- METHOD 2: TextChatService.MessageReceived
--- (Backup — fires for all messages service-wide)
--- =============================================
-TextChatService.MessageReceived:Connect(function(msg)
-    local speaker = (msg.TextSource and msg.TextSource.Name) or "Unknown"
-    local text = msg.Text
-    if text and text ~= "" then
-        addMessage(speaker, text)
-    end
-end)
+-- ════════════════════════════════════════════════════════════════════════
+--  ROOT GUI
+-- ════════════════════════════════════════════════════════════════════════
+local Root = new("ScreenGui", {
+    Name           = "CustomRobloxGUI",
+    ResetOnSpawn   = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    DisplayOrder   = 999,
+}, PlayerGui)
 
--- =============================================
--- METHOD 3: Legacy Player.Chatted
--- (Fallback for older games not using TextChatService)
--- =============================================
-local function hookPlayerChatted(player)
-    player.Chatted:Connect(function(msg)
-        addMessage(player.Name, msg)
+-- ════════════════════════════════════════════════════════════════════════
+--  TOP BAR  (mirrors native Roblox pill)
+-- ════════════════════════════════════════════════════════════════════════
+local TopBar = new("Frame", {
+    Size                   = UDim2.new(0, 156, 0, 44),
+    Position               = UDim2.new(0, 8, 0, 8),
+    BackgroundColor3       = Color3.fromRGB(0, 0, 0),
+    BackgroundTransparency = 0.28,
+}, Root)
+corner(TopBar, 12)
+stroke(TopBar, Color3.fromRGB(65, 65, 82), 1)
+new("UIGradient", {
+    Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 52, 68)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 26)),
+    },
+    Rotation = 90,
+}, TopBar)
+new("UIListLayout", {
+    FillDirection       = Enum.FillDirection.Horizontal,
+    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+    VerticalAlignment   = Enum.VerticalAlignment.Center,
+    Padding             = UDim.new(0, 2),
+}, TopBar)
+pad(TopBar, 6)
+
+local function topBtn(name, icon, tip)
+    local b = new("TextButton", {
+        Name                   = name,
+        Size                   = UDim2.new(0, 36, 0, 36),
+        BackgroundColor3       = T.BTN,
+        BackgroundTransparency = 0.85,
+        Text                   = icon,
+        TextColor3             = T.TEXT,
+        TextSize               = 20,
+        Font                   = Enum.Font.GothamBold,
+        AutoButtonColor        = false,
+    }, TopBar)
+    corner(b, 8)
+    b.MouseEnter:Connect(function() tw(b, {BackgroundTransparency = 0.42}) end)
+    b.MouseLeave:Connect(function() tw(b, {BackgroundTransparency = 0.85}) end)
+
+    if tip then
+        local tt = new("TextLabel", {
+            Size                   = UDim2.new(0, 0, 0, 24),
+            AutomaticSize          = Enum.AutomaticSize.X,
+            Position               = UDim2.new(0.5, 0, 1, 6),
+            AnchorPoint            = Vector2.new(0.5, 0),
+            BackgroundColor3       = Color3.fromRGB(0, 0, 0),
+            BackgroundTransparency = 0.3,
+            Text                   = "  " .. tip .. "  ",
+            TextColor3             = T.TEXT,
+            TextSize               = 11,
+            Font                   = Enum.Font.Gotham,
+            Visible                = false,
+            ZIndex                 = 20,
+        }, b)
+        corner(tt, 4)
+        b.MouseEnter:Connect(function() tt.Visible = true  end)
+        b.MouseLeave:Connect(function() tt.Visible = false end)
+    end
+    return b
+end
+
+local BtnMenu   = topBtn("Menu",   "☰",  "Menu")
+local BtnChat   = topBtn("Chat",   "💬", "Server Chat")
+local BtnGlobal = topBtn("Global", "🌐", "Global Chat")
+
+-- ════════════════════════════════════════════════════════════════════════
+--  PANEL FACTORY
+-- ════════════════════════════════════════════════════════════════════════
+local function makePanel(name, w, h, title, accent)
+    local p = new("Frame", {
+        Name             = name,
+        Size             = UDim2.new(0, w, 0, h),
+        Position         = UDim2.new(0, 8, 0, 60),
+        BackgroundColor3 = T.BG,
+        Visible          = false,
+        ClipsDescendants = true,
+        ZIndex           = 5,
+    }, Root)
+    corner(p, 12)
+    stroke(p, T.BORDER, 1)
+
+    -- Header
+    local hdr = new("Frame", {Size=UDim2.new(1,0,0,44), BackgroundColor3=T.BG2, ZIndex=6}, p)
+    corner(hdr, 12)
+    new("Frame", {Size=UDim2.new(1,0,0,12), Position=UDim2.new(0,0,1,-12),
+        BackgroundColor3=T.BG2, BorderSizePixel=0, ZIndex=6}, hdr)
+
+    local strip = new("Frame", {
+        Size=UDim2.new(0,3,1,-16), Position=UDim2.new(0,8,0.5,0),
+        AnchorPoint=Vector2.new(0,0.5), BackgroundColor3=accent or T.ACCENT,
+        BorderSizePixel=0, ZIndex=7,
+    }, hdr)
+    corner(strip, 2)
+
+    new("TextLabel", {
+        Size=UDim2.new(1,-80,1,0), Position=UDim2.new(0,18,0,0),
+        BackgroundTransparency=1, Text=title, TextColor3=T.TEXT,
+        TextSize=14, Font=Enum.Font.GothamBold,
+        TextXAlignment=Enum.TextXAlignment.Left, ZIndex=7,
+    }, hdr)
+
+    local close = new("TextButton", {
+        Size=UDim2.new(0,28,0,28), Position=UDim2.new(1,-36,0.5,-14),
+        BackgroundColor3=T.RED, Text="✕", TextColor3=T.TEXT,
+        TextSize=12, Font=Enum.Font.GothamBold, AutoButtonColor=false, ZIndex=8,
+    }, hdr)
+    corner(close, 7)
+    hover(close, T.RED, Color3.fromRGB(255, 88, 88))
+    close.MouseButton1Click:Connect(function() p.Visible = false end)
+
+    return p
+end
+
+-- ════════════════════════════════════════════════════════════════════════
+--  NOTIFICATION SYSTEM  (defined early so menu items can use it)
+-- ════════════════════════════════════════════════════════════════════════
+local notifEnabled = true
+local nQueue = {}
+local nBusy  = false
+
+local function showNotif(title, body, color)
+    if not notifEnabled then return end
+    table.insert(nQueue, {title=title, body=body, color=color or T.ACCENT})
+    if nBusy then return end
+    nBusy = true
+    task.spawn(function()
+        while #nQueue > 0 do
+            local n = table.remove(nQueue, 1)
+            local box = new("Frame", {
+                Size=UDim2.new(0,265,0,64), Position=UDim2.new(1,10,1,-72),
+                AnchorPoint=Vector2.new(1,1), BackgroundColor3=T.BG2, ZIndex=60,
+            }, Root)
+            corner(box, 10); stroke(box, n.color, 1)
+            new("Frame", {Size=UDim2.new(0,4,1,-12), Position=UDim2.new(0,0,0,6),
+                BackgroundColor3=n.color, BorderSizePixel=0, ZIndex=61}, box)
+            new("TextLabel", {Size=UDim2.new(1,-12,0,20), Position=UDim2.new(0,10,0,6),
+                BackgroundTransparency=1, Text=n.title, TextColor3=n.color,
+                TextSize=13, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Left, ZIndex=61}, box)
+            new("TextLabel", {Size=UDim2.new(1,-12,0,26), Position=UDim2.new(0,10,0,26),
+                BackgroundTransparency=1, Text=n.body, TextColor3=T.TEXT_DIM,
+                TextSize=11, Font=Enum.Font.Gotham, TextWrapped=true,
+                TextXAlignment=Enum.TextXAlignment.Left, ZIndex=61}, box)
+            tw(box, {Position=UDim2.new(1,-8,1,-72)}, 0.22)
+            task.wait(3.2)
+            tw(box, {Position=UDim2.new(1,280,1,-72)}, 0.22)
+            task.wait(0.26); box:Destroy(); task.wait(0.1)
+        end
+        nBusy = false
     end)
 end
 
-for _, player in ipairs(Players:GetPlayers()) do
-    hookPlayerChatted(player)
-end
-Players.PlayerAdded:Connect(hookPlayerChatted)
+-- ════════════════════════════════════════════════════════════════════════
+--  MENU PANEL
+-- ════════════════════════════════════════════════════════════════════════
+local MenuPanel = makePanel("MenuPanel", 260, 408, "  ⚙   Menu", T.ACCENT)
 
--- =============================================
--- STARTUP
--- =============================================
-addMessage("System", "Chat Viewer ready. All messages will appear here.")
-print("[ChatViewer] Loaded. Hooked TextChannels + TextChatService + legacy Chatted.")
+local mScroll = new("ScrollingFrame", {
+    Size=UDim2.new(1,0,1,-50), Position=UDim2.new(0,0,0,50),
+    BackgroundTransparency=1, ScrollBarThickness=4,
+    ScrollBarImageColor3=T.ACCENT, CanvasSize=UDim2.new(0,0,0,0),
+    AutomaticCanvasSize=Enum.AutomaticSize.Y,
+    ElasticBehavior=Enum.ElasticBehavior.Never, ZIndex=6,
+}, MenuPanel)
+pad(mScroll, 8)
+new("UIListLayout", {Padding=UDim.new(0,5), SortOrder=Enum.SortOrder.LayoutOrder}, mScroll)
+
+local function secLabel(text, ord)
+    new("TextLabel", {
+        Size=UDim2.new(1,0,0,20), BackgroundTransparency=1,
+        Text=text, TextColor3=T.TEXT_DIM, TextSize=10,
+        Font=Enum.Font.GothamBold, TextXAlignment=Enum.TextXAlignment.Left,
+        LayoutOrder=ord, ZIndex=7,
+    }, mScroll)
+end
+
+local function mToggle(label, icon, ord, default, cb)
+    local row = new("Frame", {
+        Size=UDim2.new(1,0,0,40), BackgroundColor3=T.BG2, LayoutOrder=ord, ZIndex=6,
+    }, mScroll)
+    corner(row, 8); stroke(row, T.BORDER)
+
+    new("TextLabel", {Size=UDim2.new(0,32,1,0), Position=UDim2.new(0,8,0,0),
+        BackgroundTransparency=1, Text=icon, TextSize=18, Font=Enum.Font.Gotham, ZIndex=7}, row)
+    new("TextLabel", {Size=UDim2.new(1,-88,1,0), Position=UDim2.new(0,44,0,0),
+        BackgroundTransparency=1, Text=label, TextColor3=T.TEXT,
+        TextSize=13, Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=7}, row)
+
+    local pill = new("TextButton", {
+        Size=UDim2.new(0,44,0,22), Position=UDim2.new(1,-52,0.5,-11),
+        BackgroundColor3=default and T.ACCENT or T.BTN,
+        Text="", AutoButtonColor=false, ZIndex=7,
+    }, row)
+    corner(pill, 11)
+
+    local knob = new("Frame", {
+        Size=UDim2.new(0,16,0,16),
+        Position=default and UDim2.new(1,-19,0.5,-8) or UDim2.new(0,3,0.5,-8),
+        BackgroundColor3=Color3.new(1,1,1), ZIndex=8,
+    }, pill)
+    corner(knob, 8)
+
+    local state = default or false
+    pill.MouseButton1Click:Connect(function()
+        state = not state
+        tw(pill, {BackgroundColor3 = state and T.ACCENT or T.BTN})
+        tw(knob, {Position = state and UDim2.new(1,-19,0.5,-8) or UDim2.new(0,3,0.5,-8)})
+        if cb then cb(state) end
+    end)
+end
+
+local function mBtn(label, icon, ord, cb)
+    local b = new("TextButton", {
+        Size=UDim2.new(1,0,0,40), BackgroundColor3=T.BG2,
+        Text="", AutoButtonColor=false, LayoutOrder=ord, ZIndex=6,
+    }, mScroll)
+    corner(b, 8); stroke(b, T.BORDER); hover(b, T.BG2, T.BTN_HOV)
+
+    new("TextLabel", {Size=UDim2.new(0,32,1,0), Position=UDim2.new(0,8,0,0),
+        BackgroundTransparency=1, Text=icon, TextSize=18, Font=Enum.Font.Gotham, ZIndex=7}, b)
+    new("TextLabel", {Size=UDim2.new(1,-50,1,0), Position=UDim2.new(0,44,0,0),
+        BackgroundTransparency=1, Text=label, TextColor3=T.TEXT,
+        TextSize=13, Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=7}, b)
+
+    b.MouseButton1Click:Connect(function() if cb then cb() end end)
+end
+
+-- FPS overlay
+local fpsOn  = false
+local fpsLbl = new("TextLabel", {
+    Size=UDim2.new(0,90,0,26), Position=UDim2.new(1,-98,0,8),
+    BackgroundColor3=Color3.fromRGB(0,0,0), BackgroundTransparency=0.4,
+    Text="FPS: --", TextColor3=T.SUCCESS, TextSize=13,
+    Font=Enum.Font.GothamBold, Visible=false, ZIndex=10,
+}, Root)
+corner(fpsLbl, 7); pad(fpsLbl, 6)
+do
+    local fc, lt = 0, tick()
+    RunService.RenderStepped:Connect(function()
+        fc += 1
+        local now = tick()
+        if now - lt >= 1 then
+            fpsLbl.Text    = ("FPS: %d"):format(fc)
+            fpsLbl.Visible = fpsOn
+            fc, lt = 0, now
+        end
+    end)
+end
+
+-- ── Menu items ────────────────────────────────────────────────────────────
+secLabel("DISPLAY", 10)
+mToggle("FPS Counter",         "📊", 11, false, function(v) fpsOn = v end)
+mToggle("Shift-Lock",          "🔒", 12, false, function(v)
+    LocalPlayer.DevEnableMouseLock = v
+end)
+mToggle("Show Notifications",  "🔔", 13, true,  function(v) notifEnabled = v end)
+
+secLabel("PLAYER", 20)
+mBtn("Reset Character", "🔄", 21, function()
+    local h = LocalPlayer.Character
+          and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if h then h.Health = 0 end
+end)
+mBtn("Toggle Nameplate", "🏷", 22, function()
+    local head = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+    if head then
+        for _, b in ipairs(head:GetChildren()) do
+            if b:IsA("BillboardGui") then b.Enabled = not b.Enabled end
+        end
+    end
+end)
+mBtn("Show User ID", "🪪", 23, function()
+    showNotif("Your User ID", tostring(LocalPlayer.UserId), T.ACCENT)
+end)
+
+secLabel("PERFORMANCE", 30)
+mToggle("Low Graphics Mode",  "🖥", 31, false, function(v)
+    game:GetService("Lighting").GlobalShadows = not v
+    settings().Rendering.QualityLevel = v and 1 or 10
+end)
+mToggle("Hide Other Players", "👤", 32, false, function(v)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            p.Character.Parent = v and nil or workspace
+        end
+    end
+end)
+
+secLabel("GAME", 40)
+mBtn("Rejoin Server",   "🔁", 41, function()
+    game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+end)
+mBtn("Leave to Roblox", "🚪", 42, function()
+    game:GetService("TeleportService"):Teleport(1818)
+end)
+
+-- ════════════════════════════════════════════════════════════════════════
+--  CHAT PANEL BUILDER
+-- ════════════════════════════════════════════════════════════════════════
+local colorPalette = {
+    Color3.fromRGB(0,162,255), Color3.fromRGB(255,80,80),
+    Color3.fromRGB(80,220,80), Color3.fromRGB(255,200,0),
+    Color3.fromRGB(200,100,255), Color3.fromRGB(255,140,40),
+    Color3.fromRGB(0,220,200),  Color3.fromRGB(255,80,180),
+}
+local colorMap, colorIdx = {}, 0
+
+local function nameColor(name)
+    if not colorMap[name] then
+        colorIdx = (colorIdx % #colorPalette) + 1
+        colorMap[name] = colorPalette[colorIdx]
+    end
+    return colorMap[name]
+end
+
+local function makeChatPanel(name, w, h, title, accent, placeholder)
+    local panel = makePanel(name, w, h, title, accent)
+
+    local scroll = new("ScrollingFrame", {
+        Size=UDim2.new(1,-4,1,-100), Position=UDim2.new(0,2,0,50),
+        BackgroundTransparency=1, ScrollBarThickness=4,
+        ScrollBarImageColor3=accent, CanvasSize=UDim2.new(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y,
+        ElasticBehavior=Enum.ElasticBehavior.Never, ZIndex=6,
+    }, panel)
+    new("UIListLayout", {Padding=UDim.new(0,3), SortOrder=Enum.SortOrder.LayoutOrder}, scroll)
+    pad(scroll, 8)
+
+    local bar = new("Frame", {
+        Size=UDim2.new(1,0,0,46), Position=UDim2.new(0,0,1,-46),
+        BackgroundColor3=T.BG2, ZIndex=6,
+    }, panel)
+    new("Frame", {Size=UDim2.new(1,0,0,1), BackgroundColor3=T.BORDER,
+        BorderSizePixel=0, ZIndex=7}, bar)
+
+    local box = new("TextBox", {
+        Size=UDim2.new(1,-54,1,-12), Position=UDim2.new(0,6,0,6),
+        BackgroundColor3=T.BG3, TextColor3=T.TEXT,
+        PlaceholderText=placeholder or "Type a message…",
+        PlaceholderColor3=T.TEXT_DIM, Text="", TextSize=13,
+        Font=Enum.Font.Gotham, ClearTextOnFocus=false,
+        TextXAlignment=Enum.TextXAlignment.Left, ZIndex=7,
+    }, bar)
+    corner(box, 7); pad(box, 8)
+
+    local send = new("TextButton", {
+        Size=UDim2.new(0,38,0,34), Position=UDim2.new(1,-44,0,6),
+        BackgroundColor3=accent, Text="➤", TextColor3=T.TEXT,
+        TextSize=16, Font=Enum.Font.GothamBold, AutoButtonColor=false, ZIndex=7,
+    }, bar)
+    corner(send, 7)
+    hover(send, accent, accent:Lerp(Color3.new(1,1,1), 0.18))
+
+    local msgN = 0
+    local function addMsg(sender, text, isSystem)
+        msgN += 1
+        local col = isSystem and T.TEXT_DIM or nameColor(sender or "?")
+
+        local bubble = new("Frame", {
+            Name=("M%d"):format(msgN), Size=UDim2.new(1,0,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y, BackgroundColor3=T.BG2,
+            BackgroundTransparency=isSystem and 1 or 0,
+            LayoutOrder=msgN, ZIndex=6,
+        }, scroll)
+        corner(bubble, 6)
+
+        local inner = new("Frame", {
+            Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1, ZIndex=7,
+        }, bubble)
+        pad(inner, 5)
+        new("UIListLayout", {Padding=UDim.new(0,1)}, inner)
+
+        if not isSystem then
+            local nr = new("Frame", {Size=UDim2.new(1,0,0,16), BackgroundTransparency=1, ZIndex=7}, inner)
+            new("Frame", {Size=UDim2.new(0,3,1,-4), Position=UDim2.new(0,0,0,2),
+                BackgroundColor3=col, BorderSizePixel=0, ZIndex=8}, nr)
+            new("TextLabel", {Size=UDim2.new(1,-8,1,0), Position=UDim2.new(0,8,0,0),
+                BackgroundTransparency=1, Text=sender, TextColor3=col,
+                TextSize=11, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Left, ZIndex=8}, nr)
+        end
+
+        new("TextLabel", {
+            Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1, Text=text,
+            TextColor3=isSystem and T.TEXT_DIM or T.TEXT,
+            TextSize=13, Font=isSystem and Enum.Font.GothamItalic or Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left, TextWrapped=true, ZIndex=7,
+        }, inner)
+
+        task.defer(function() scroll.CanvasPosition = Vector2.new(0, math.huge) end)
+
+        -- Prune to 60 messages
+        local all = {}
+        for _, c in ipairs(scroll:GetChildren()) do
+            if c:IsA("Frame") then all[#all+1] = c end
+        end
+        if #all > 60 then
+            table.sort(all, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+            all[1]:Destroy()
+        end
+    end
+
+    return panel, box, send, addMsg
+end
+
+-- ════════════════════════════════════════════════════════════════════════
+--  SERVER CHAT PANEL
+-- ════════════════════════════════════════════════════════════════════════
+local ChatPanel, chatBox, chatSend, addLocal =
+    makeChatPanel("ChatPanel", 308, 415,
+        "  💬  Server Chat", T.ACCENT, "Message players on this server…")
+
+addLocal(nil, "📡  Visible to other players on this server running the same script.", true)
+addLocal(nil, "─────────────────────────────", true)
+
+-- Expose so the RemoteEvent listener (created at top) can call it
+_G._CGUIAddLocal = addLocal
+
+local lastLocal = 0
+local function doLocalSend()
+    local msg = chatBox.Text:match("^%s*(.-)%s*$")
+    if msg == "" then return end
+    local now = tick()
+    if now - lastLocal < 1 then return end
+    lastLocal = now
+    chatBox.Text = ""
+    msg = msg:sub(1, MAX_LEN)
+
+    -- Always echo to self immediately
+    addLocal(LocalPlayer.Name, msg)
+
+    -- Try to relay through server (only works if relay Script is present)
+    if LocalChatRemote then
+        pcall(function() LocalChatRemote:FireServer(msg) end)
+    end
+end
+
+chatSend.MouseButton1Click:Connect(doLocalSend)
+chatBox.FocusLost:Connect(function(enter) if enter then doLocalSend() end end)
+
+-- ════════════════════════════════════════════════════════════════════════
+--  GLOBAL CHAT PANEL  (MessagingService — published games only)
+-- ════════════════════════════════════════════════════════════════════════
+local GlobalPanel, globalBox, globalSend, addGlobal =
+    makeChatPanel("GlobalPanel", 308, 415,
+        "  🌐  Global Chat", T.ACCENT_GLOB, "Message players across all servers…")
+
+addGlobal(nil, "🌐  Chat with everyone using this script across all servers.", true)
+addGlobal(nil, "⚠  Requires a published game — not available in Studio test.", true)
+addGlobal(nil, "─────────────────────────────", true)
+
+-- Subscribe to cross-server messages
+task.spawn(function()
+    local ok, err = pcall(function()
+        MessagingService:SubscribeAsync(GLOBAL_CHANNEL, function(data)
+            local p = data.Data
+            if type(p) ~= "table" then return end
+            if type(p.sender) ~= "string" or type(p.msg) ~= "string" then return end
+            local prefix = p.sid and ("[" .. p.sid .. "] ") or ""
+            addGlobal(prefix .. p.sender, p.msg:sub(1, MAX_LEN))
+        end)
+    end)
+    if not ok then
+        addGlobal(nil, "⚠ MessagingService unavailable: " .. tostring(err), true)
+    end
+end)
+
+local lastGlobal = 0
+local function doGlobalSend()
+    local msg = globalBox.Text:match("^%s*(.-)%s*$")
+    if msg == "" then return end
+    local now = tick()
+    if now - lastGlobal < 1.5 then return end
+    lastGlobal = now
+    globalBox.Text = ""
+    msg = msg:sub(1, MAX_LEN)
+
+    -- Echo self immediately
+    addGlobal("[" .. SERVER_ID .. "] " .. LocalPlayer.Name, msg)
+
+    -- Publish cross-server
+    task.spawn(function()
+        local ok, err = pcall(function()
+            MessagingService:PublishAsync(GLOBAL_CHANNEL, {
+                sender = LocalPlayer.Name,
+                msg    = msg,
+                sid    = SERVER_ID,
+            })
+        end)
+        if not ok then
+            addGlobal(nil, "⚠ Send failed: " .. tostring(err), true)
+        end
+    end)
+end
+
+globalSend.MouseButton1Click:Connect(doGlobalSend)
+globalBox.FocusLost:Connect(function(enter) if enter then doGlobalSend() end end)
+
+-- Notify when global message arrives with panel closed
+task.spawn(function()
+    pcall(function()
+        MessagingService:SubscribeAsync(GLOBAL_CHANNEL .. "_notif", function(data)
+            local p = data.Data
+            if type(p) ~= "table" then return end
+            if not GlobalPanel.Visible then
+                local prefix = p.sid and ("[" .. p.sid .. "] ") or ""
+                showNotif("Global · " .. (p.sender or "?"),
+                    (prefix .. (p.msg or "")):sub(1, 60), T.ACCENT_GLOB)
+            end
+        end)
+    end)
+end)
+
+-- ════════════════════════════════════════════════════════════════════════
+--  PANEL TOGGLE
+-- ════════════════════════════════════════════════════════════════════════
+local panels = {
+    {btn = BtnMenu,   panel = MenuPanel},
+    {btn = BtnChat,   panel = ChatPanel},
+    {btn = BtnGlobal, panel = GlobalPanel},
+}
+
+local function setTint(btn, on)
+    tw(btn, {BackgroundTransparency = on and 0.42 or 0.85})
+end
+
+for _, e in ipairs(panels) do
+    e.btn.MouseButton1Click:Connect(function()
+        local opening = not e.panel.Visible
+        for _, x in ipairs(panels) do
+            x.panel.Visible = false
+            setTint(x.btn, false)
+        end
+        e.panel.Visible = opening
+        setTint(e.btn, opening)
+    end)
+end
+
+-- Welcome toast
+task.delay(0.8, function()
+    showNotif("Custom GUI Loaded ✓", "Tap ☰  💬  🌐 to get started.")
+end)
+
+print("[CustomGUI] Loaded for", LocalPlayer.Name)
