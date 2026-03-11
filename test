@@ -1,94 +1,106 @@
 --[[
     ╔══════════════════════════════════════════════════════════╗
-    ║               SECRET CHAT — LocalScript                  ║
+    ║               SECRET CHAT  —  LocalScript v2            ║
     ║  Only players running this exact script can communicate  ║
     ╚══════════════════════════════════════════════════════════╝
 
-    HOW IT WORKS:
-    • When loaded, this script places a hidden "handshake" StringValue
-      inside your Character that replicates to all other clients.
-    • Other players also running this script detect that value and
-      know you're in the secret channel.
-    • Messages are sent by updating a second StringValue in your
-      Character — changes replicate instantly to everyone watching.
-    • Players NOT running this script see nothing unusual.
+    HOW IT WORKS (v2 — uses the chat system for replication):
+    ─────────────────────────────────────────────────────────
+    Roblox LocalScript-created objects do NOT replicate to
+    other clients.  The only thing that does replicate between
+    clients without a ServerScript is the chat system.
+
+    This script uses Roblox's chat as a transport layer:
+
+    • On load it broadcasts a special handshake chat message.
+    • Other running copies detect the handshake, mark you as
+      "verified", and reply with their own handshake so you
+      can discover each other.
+    • Real messages are sent as chat messages with an invisible-
+      looking prefix.  Only script users see them decoded in
+      the private UI window; everyone else sees the raw prefix
+      string in regular chat (a known tradeoff of LocalScript-
+      only solutions — no ServerScript = no secret transport).
 
     USAGE:
-    • Press Enter or click Send to chat.
-    • Press Ctrl+H (or the [─] button) to hide/show the window.
-    • Drag the title bar to reposition the window.
+    • Type in the secret window and press Enter / Send.
+    • Press Ctrl+H or click [─] to hide/show the window.
+    • Drag the title bar to move the window.
+    • The window shows how many other script users are online.
+
+    NOTE:  All three CONFIG values must be IDENTICAL in every
+    copy of the script for players to recognise each other.
 --]]
 
 -- ─────────────────────────────────────────────
---  CONFIG  (all values must be identical in every copy of the script)
+--  CONFIG  ← must be the same in every copy
 -- ─────────────────────────────────────────────
-local HANDSHAKE_TAG  = "__SC_hs_a9f3c2__"   -- hidden value name placed in Character
-local MESSAGE_TAG    = "__SC_msg_a9f3c2__"   -- hidden value name used to broadcast messages
-local HANDSHAKE_VAL  = "SC_AUTH_v1_a9f3c2"  -- secret token — must match exactly
-local WINDOW_TITLE   = "🔒 Secret Chat"
+local SECRET       = "SC_v2_a9f3c2xK"   -- shared secret token
+local WINDOW_TITLE = "🔒 Secret Chat"
+
+-- Internal prefixes derived from the secret (don't touch)
+local HS_MSG  = "❮HS❯" .. SECRET .. "❮❯"   -- handshake broadcast
+local MSG_PFX = "❮SC❯" .. SECRET .. "❮❯"   -- secret message prefix
 
 -- ─────────────────────────────────────────────
---  SERVICES & LOCALS
+--  SERVICES
 -- ─────────────────────────────────────────────
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local TextChatService  = game:GetService("TextChatService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ─────────────────────────────────────────────
---  UTILITIES
+--  SEND A CHAT MESSAGE (supports both chat systems)
 -- ─────────────────────────────────────────────
-local function waitForChildTimeout(parent, name, timeout)
-    local t = 0
-    while t < timeout do
-        local child = parent:FindFirstChild(name)
-        if child then return child end
-        task.wait(0.1)
-        t = t + 0.1
+local generalChannel  -- cached TextChannel for new chat system
+
+local function findGeneralChannel()
+    local tcs = TextChatService
+    -- New system: TextChannels folder
+    local channelsFolder = tcs:FindFirstChild("TextChannels")
+    if channelsFolder then
+        for _, ch in ipairs(channelsFolder:GetChildren()) do
+            if ch:IsA("TextChannel") then
+                generalChannel = ch
+                return ch
+            end
+        end
     end
     return nil
 end
 
--- ─────────────────────────────────────────────
---  INJECT HANDSHAKE & MESSAGE VALUE INTO OWN CHARACTER
--- ─────────────────────────────────────────────
-local activeMsgValue  -- StringValue used to broadcast outgoing messages
-
-local function injectIntoCharacter(char)
-    if not char:FindFirstChild(HANDSHAKE_TAG) then
-        local hs  = Instance.new("StringValue")
-        hs.Name   = HANDSHAKE_TAG
-        hs.Value  = HANDSHAKE_VAL
-        hs.Parent = char
+local function sendChat(text)
+    -- Try new TextChatService path first
+    local ch = generalChannel or findGeneralChannel()
+    if ch then
+        local ok = pcall(function() ch:SendAsync(text) end)
+        if ok then return end
     end
-
-    -- Replace any old message value
-    local old = char:FindFirstChild(MESSAGE_TAG)
-    if old then old:Destroy() end
-
-    local mv      = Instance.new("StringValue")
-    mv.Name       = MESSAGE_TAG
-    mv.Value      = ""
-    mv.Parent     = char
-    activeMsgValue = mv
+    -- Fallback: legacy Player:Chat()
+    pcall(function() LocalPlayer:Chat(text) end)
 end
 
-local function sendRaw(text)
-    if activeMsgValue and text ~= "" then
-        -- Format: "DisplayName \31 message \31 timestamp"
-        -- \31 = ASCII Unit Separator — never typed by a user
-        activeMsgValue.Value = LocalPlayer.DisplayName
-            .. "\31" .. text
-            .. "\31" .. tostring(os.clock())
-    end
+-- ─────────────────────────────────────────────
+--  HANDSHAKE LOGIC
+-- ─────────────────────────────────────────────
+local verifiedSet  = {}   -- [Player] = true
+local lastHsSent   = 0    -- rate-limit our own HS broadcasts
+
+local function broadcastHandshake()
+    -- Throttle: don't spam HS more than once every 3 seconds
+    if (os.clock() - lastHsSent) < 3 then return end
+    lastHsSent = os.clock()
+    sendChat(HS_MSG)
 end
 
 -- ─────────────────────────────────────────────
 --  GUI BUILD
 -- ─────────────────────────────────────────────
-local oldGui = PlayerGui:FindFirstChild("_SecretChatGui")
-if oldGui then oldGui:Destroy() end
+local old = PlayerGui:FindFirstChild("_SecretChatGui")
+if old then old:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name           = "_SecretChatGui"
@@ -99,7 +111,6 @@ ScreenGui.Parent         = PlayerGui
 
 local WIN_W, WIN_H = 380, 320
 
--- Main window frame
 local Window = Instance.new("Frame")
 Window.Name             = "Window"
 Window.Size             = UDim2.new(0, WIN_W, 0, WIN_H)
@@ -110,10 +121,10 @@ Window.ClipsDescendants = true
 Window.Parent           = ScreenGui
 Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 10)
 
-local WindowStroke          = Instance.new("UIStroke", Window)
-WindowStroke.Color          = Color3.fromRGB(60, 90, 200)
-WindowStroke.Thickness      = 1.5
-WindowStroke.Transparency   = 0.3
+local Stroke           = Instance.new("UIStroke", Window)
+Stroke.Color           = Color3.fromRGB(60, 90, 200)
+Stroke.Thickness       = 1.5
+Stroke.Transparency    = 0.3
 
 -- Title bar
 local TitleBar             = Instance.new("Frame")
@@ -125,8 +136,7 @@ TitleBar.ZIndex            = 5
 TitleBar.Parent            = Window
 Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 
--- Bottom-fill strip so the rounded top corners don't show mid-bar
-local TitleFill             = Instance.new("Frame")
+local TitleFill             = Instance.new("Frame")  -- hides the rounded bottom of TitleBar
 TitleFill.Size              = UDim2.new(1, 0, 0.5, 0)
 TitleFill.Position          = UDim2.new(0, 0, 0.5, 0)
 TitleFill.BackgroundColor3  = Color3.fromRGB(25, 40, 120)
@@ -158,7 +168,7 @@ ToggleBtn.ZIndex             = 7
 ToggleBtn.Parent             = TitleBar
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 5)
 
--- Online status label
+-- Online status
 local OnlineLabel            = Instance.new("TextLabel")
 OnlineLabel.Size             = UDim2.new(1, -24, 0, 20)
 OnlineLabel.Position         = UDim2.new(0, 12, 0, 38)
@@ -170,7 +180,7 @@ OnlineLabel.TextSize         = 11
 OnlineLabel.TextXAlignment   = Enum.TextXAlignment.Left
 OnlineLabel.Parent           = Window
 
--- Scrolling message area
+-- Message scroll area
 local ScrollFrame            = Instance.new("ScrollingFrame")
 ScrollFrame.Name             = "Messages"
 ScrollFrame.Size             = UDim2.new(1, -16, 1, -110)
@@ -190,11 +200,11 @@ ListLayout.Padding           = UDim.new(0, 2)
 ListLayout.SortOrder         = Enum.SortOrder.LayoutOrder
 ListLayout.Parent            = ScrollFrame
 
-local ScrollPad              = Instance.new("UIPadding", ScrollFrame)
-ScrollPad.PaddingTop         = UDim.new(0, 6)
-ScrollPad.PaddingBottom      = UDim.new(0, 6)
-ScrollPad.PaddingLeft        = UDim.new(0, 6)
-ScrollPad.PaddingRight       = UDim.new(0, 8)
+local Pad                    = Instance.new("UIPadding", ScrollFrame)
+Pad.PaddingTop               = UDim.new(0, 6)
+Pad.PaddingBottom            = UDim.new(0, 6)
+Pad.PaddingLeft              = UDim.new(0, 6)
+Pad.PaddingRight             = UDim.new(0, 8)
 
 -- Input row
 local InputBg                = Instance.new("Frame")
@@ -243,10 +253,9 @@ local function scrollToBottom()
 end
 
 local function addMessage(speaker, text, msgType)
-    msgCount = msgCount + 1
+    msgCount += 1
 
     local row            = Instance.new("Frame")
-    row.Name             = "Msg_" .. msgCount
     row.Size             = UDim2.new(1, 0, 0, 0)
     row.AutomaticSize    = Enum.AutomaticSize.Y
     row.BackgroundTransparency = 1
@@ -273,7 +282,7 @@ local function addMessage(speaker, text, msgType)
         lbl.Font            = Enum.Font.Gotham
         lbl.TextSize        = 11
         lbl.TextColor3      = Color3.fromRGB(80, 200, 120)
-        lbl.Text            = "  → " .. speaker .. " joined secret chat"
+        lbl.Text            = "  → " .. speaker .. " joined the secret channel"
 
     elseif msgType == "leave" then
         local lbl           = Instance.new("TextLabel", row)
@@ -283,9 +292,9 @@ local function addMessage(speaker, text, msgType)
         lbl.Font            = Enum.Font.Gotham
         lbl.TextSize        = 11
         lbl.TextColor3      = Color3.fromRGB(200, 90, 80)
-        lbl.Text            = "  ← " .. speaker .. " left secret chat"
+        lbl.Text            = "  ← " .. speaker .. " left the secret channel"
 
-    else -- "chat"
+    else  -- "chat"
         local isSelf        = (speaker == LocalPlayer.DisplayName)
         local nameColor     = isSelf
             and Color3.fromRGB(100, 160, 255)
@@ -319,8 +328,6 @@ end
 -- ─────────────────────────────────────────────
 --  ONLINE COUNTER
 -- ─────────────────────────────────────────────
-local verifiedSet = {}  -- [Player] = true
-
 local function refreshOnlineLabel()
     local count = 0
     for _ in pairs(verifiedSet) do count += 1 end
@@ -335,94 +342,89 @@ local function refreshOnlineLabel()
 end
 
 -- ─────────────────────────────────────────────
---  LISTEN TO A SPECIFIC PLAYER
+--  PROCESS INCOMING CHAT MESSAGES
 -- ─────────────────────────────────────────────
-local connections = {}  -- [Player] = RBXScriptConnection
+local function onChatMessage(player, message)
+    if player == LocalPlayer then return end  -- we handle our own messages locally
 
-local function beginListening(player)
-    if player == LocalPlayer then return end
-    if connections[player] then return end  -- already watching
-
-    local char = player.Character
-    if not char then return end
-
-    -- Must have matching handshake
-    local hs = waitForChildTimeout(char, HANDSHAKE_TAG, 5)
-    if not hs or hs.Value ~= HANDSHAKE_VAL then return end
-
-    verifiedSet[player] = true
-    refreshOnlineLabel()
-    addMessage(player.DisplayName, nil, "join")
-
-    local mv = waitForChildTimeout(char, MESSAGE_TAG, 5)
-    if not mv then return end
-
-    connections[player] = mv.Changed:Connect(function(val)
-        if val == "" then return end
-        local parts = string.split(val, "\31")
-        if #parts >= 2 and parts[2] ~= "" then
-            addMessage(parts[1], parts[2], "chat")
+    -- Handshake received from another script user
+    if message == HS_MSG then
+        local isNew = not verifiedSet[player]
+        verifiedSet[player] = true
+        refreshOnlineLabel()
+        if isNew then
+            addMessage(player.DisplayName, nil, "join")
+            -- Reply with our handshake so they discover us too (throttled)
+            task.delay(0.5, broadcastHandshake)
         end
+        return
+    end
+
+    -- Secret message from a verified player
+    if message:sub(1, #MSG_PFX) == MSG_PFX and verifiedSet[player] then
+        local decoded = message:sub(#MSG_PFX + 1)
+        if decoded ~= "" then
+            addMessage(player.DisplayName, decoded, "chat")
+        end
+        return
+    end
+end
+
+-- ── Hook into legacy chat (Player.Chatted fires on all clients) ──
+local function hookPlayer(p)
+    p.Chatted:Connect(function(msg)
+        onChatMessage(p, msg)
     end)
 end
 
-local function stopListening(player)
-    if connections[player] then
-        connections[player]:Disconnect()
-        connections[player] = nil
-    end
-    if verifiedSet[player] then
-        verifiedSet[player] = nil
-        refreshOnlineLabel()
-        addMessage(player.DisplayName, nil, "leave")
-    end
-end
-
--- ─────────────────────────────────────────────
---  PLAYER EVENTS
--- ─────────────────────────────────────────────
 for _, p in ipairs(Players:GetPlayers()) do
-    task.spawn(beginListening, p)
+    if p ~= LocalPlayer then hookPlayer(p) end
 end
 
 Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function()
-        task.wait(1)  -- brief delay for replication
-        beginListening(p)
+    hookPlayer(p)
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if verifiedSet[p] then
+        verifiedSet[p] = nil
+        refreshOnlineLabel()
+        addMessage(p.DisplayName, nil, "leave")
+    end
+end)
+
+-- ── Also hook into new TextChatService if present ──
+-- MessageReceived fires on all clients for all messages
+pcall(function()
+    TextChatService.MessageReceived:Connect(function(msg)
+        if not msg.TextSource then return end
+        local userId = msg.TextSource.UserId
+        local player = Players:GetPlayerByUserId(userId)
+        if player and player ~= LocalPlayer then
+            -- Strip any rich-text tags Roblox may inject
+            local rawText = msg.Text:gsub("<[^>]+>", "")
+            onChatMessage(player, rawText)
+        end
     end)
 end)
 
-Players.PlayerRemoving:Connect(stopListening)
-
 -- ─────────────────────────────────────────────
---  RESPAWN — re-inject handshake after death
--- ─────────────────────────────────────────────
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.5)
-    injectIntoCharacter(char)
-
-    -- Re-establish listeners (connections may be stale after respawn)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            connections[p] = nil
-            task.spawn(beginListening, p)
-        end
-    end
-end)
-
--- ─────────────────────────────────────────────
---  SEND MESSAGE
+--  SEND A SECRET MESSAGE
 -- ─────────────────────────────────────────────
 local function submitMessage()
-    local text = InputBox.Text:match("^%s*(.-)%s*$")  -- trim whitespace
+    local text = InputBox.Text:match("^%s*(.-)%s*$")
     if text == "" then return end
-    if #text > 200 then
-        addMessage(nil, "Message too long (200 char max).", "system")
+    if #text > 150 then
+        addMessage(nil, "Too long — max 150 characters.", "system")
         return
     end
+
+    -- Show immediately in our own window
     addMessage(LocalPlayer.DisplayName, text, "chat")
-    sendRaw(text)
     InputBox.Text = ""
+
+    -- Broadcast via chat (prefixed so other scripts can decode it)
+    sendChat(MSG_PFX .. text)
 end
 
 SendBtn.MouseButton1Click:Connect(submitMessage)
@@ -461,13 +463,13 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 -- ─────────────────────────────────────────────
---  HIDE / SHOW  (Ctrl+H or ─ button)
+--  HIDE / SHOW
 -- ─────────────────────────────────────────────
 local hidden = false
 
 local function toggleWindow()
     hidden = not hidden
-    Window.Size = hidden
+    Window.Size    = hidden
         and UDim2.new(0, WIN_W, 0, 36)
         or  UDim2.new(0, WIN_W, 0, WIN_H)
     ToggleBtn.Text = hidden and "□" or "─"
@@ -486,14 +488,12 @@ end)
 -- ─────────────────────────────────────────────
 --  INIT
 -- ─────────────────────────────────────────────
-local initChar = LocalPlayer.Character
-if initChar then
-    injectIntoCharacter(initChar)
-else
-    local c = LocalPlayer.CharacterAdded:Wait()
-    task.wait(0.5)
-    injectIntoCharacter(c)
-end
-
-addMessage(nil, "Secret Chat loaded. Only players with this script can see messages.", "system")
+addMessage(nil, "Secret Chat v2 loaded. Handshaking with other players...", "system")
 addMessage(nil, "Ctrl+H or [─] to hide  •  Drag title bar to move", "system")
+addMessage(nil, "Note: messages are sent through regular chat with a prefix.", "system")
+refreshOnlineLabel()
+
+-- Broadcast our handshake so existing players can discover us
+-- Also re-broadcast after a short delay in case timing is tight
+task.delay(0.5, broadcastHandshake)
+task.delay(3,   broadcastHandshake)  -- second attempt for slow loaders
