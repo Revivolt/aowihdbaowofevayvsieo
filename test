@@ -1,368 +1,499 @@
---test
-
 --[[
-    ╔══════════════════════════════════════════════════╗
-    ║            SECRET CHAT - LocalScript             ║
-    ║  Only players running this exact script can      ║
-    ║  see and send messages in the secret channel.    ║
-    ║                                                  ║
-    ║  HOW TO USE:                                     ║
-    ║    • Press ['] (apostrophe) to open/close        ║
-    ║    • Type your message and press Enter or Send   ║
-    ║    • Only other script users will see it         ║
-    ╚══════════════════════════════════════════════════╝
+    ╔══════════════════════════════════════════════════════════╗
+    ║               SECRET CHAT — LocalScript                  ║
+    ║  Only players running this exact script can communicate  ║
+    ╚══════════════════════════════════════════════════════════╝
 
-    SETUP:
-      Place this LocalScript inside StarterPlayerScripts.
-      The SECRET_TAG below must be IDENTICAL in every copy
-      of the script — change it to make your own private channel.
+    HOW IT WORKS:
+    • When loaded, this script places a hidden "handshake" StringValue
+      inside your Character that replicates to all other clients.
+    • Other players also running this script detect that value and
+      know you're in the secret channel.
+    • Messages are sent by updating a second StringValue in your
+      Character — changes replicate instantly to everyone watching.
+    • Players NOT running this script see nothing unusual.
+
+    USAGE:
+    • Press Enter or click Send to chat.
+    • Press Ctrl+H (or the [─] button) to hide/show the window.
+    • Drag the title bar to reposition the window.
 --]]
 
--- ─── CONFIGURATION ────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────
+--  CONFIG  (all values must be identical in every copy of the script)
+-- ─────────────────────────────────────────────
+local HANDSHAKE_TAG  = "__SC_hs_a9f3c2__"   -- hidden value name placed in Character
+local MESSAGE_TAG    = "__SC_msg_a9f3c2__"   -- hidden value name used to broadcast messages
+local HANDSHAKE_VAL  = "SC_AUTH_v1_a9f3c2"  -- secret token — must match exactly
+local WINDOW_TITLE   = "🔒 Secret Chat"
 
-local SECRET_TAG    = "◈SC◈"                    -- Unique tag embedded in all SC messages.
-                                                  -- Must be the same in every copy of the script.
-local TOGGLE_KEY    = Enum.KeyCode.P    -- Hotkey to show / hide the SC window
-local MAX_MESSAGES  = 50                          -- Max messages kept in the log
-local CHAT_CHANNEL  = "RBXGeneral"               -- Roblox channel used to carry SC messages
+-- ─────────────────────────────────────────────
+--  SERVICES & LOCALS
+-- ─────────────────────────────────────────────
+local Players          = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 
--- ─── SERVICES ─────────────────────────────────────────────────────────────────
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
-local Players           = game:GetService("Players")
-local TextChatService   = game:GetService("TextChatService")
-local UserInputService  = game:GetService("UserInputService")
-local RunService        = game:GetService("RunService")
+-- ─────────────────────────────────────────────
+--  UTILITIES
+-- ─────────────────────────────────────────────
+local function waitForChildTimeout(parent, name, timeout)
+    local t = 0
+    while t < timeout do
+        local child = parent:FindFirstChild(name)
+        if child then return child end
+        task.wait(0.1)
+        t = t + 0.1
+    end
+    return nil
+end
 
-local LocalPlayer       = Players.LocalPlayer
-local PlayerGui         = LocalPlayer:WaitForChild("PlayerGui")
+-- ─────────────────────────────────────────────
+--  INJECT HANDSHAKE & MESSAGE VALUE INTO OWN CHARACTER
+-- ─────────────────────────────────────────────
+local activeMsgValue  -- StringValue used to broadcast outgoing messages
 
--- ─── STATE ────────────────────────────────────────────────────────────────────
+local function injectIntoCharacter(char)
+    if not char:FindFirstChild(HANDSHAKE_TAG) then
+        local hs  = Instance.new("StringValue")
+        hs.Name   = HANDSHAKE_TAG
+        hs.Value  = HANDSHAKE_VAL
+        hs.Parent = char
+    end
 
-local messageLog    = {}    -- { {order, name, text, color} }
-local messageCount  = 0
-local guiVisible    = false
-local scriptUsers   = {}    -- [UserId] = true  (confirmed script users)
+    -- Replace any old message value
+    local old = char:FindFirstChild(MESSAGE_TAG)
+    if old then old:Destroy() end
 
--- ─── BUILD GUI ────────────────────────────────────────────────────────────────
+    local mv      = Instance.new("StringValue")
+    mv.Name       = MESSAGE_TAG
+    mv.Value      = ""
+    mv.Parent     = char
+    activeMsgValue = mv
+end
+
+local function sendRaw(text)
+    if activeMsgValue and text ~= "" then
+        -- Format: "DisplayName \31 message \31 timestamp"
+        -- \31 = ASCII Unit Separator — never typed by a user
+        activeMsgValue.Value = LocalPlayer.DisplayName
+            .. "\31" .. text
+            .. "\31" .. tostring(os.clock())
+    end
+end
+
+-- ─────────────────────────────────────────────
+--  GUI BUILD
+-- ─────────────────────────────────────────────
+local oldGui = PlayerGui:FindFirstChild("_SecretChatGui")
+if oldGui then oldGui:Destroy() end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name              = "SecretChat"
-ScreenGui.ResetOnSpawn      = false
-ScreenGui.ZIndexBehavior    = Enum.ZIndexBehavior.Sibling
-ScreenGui.IgnoreGuiInset    = true
-ScreenGui.Enabled           = false
-ScreenGui.Parent            = PlayerGui
+ScreenGui.Name           = "_SecretChatGui"
+ScreenGui.ResetOnSpawn   = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder   = 999
+ScreenGui.Parent         = PlayerGui
+
+local WIN_W, WIN_H = 380, 320
 
 -- Main window frame
 local Window = Instance.new("Frame")
-Window.Name                 = "Window"
-Window.Size                 = UDim2.new(0, 360, 0, 240)
-Window.Position             = UDim2.new(0, 12, 1, -312)
-Window.BackgroundColor3     = Color3.fromRGB(15, 15, 20)
-Window.BackgroundTransparency = 0.15
-Window.BorderSizePixel      = 0
-Window.Parent               = ScreenGui
+Window.Name             = "Window"
+Window.Size             = UDim2.new(0, WIN_W, 0, WIN_H)
+Window.Position         = UDim2.new(0, 14, 1, -(WIN_H + 14))
+Window.BackgroundColor3 = Color3.fromRGB(13, 13, 20)
+Window.BorderSizePixel  = 0
+Window.ClipsDescendants = true
+Window.Parent           = ScreenGui
+Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 10)
 
-Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 8)
-
-local WindowStroke = Instance.new("UIStroke", Window)
-WindowStroke.Color      = Color3.fromRGB(80, 60, 180)
-WindowStroke.Thickness  = 1.5
+local WindowStroke          = Instance.new("UIStroke", Window)
+WindowStroke.Color          = Color3.fromRGB(60, 90, 200)
+WindowStroke.Thickness      = 1.5
+WindowStroke.Transparency   = 0.3
 
 -- Title bar
-local TitleBar = Instance.new("Frame", Window)
-TitleBar.Size               = UDim2.new(1, 0, 0, 28)
-TitleBar.BackgroundColor3   = Color3.fromRGB(40, 20, 100)
-TitleBar.BorderSizePixel    = 0
+local TitleBar             = Instance.new("Frame")
+TitleBar.Name              = "TitleBar"
+TitleBar.Size              = UDim2.new(1, 0, 0, 36)
+TitleBar.BackgroundColor3  = Color3.fromRGB(25, 40, 120)
+TitleBar.BorderSizePixel   = 0
+TitleBar.ZIndex            = 5
+TitleBar.Parent            = Window
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
 
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
+-- Bottom-fill strip so the rounded top corners don't show mid-bar
+local TitleFill             = Instance.new("Frame")
+TitleFill.Size              = UDim2.new(1, 0, 0.5, 0)
+TitleFill.Position          = UDim2.new(0, 0, 0.5, 0)
+TitleFill.BackgroundColor3  = Color3.fromRGB(25, 40, 120)
+TitleFill.BorderSizePixel   = 0
+TitleFill.ZIndex            = 4
+TitleFill.Parent            = TitleBar
 
--- Square-off the bottom two corners of the title bar
-local TitlePatch = Instance.new("Frame", TitleBar)
-TitlePatch.Size             = UDim2.new(1, 0, 0, 10)
-TitlePatch.Position         = UDim2.new(0, 0, 1, -10)
-TitlePatch.BackgroundColor3 = Color3.fromRGB(40, 20, 100)
-TitlePatch.BorderSizePixel  = 0
-
-local TitleLabel = Instance.new("TextLabel", TitleBar)
-TitleLabel.Size             = UDim2.new(1, -8, 1, 0)
-TitleLabel.Position         = UDim2.new(0, 8, 0, 0)
+local TitleLabel             = Instance.new("TextLabel")
+TitleLabel.Size              = UDim2.new(1, -80, 1, 0)
+TitleLabel.Position          = UDim2.new(0, 12, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Font             = Enum.Font.GothamBold
-TitleLabel.TextSize         = 13
-TitleLabel.TextColor3       = Color3.fromRGB(200, 180, 255)
-TitleLabel.TextXAlignment   = Enum.TextXAlignment.Left
-TitleLabel.Text             = "◈  Secret Chat  —  press ' to toggle"
+TitleLabel.Text              = WINDOW_TITLE
+TitleLabel.TextColor3        = Color3.fromRGB(210, 225, 255)
+TitleLabel.Font              = Enum.Font.GothamBold
+TitleLabel.TextSize          = 13
+TitleLabel.TextXAlignment    = Enum.TextXAlignment.Left
+TitleLabel.ZIndex            = 6
+TitleLabel.Parent            = TitleBar
+
+local ToggleBtn              = Instance.new("TextButton")
+ToggleBtn.Size               = UDim2.new(0, 28, 0, 22)
+ToggleBtn.Position           = UDim2.new(1, -34, 0.5, -11)
+ToggleBtn.BackgroundColor3   = Color3.fromRGB(40, 60, 160)
+ToggleBtn.Text               = "─"
+ToggleBtn.TextColor3         = Color3.fromRGB(180, 200, 255)
+ToggleBtn.Font               = Enum.Font.GothamBold
+ToggleBtn.TextSize           = 14
+ToggleBtn.ZIndex             = 7
+ToggleBtn.Parent             = TitleBar
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 5)
+
+-- Online status label
+local OnlineLabel            = Instance.new("TextLabel")
+OnlineLabel.Size             = UDim2.new(1, -24, 0, 20)
+OnlineLabel.Position         = UDim2.new(0, 12, 0, 38)
+OnlineLabel.BackgroundTransparency = 1
+OnlineLabel.Text             = "● No other users with script online"
+OnlineLabel.TextColor3       = Color3.fromRGB(160, 80, 80)
+OnlineLabel.Font             = Enum.Font.Gotham
+OnlineLabel.TextSize         = 11
+OnlineLabel.TextXAlignment   = Enum.TextXAlignment.Left
+OnlineLabel.Parent           = Window
 
 -- Scrolling message area
-local ScrollFrame = Instance.new("ScrollingFrame", Window)
-ScrollFrame.Size            = UDim2.new(1, -8, 1, -70)
-ScrollFrame.Position        = UDim2.new(0, 4, 0, 30)
-ScrollFrame.BackgroundTransparency = 1
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.ScrollBarThickness = 4
-ScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 60, 200)
-ScrollFrame.CanvasSize      = UDim2.new(0, 0, 0, 0)
+local ScrollFrame            = Instance.new("ScrollingFrame")
+ScrollFrame.Name             = "Messages"
+ScrollFrame.Size             = UDim2.new(1, -16, 1, -110)
+ScrollFrame.Position         = UDim2.new(0, 8, 0, 62)
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+ScrollFrame.BorderSizePixel  = 0
+ScrollFrame.ScrollBarThickness = 3
+ScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(60, 90, 200)
+ScrollFrame.CanvasSize       = UDim2.new(0, 0, 0, 0)
 ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollFrame.ElasticBehavior  = Enum.ElasticBehavior.Never
+ScrollFrame.Parent           = Window
+Instance.new("UICorner", ScrollFrame).CornerRadius = UDim.new(0, 6)
 
-local ListLayout = Instance.new("UIListLayout", ScrollFrame)
-ListLayout.SortOrder        = Enum.SortOrder.LayoutOrder
-ListLayout.Padding          = UDim.new(0, 2)
+local ListLayout             = Instance.new("UIListLayout")
+ListLayout.Padding           = UDim.new(0, 2)
+ListLayout.SortOrder         = Enum.SortOrder.LayoutOrder
+ListLayout.Parent            = ScrollFrame
 
-local ListPad = Instance.new("UIPadding", ScrollFrame)
-ListPad.PaddingLeft         = UDim.new(0, 4)
-ListPad.PaddingRight        = UDim.new(0, 4)
-ListPad.PaddingTop          = UDim.new(0, 4)
+local ScrollPad              = Instance.new("UIPadding", ScrollFrame)
+ScrollPad.PaddingTop         = UDim.new(0, 6)
+ScrollPad.PaddingBottom      = UDim.new(0, 6)
+ScrollPad.PaddingLeft        = UDim.new(0, 6)
+ScrollPad.PaddingRight       = UDim.new(0, 8)
 
 -- Input row
-local InputRow = Instance.new("Frame", Window)
-InputRow.Size               = UDim2.new(1, -8, 0, 32)
-InputRow.Position           = UDim2.new(0, 4, 1, -36)
-InputRow.BackgroundColor3   = Color3.fromRGB(30, 25, 50)
-InputRow.BorderSizePixel    = 0
+local InputBg                = Instance.new("Frame")
+InputBg.Size                 = UDim2.new(1, -16, 0, 36)
+InputBg.Position             = UDim2.new(0, 8, 1, -46)
+InputBg.BackgroundColor3     = Color3.fromRGB(20, 22, 35)
+InputBg.BorderSizePixel      = 0
+InputBg.Parent               = Window
+Instance.new("UICorner", InputBg).CornerRadius = UDim.new(0, 8)
 
-Instance.new("UICorner", InputRow).CornerRadius = UDim.new(0, 6)
+local InputBox               = Instance.new("TextBox")
+InputBox.Size                = UDim2.new(1, -70, 1, -8)
+InputBox.Position            = UDim2.new(0, 10, 0, 4)
+InputBox.BackgroundTransparency = 1
+InputBox.Text                = ""
+InputBox.PlaceholderText     = "Message..."
+InputBox.PlaceholderColor3   = Color3.fromRGB(80, 85, 110)
+InputBox.TextColor3          = Color3.fromRGB(220, 225, 255)
+InputBox.Font                = Enum.Font.Gotham
+InputBox.TextSize            = 13
+InputBox.TextXAlignment      = Enum.TextXAlignment.Left
+InputBox.ClearTextOnFocus    = false
+InputBox.MultiLine           = false
+InputBox.Parent              = InputBg
 
-local InputStroke = Instance.new("UIStroke", InputRow)
-InputStroke.Color           = Color3.fromRGB(80, 60, 160)
-InputStroke.Thickness       = 1
+local SendBtn                = Instance.new("TextButton")
+SendBtn.Size                 = UDim2.new(0, 58, 1, -8)
+SendBtn.Position             = UDim2.new(1, -64, 0, 4)
+SendBtn.BackgroundColor3     = Color3.fromRGB(40, 80, 200)
+SendBtn.Text                 = "Send"
+SendBtn.TextColor3           = Color3.new(1, 1, 1)
+SendBtn.Font                 = Enum.Font.GothamBold
+SendBtn.TextSize             = 13
+SendBtn.Parent               = InputBg
+Instance.new("UICorner", SendBtn).CornerRadius = UDim.new(0, 6)
 
-local TextBox = Instance.new("TextBox", InputRow)
-TextBox.Size                = UDim2.new(1, -60, 1, 0)
-TextBox.Position            = UDim2.new(0, 6, 0, 0)
-TextBox.BackgroundTransparency = 1
-TextBox.Font                = Enum.Font.Gotham
-TextBox.TextSize            = 13
-TextBox.TextColor3          = Color3.fromRGB(220, 215, 255)
-TextBox.PlaceholderText     = "Type a secret message…"
-TextBox.PlaceholderColor3   = Color3.fromRGB(100, 90, 140)
-TextBox.TextXAlignment      = Enum.TextXAlignment.Left
-TextBox.ClearTextOnFocus    = false
-TextBox.Text                = ""
+-- ─────────────────────────────────────────────
+--  MESSAGE RENDERING
+-- ─────────────────────────────────────────────
+local msgCount = 0
 
-local SendButton = Instance.new("TextButton", InputRow)
-SendButton.Size             = UDim2.new(0, 50, 1, -4)
-SendButton.Position         = UDim2.new(1, -54, 0, 2)
-SendButton.BackgroundColor3 = Color3.fromRGB(80, 50, 200)
-SendButton.Font             = Enum.Font.GothamBold
-SendButton.TextSize         = 12
-SendButton.TextColor3       = Color3.fromRGB(255, 255, 255)
-SendButton.Text             = "Send"
-
-Instance.new("UICorner", SendButton).CornerRadius = UDim.new(0, 5)
-
--- ─── HELPERS ──────────────────────────────────────────────────────────────────
-
--- Deterministic per-player color from display name
-local function nameColor(name)
-    local palette = {
-        Color3.fromRGB(130, 200, 255),
-        Color3.fromRGB(180, 255, 180),
-        Color3.fromRGB(255, 210, 130),
-        Color3.fromRGB(255, 160, 200),
-        Color3.fromRGB(200, 160, 255),
-        Color3.fromRGB(100, 230, 220),
-    }
-    local n = 0
-    for i = 1, #name do n = n + string.byte(name, i) end
-    return palette[(n % #palette) + 1]
-end
-
--- Scroll to the bottom of the chat log
 local function scrollToBottom()
-    RunService.Heartbeat:Wait()
-    ScrollFrame.CanvasPosition = Vector2.new(0, ScrollFrame.AbsoluteCanvasSize.Y)
+    task.defer(function()
+        ScrollFrame.CanvasPosition = Vector2.new(0, math.huge)
+    end)
 end
 
--- Render one message entry into the scroll frame
-local function renderEntry(entry)
-    local c = entry.color
-    local row = Instance.new("TextLabel", ScrollFrame)
-    row.Name                = "Msg"
-    row.Size                = UDim2.new(1, 0, 0, 0)
-    row.AutomaticSize       = Enum.AutomaticSize.Y
+local function addMessage(speaker, text, msgType)
+    msgCount = msgCount + 1
+
+    local row            = Instance.new("Frame")
+    row.Name             = "Msg_" .. msgCount
+    row.Size             = UDim2.new(1, 0, 0, 0)
+    row.AutomaticSize    = Enum.AutomaticSize.Y
     row.BackgroundTransparency = 1
-    row.Font                = Enum.Font.Gotham
-    row.TextSize            = 12
-    row.TextColor3          = Color3.fromRGB(220, 215, 255)
-    row.TextXAlignment      = Enum.TextXAlignment.Left
-    row.TextYAlignment      = Enum.TextYAlignment.Top
-    row.TextWrapped         = true
-    row.RichText            = true
-    row.LayoutOrder         = entry.order
-    row.Text                = string.format(
-        '<font color="#%02x%02x%02x"><b>%s</b></font>'
-        .. '<font color="#aaaacc">: %s</font>',
-        math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255),
-        entry.name,
-        entry.text
-    )
-    scrollToBottom()
-end
+    row.LayoutOrder      = msgCount
+    row.Parent           = ScrollFrame
 
--- Add a player message to the log and GUI
-local function addMessage(playerName, text)
-    messageCount += 1
-    local entry = {
-        order = messageCount,
-        name  = playerName,
-        text  = text,
-        color = nameColor(playerName),
-    }
-    table.insert(messageLog, entry)
+    if msgType == "system" then
+        local lbl           = Instance.new("TextLabel", row)
+        lbl.Size            = UDim2.new(1, 0, 0, 0)
+        lbl.AutomaticSize   = Enum.AutomaticSize.Y
+        lbl.BackgroundTransparency = 1
+        lbl.TextXAlignment  = Enum.TextXAlignment.Left
+        lbl.TextWrapped     = true
+        lbl.Font            = Enum.Font.Gotham
+        lbl.TextSize        = 11
+        lbl.TextColor3      = Color3.fromRGB(110, 120, 155)
+        lbl.Text            = "  ◈ " .. text
 
-    -- Remove oldest entry when over the cap
-    if #messageLog > MAX_MESSAGES then
-        local oldest = table.remove(messageLog, 1)
-        for _, child in ipairs(ScrollFrame:GetChildren()) do
-            if child:IsA("TextLabel") and child.LayoutOrder == oldest.order then
-                child:Destroy()
-                break
-            end
-        end
+    elseif msgType == "join" then
+        local lbl           = Instance.new("TextLabel", row)
+        lbl.Size            = UDim2.new(1, 0, 0, 16)
+        lbl.BackgroundTransparency = 1
+        lbl.TextXAlignment  = Enum.TextXAlignment.Left
+        lbl.Font            = Enum.Font.Gotham
+        lbl.TextSize        = 11
+        lbl.TextColor3      = Color3.fromRGB(80, 200, 120)
+        lbl.Text            = "  → " .. speaker .. " joined secret chat"
+
+    elseif msgType == "leave" then
+        local lbl           = Instance.new("TextLabel", row)
+        lbl.Size            = UDim2.new(1, 0, 0, 16)
+        lbl.BackgroundTransparency = 1
+        lbl.TextXAlignment  = Enum.TextXAlignment.Left
+        lbl.Font            = Enum.Font.Gotham
+        lbl.TextSize        = 11
+        lbl.TextColor3      = Color3.fromRGB(200, 90, 80)
+        lbl.Text            = "  ← " .. speaker .. " left secret chat"
+
+    else -- "chat"
+        local isSelf        = (speaker == LocalPlayer.DisplayName)
+        local nameColor     = isSelf
+            and Color3.fromRGB(100, 160, 255)
+            or  Color3.fromRGB(200, 160, 255)
+
+        local nameLbl       = Instance.new("TextLabel", row)
+        nameLbl.Size        = UDim2.new(1, 0, 0, 15)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+        nameLbl.Font        = Enum.Font.GothamBold
+        nameLbl.TextSize    = 11
+        nameLbl.TextColor3  = nameColor
+        nameLbl.Text        = "  " .. speaker
+
+        local msgLbl        = Instance.new("TextLabel", row)
+        msgLbl.Size         = UDim2.new(1, 0, 0, 0)
+        msgLbl.Position     = UDim2.new(0, 12, 0, 15)
+        msgLbl.AutomaticSize = Enum.AutomaticSize.Y
+        msgLbl.BackgroundTransparency = 1
+        msgLbl.TextXAlignment = Enum.TextXAlignment.Left
+        msgLbl.TextWrapped  = true
+        msgLbl.Font         = Enum.Font.Gotham
+        msgLbl.TextSize     = 12
+        msgLbl.TextColor3   = Color3.fromRGB(210, 215, 240)
+        msgLbl.Text         = text
     end
 
-    renderEntry(entry)
-end
-
--- Show a local-only system notice (italicised, not sent to others)
-local function systemNotice(text)
-    messageCount += 1
-    local row = Instance.new("TextLabel", ScrollFrame)
-    row.Name                = "Sys"
-    row.Size                = UDim2.new(1, 0, 0, 0)
-    row.AutomaticSize       = Enum.AutomaticSize.Y
-    row.BackgroundTransparency = 1
-    row.Font                = Enum.Font.GothamItalic
-    row.TextSize            = 11
-    row.TextColor3          = Color3.fromRGB(150, 140, 200)
-    row.TextXAlignment      = Enum.TextXAlignment.Left
-    row.TextWrapped         = true
-    row.LayoutOrder         = messageCount
-    row.Text                = "  ◈ " .. text
     scrollToBottom()
 end
 
--- ─── SEND ─────────────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────
+--  ONLINE COUNTER
+-- ─────────────────────────────────────────────
+local verifiedSet = {}  -- [Player] = true
 
-local function sendMessage(rawText)
-    rawText = rawText:match("^%s*(.-)%s*$")
-    if rawText == "" then return end
+local function refreshOnlineLabel()
+    local count = 0
+    for _ in pairs(verifiedSet) do count += 1 end
+    if count == 0 then
+        OnlineLabel.Text       = "● No other users with script online"
+        OnlineLabel.TextColor3 = Color3.fromRGB(160, 80, 80)
+    else
+        OnlineLabel.Text       = "● " .. count .. " other user"
+            .. (count ~= 1 and "s" or "") .. " with script"
+        OnlineLabel.TextColor3 = Color3.fromRGB(80, 200, 120)
+    end
+end
 
-    -- Prefix the secret tag so other script users can identify the message.
-    -- Players without the script will still see the raw tag in normal chat.
-    local tagged = SECRET_TAG .. rawText
+-- ─────────────────────────────────────────────
+--  LISTEN TO A SPECIFIC PLAYER
+-- ─────────────────────────────────────────────
+local connections = {}  -- [Player] = RBXScriptConnection
 
-    local ok, err = pcall(function()
-        -- Try the modern TextChatService channel first
-        local channels = TextChatService:FindFirstChild("TextChannels")
-        local channel  = channels and channels:FindFirstChild(CHAT_CHANNEL)
-        if channel then
-            channel:SendAsync(tagged)
-        else
-            -- Fallback for games that still use the legacy Chat service
-            local Chat = game:GetService("Chat")
-            local head = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
-            if head then
-                Chat:Chat(head, tagged)
-            else
-                warn("[SecretChat] Could not find a chat channel to send through.")
-            end
+local function beginListening(player)
+    if player == LocalPlayer then return end
+    if connections[player] then return end  -- already watching
+
+    local char = player.Character
+    if not char then return end
+
+    -- Must have matching handshake
+    local hs = waitForChildTimeout(char, HANDSHAKE_TAG, 5)
+    if not hs or hs.Value ~= HANDSHAKE_VAL then return end
+
+    verifiedSet[player] = true
+    refreshOnlineLabel()
+    addMessage(player.DisplayName, nil, "join")
+
+    local mv = waitForChildTimeout(char, MESSAGE_TAG, 5)
+    if not mv then return end
+
+    connections[player] = mv.Changed:Connect(function(val)
+        if val == "" then return end
+        local parts = string.split(val, "\31")
+        if #parts >= 2 and parts[2] ~= "" then
+            addMessage(parts[1], parts[2], "chat")
         end
     end)
+end
 
-    if not ok then
-        systemNotice("Send failed: " .. tostring(err))
+local function stopListening(player)
+    if connections[player] then
+        connections[player]:Disconnect()
+        connections[player] = nil
+    end
+    if verifiedSet[player] then
+        verifiedSet[player] = nil
+        refreshOnlineLabel()
+        addMessage(player.DisplayName, nil, "leave")
     end
 end
 
--- ─── RECEIVE ──────────────────────────────────────────────────────────────────
-
---[[
-    OnIncomingMessage fires for EVERY incoming chat message.
-    We check for the secret tag:
-      • If found   → decode, display in SC window, blank out in normal chat.
-      • If missing → leave normal chat untouched (return nil).
---]]
-TextChatService.OnIncomingMessage = function(message)
-    local raw = message.Text or ""
-
-    if raw:find(SECRET_TAG, 1, true) then
-        -- Decode
-        local clean = raw:gsub(SECRET_TAG, "", 1)
-        clean = clean:match("^%s*(.-)%s*$")
-
-        -- Identify sender
-        local senderName = "Unknown"
-        if message.TextSource then
-            local uid    = message.TextSource.UserId
-            local player = Players:GetPlayerByUserId(uid)
-            senderName   = player and player.DisplayName or ("User#" .. uid)
-            scriptUsers[uid] = true   -- mark as confirmed script user
-        end
-
-        -- Own messages are already shown immediately on send; skip duplicates
-        local isOwn = message.TextSource
-            and message.TextSource.UserId == LocalPlayer.UserId
-        if not isOwn then
-            addMessage(senderName, clean)
-        end
-
-        -- Suppress the tagged message in normal Roblox chat
-        local props = Instance.new("TextChatMessageProperties")
-        props.Text = ""
-        return props
-    end
-
-    return nil   -- leave non-SC messages alone
+-- ─────────────────────────────────────────────
+--  PLAYER EVENTS
+-- ─────────────────────────────────────────────
+for _, p in ipairs(Players:GetPlayers()) do
+    task.spawn(beginListening, p)
 end
 
--- ─── INPUT HANDLING ───────────────────────────────────────────────────────────
-
--- Send on Enter
-TextBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        local msg = TextBox.Text
-        TextBox.Text = ""
-        if msg:match("^%s*$") then return end
-        addMessage(LocalPlayer.DisplayName, msg)   -- show own message immediately
-        sendMessage(msg)
-    end
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(1)  -- brief delay for replication
+        beginListening(p)
+    end)
 end)
 
--- Send button
-SendButton.MouseButton1Click:Connect(function()
-    local msg = TextBox.Text
-    TextBox.Text = ""
-    if msg:match("^%s*$") then return end
-    addMessage(LocalPlayer.DisplayName, msg)
-    sendMessage(msg)
-    TextBox:CaptureFocus()
-end)
+Players.PlayerRemoving:Connect(stopListening)
 
--- Toggle hotkey
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if input.KeyCode == TOGGLE_KEY and not gameProcessed then
-        guiVisible = not guiVisible
-        ScreenGui.Enabled = guiVisible
-        if guiVisible then
-            TextBox:CaptureFocus()
+-- ─────────────────────────────────────────────
+--  RESPAWN — re-inject handshake after death
+-- ─────────────────────────────────────────────
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    injectIntoCharacter(char)
+
+    -- Re-establish listeners (connections may be stale after respawn)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            connections[p] = nil
+            task.spawn(beginListening, p)
         end
     end
 end)
 
--- ─── PLAYER LEAVE NOTICE ──────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────
+--  SEND MESSAGE
+-- ─────────────────────────────────────────────
+local function submitMessage()
+    local text = InputBox.Text:match("^%s*(.-)%s*$")  -- trim whitespace
+    if text == "" then return end
+    if #text > 200 then
+        addMessage(nil, "Message too long (200 char max).", "system")
+        return
+    end
+    addMessage(LocalPlayer.DisplayName, text, "chat")
+    sendRaw(text)
+    InputBox.Text = ""
+end
 
-Players.PlayerRemoving:Connect(function(player)
-    if scriptUsers[player.UserId] then
-        scriptUsers[player.UserId] = nil
-        if guiVisible then
-            systemNotice(player.DisplayName .. " left the game.")
-        end
+SendBtn.MouseButton1Click:Connect(submitMessage)
+
+InputBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then submitMessage() end
+end)
+
+-- ─────────────────────────────────────────────
+--  DRAG TO MOVE
+-- ─────────────────────────────────────────────
+local dragging, dragStart, startPos
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging  = true
+        dragStart = input.Position
+        startPos  = Window.Position
     end
 end)
 
--- ─── READY ────────────────────────────────────────────────────────────────────
+TitleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
 
-systemNotice("Secret Chat ready. Press ['] to open / close.")
-systemNotice("Messages are only visible to players running this same script.")
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        Window.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ─────────────────────────────────────────────
+--  HIDE / SHOW  (Ctrl+H or ─ button)
+-- ─────────────────────────────────────────────
+local hidden = false
+
+local function toggleWindow()
+    hidden = not hidden
+    Window.Size = hidden
+        and UDim2.new(0, WIN_W, 0, 36)
+        or  UDim2.new(0, WIN_W, 0, WIN_H)
+    ToggleBtn.Text = hidden and "□" or "─"
+end
+
+ToggleBtn.MouseButton1Click:Connect(toggleWindow)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.H
+        and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        toggleWindow()
+    end
+end)
+
+-- ─────────────────────────────────────────────
+--  INIT
+-- ─────────────────────────────────────────────
+local initChar = LocalPlayer.Character
+if initChar then
+    injectIntoCharacter(initChar)
+else
+    local c = LocalPlayer.CharacterAdded:Wait()
+    task.wait(0.5)
+    injectIntoCharacter(c)
+end
+
+addMessage(nil, "Secret Chat loaded. Only players with this script can see messages.", "system")
+addMessage(nil, "Ctrl+H or [─] to hide  •  Drag title bar to move", "system")
