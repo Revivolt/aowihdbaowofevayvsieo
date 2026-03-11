@@ -1,8 +1,10 @@
--- ╔══════════════════════════════════════════════════════════════════╗
--- ║  Custom GUI  ·  LocalScript                                      ║
--- ║  Place in: StarterPlayer > StarterPlayerScripts                  ║
--- ║  Instance type must be: LocalScript                              ║
--- ╚══════════════════════════════════════════════════════════════════╝
+--test
+
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║   Custom Roblox GUI  ·  LocalScript                                 ║
+-- ║   Place in:  StarterPlayer > StarterPlayerScripts                   ║
+-- ║   Set object type to:  LocalScript                                  ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,186 +16,178 @@ local StarterGui        = game:GetService("StarterGui")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
--- ════════════════════════════════════════════════════════════════════
---  KILL THE ROBLOX TOP BAR + COREGUI
---  SetCore("TopbarEnabled", false) removes the actual black bar.
---  SetCoreGuiEnabled removes chat, backpack, health, etc.
---  We retry on a loop because Roblox re-enables them on respawn.
--- ════════════════════════════════════════════════════════════════════
-local function killRobloxGui()
-    pcall(function() StarterGui:SetCore("TopbarEnabled", false) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All,        false) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,   false) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat,       false) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health,     false) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false) end)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.SelfView,   false) end)
-end
-
--- Call immediately
-killRobloxGui()
-
--- Re-apply every 0.5s for 10 seconds (Roblox loads CoreGui pieces late)
+-- ══════════════════════════════════════════════════════════════════════
+--  HIDE NATIVE ROBLOX GUI
+--  SetCore("TopbarEnabled", false) is the call that hides the pill bar.
+--  We retry in a loop because CoreGui may not be ready on the first frame.
+-- ══════════════════════════════════════════════════════════════════════
 task.spawn(function()
-    for _ = 1, 20 do
-        task.wait(0.5)
-        killRobloxGui()
-    end
-    -- Then every 5 seconds forever to handle respawns
+    -- Keep trying until it succeeds (CoreGui loads asynchronously)
     while true do
-        task.wait(5)
-        killRobloxGui()
+        local ok = pcall(function()
+            StarterGui:SetCore("TopbarEnabled", false)
+        end)
+        if ok then break end
+        task.wait(0.1)
     end
+
+    -- Also kill every individual CoreGui category
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All,        false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat,        false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack,    false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health,      false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList,  false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu,  false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.SelfView,    false) end)
 end)
 
+-- Re-hide on every respawn
 LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.2)
-    killRobloxGui()
+    task.wait(0.15)
+    pcall(function() StarterGui:SetCore("TopbarEnabled", false) end)
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false) end)
 end)
 
--- ════════════════════════════════════════════════════════════════════
---  CONFIG
--- ════════════════════════════════════════════════════════════════════
-local GLOBAL_CHANNEL = "CGUI_Global_v1"
-local SERVER_ID      = tostring(game.JobId):sub(1, 6)
-local MAX_LEN        = 200
-
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  THEME
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 local T = {
-    BAR         = Color3.fromRGB(30,  30,  30),
-    BG          = Color3.fromRGB(22,  22,  30),
-    BG2         = Color3.fromRGB(32,  32,  42),
-    BG3         = Color3.fromRGB(15,  15,  20),
-    ACCENT      = Color3.fromRGB(0,   160, 255),
-    GLOB        = Color3.fromRGB(255, 130,   0),
-    TEXT        = Color3.fromRGB(235, 235, 240),
-    DIMTEXT     = Color3.fromRGB(120, 120, 140),
-    BTN         = Color3.fromRGB(45,  45,  58),
-    BTNHOV      = Color3.fromRGB(62,  62,  78),
+    BG          = Color3.fromRGB(20,  20,  27),
+    BG2         = Color3.fromRGB(30,  30,  40),
+    BG3         = Color3.fromRGB(14,  14,  20),
+    ACCENT      = Color3.fromRGB(0,   150, 255),
+    ACCENT_GLOB = Color3.fromRGB(255, 130,   0),
+    TEXT        = Color3.fromRGB(230, 230, 238),
+    DIM         = Color3.fromRGB(120, 120, 140),
+    BTN         = Color3.fromRGB(40,  40,  54),
+    HOVER       = Color3.fromRGB(55,  55,  72),
     GREEN       = Color3.fromRGB(50,  210, 110),
     BORDER      = Color3.fromRGB(50,  50,  66),
     RED         = Color3.fromRGB(210,  55,  55),
+    BLACK       = Color3.fromRGB(0,    0,   0),
     WHITE       = Color3.new(1, 1, 1),
 }
 
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  HELPERS
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 local function make(class, props, parent)
     local o = Instance.new(class)
-    for k, v in pairs(props or {}) do o[k] = v end
+    for k, v in pairs(props) do o[k] = v end
     if parent then o.Parent = parent end
     return o
 end
 
-local function addCorner(o, r)
-    make("UICorner", {CornerRadius = UDim.new(0, r or 8)}, o)
+local function addCorner(obj, r)
+    make("UICorner", {CornerRadius = UDim.new(0, r or 8)}, obj)
 end
 
-local function addStroke(o, col, th)
-    make("UIStroke", {Color = col or T.BORDER, Thickness = th or 1}, o)
+local function addStroke(obj, col, t)
+    make("UIStroke", {Color = col or T.BORDER, Thickness = t or 1}, obj)
 end
 
-local function addPad(o, px)
-    local p = make("UIPadding", {}, o)
+local function addPadding(obj, px)
     local u = UDim.new(0, px)
-    p.PaddingLeft = u; p.PaddingRight  = u
-    p.PaddingTop  = u; p.PaddingBottom = u
+    local p = make("UIPadding", {}, obj)
+    p.PaddingLeft, p.PaddingRight = u, u
+    p.PaddingTop,  p.PaddingBottom = u, u
 end
 
-local function tween(o, props, t)
-    TweenService:Create(o, TweenInfo.new(t or 0.15, Enum.EasingStyle.Quad), props):Play()
+local function tween(obj, goal, t)
+    TweenService:Create(obj,
+        TweenInfo.new(t or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        goal):Play()
 end
 
-local function onHover(btn, norm, hov)
-    btn.MouseEnter:Connect(function() tween(btn, {BackgroundColor3 = hov})  end)
+local function onHover(btn, norm, hot)
+    btn.MouseEnter:Connect(function() tween(btn, {BackgroundColor3 = hot})  end)
     btn.MouseLeave:Connect(function() tween(btn, {BackgroundColor3 = norm}) end)
 end
 
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  ROOT SCREENGUI
---  IgnoreGuiInset = true  → origin is (0,0), top-left of screen
---  DisplayOrder  = 9999   → renders above everything else
--- ════════════════════════════════════════════════════════════════════
+--  IgnoreGuiInset = true  → coordinates start at absolute (0,0)
+--  DisplayOrder   = 9999  → renders above everything including CoreGui
+-- ══════════════════════════════════════════════════════════════════════
 local Root = make("ScreenGui", {
-    Name           = "CustomGUI",
+    Name           = "CustomRobloxGUI",
     ResetOnSpawn   = false,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    ZIndexBehavior = Enum.ZIndexBehavior.Global,
     DisplayOrder   = 9999,
     IgnoreGuiInset = true,
 }, PlayerGui)
 
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  TOP BAR
---  Sits at Y=0, height 36px — exactly where Roblox's bar was.
---  Three icon buttons: Menu, Chat, Global.
--- ════════════════════════════════════════════════════════════════════
+--  Mirrors native Roblox bar: full-width black strip, height 36px,
+--  with a left-side pill containing our three icon buttons.
+-- ══════════════════════════════════════════════════════════════════════
 local BAR_H = 36
 
-local Bar = make("Frame", {
-    Name             = "Bar",
+-- Full-width black background (same as native bar)
+local TopBG = make("Frame", {
+    Name             = "TopBG",
     Size             = UDim2.new(1, 0, 0, BAR_H),
     Position         = UDim2.new(0, 0, 0, 0),
-    BackgroundColor3 = T.BAR,
+    BackgroundColor3 = T.BLACK,
     BorderSizePixel  = 0,
-    ZIndex           = 2,
+    ZIndex           = 10,
 }, Root)
 
--- Left pill that holds the 3 icon buttons (matches native pill aesthetic)
+-- Left pill holding the three buttons
 local Pill = make("Frame", {
-    Name             = "Pill",
+    Name             = "LeftPill",
     Size             = UDim2.new(0, 120, 0, 28),
-    Position         = UDim2.new(0, 4, 0.5, -14),
-    BackgroundColor3 = Color3.fromRGB(50, 50, 50),
-    ZIndex           = 3,
-}, Bar)
+    Position         = UDim2.new(0, 4, 0, 4),
+    BackgroundColor3 = Color3.fromRGB(32, 32, 32),
+    ZIndex           = 11,
+}, Root)
 addCorner(Pill, 8)
 
-make("UIListLayout", {
-    FillDirection     = Enum.FillDirection.Horizontal,
-    VerticalAlignment = Enum.VerticalAlignment.Center,
-    Padding           = UDim.new(0, 2),
-}, Pill)
-addPad(Pill, 4)
-
-local function makeTopBtn(icon, tooltip)
+-- Button factory
+local function makeTopBtn(icon, xPos, tipText)
     local btn = make("TextButton", {
-        Size             = UDim2.new(0, 32, 0, 26),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        Name             = icon,
+        Size             = UDim2.new(0, 32, 0, 28),
+        Position         = UDim2.new(0, xPos, 0, 4),
+        BackgroundColor3 = T.BLACK,
         BackgroundTransparency = 1,
         Text             = icon,
-        TextColor3       = T.TEXT,
+        TextColor3       = T.WHITE,
         TextSize         = 17,
         Font             = Enum.Font.GothamBold,
         AutoButtonColor  = false,
-        ZIndex           = 4,
-    }, Pill)
+        ZIndex           = 12,
+    }, Root)
     addCorner(btn, 6)
 
     btn.MouseEnter:Connect(function()
-        tween(btn, {BackgroundTransparency = 0.5})
+        tween(btn, {BackgroundTransparency = 0.6})
     end)
     btn.MouseLeave:Connect(function()
         tween(btn, {BackgroundTransparency = 1})
     end)
+    btn.MouseButton1Down:Connect(function()
+        tween(btn, {BackgroundTransparency = 0.3})
+    end)
+    btn.MouseButton1Up:Connect(function()
+        tween(btn, {BackgroundTransparency = 0.6})
+    end)
 
-    -- Tooltip label
+    -- Tooltip
     local tip = make("TextLabel", {
         Size                   = UDim2.new(0, 0, 0, 20),
         AutomaticSize          = Enum.AutomaticSize.X,
         Position               = UDim2.new(0.5, 0, 1, 4),
         AnchorPoint            = Vector2.new(0.5, 0),
-        BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.25,
-        Text                   = "  " .. tooltip .. "  ",
+        BackgroundColor3       = Color3.fromRGB(20, 20, 20),
+        BackgroundTransparency = 0.1,
+        Text                   = " " .. tipText .. " ",
         TextColor3             = T.TEXT,
-        TextSize               = 10,
+        TextSize               = 11,
         Font                   = Enum.Font.Gotham,
         Visible                = false,
-        ZIndex                 = 10,
+        ZIndex                 = 50,
     }, btn)
     addCorner(tip, 4)
     btn.MouseEnter:Connect(function() tip.Visible = true  end)
@@ -202,21 +196,21 @@ local function makeTopBtn(icon, tooltip)
     return btn
 end
 
-local BtnMenu   = makeTopBtn("☰",  "Menu")
-local BtnChat   = makeTopBtn("💬", "Server Chat")
-local BtnGlobal = makeTopBtn("🌐", "Global Chat")
+local BtnMenu   = makeTopBtn("☰",  6,  "Menu")
+local BtnChat   = makeTopBtn("💬", 43, "Server Chat")
+local BtnGlobal = makeTopBtn("🌐", 80, "Global Chat")
 
--- Underline indicator for active button
-local function setActive(btn, on)
-    local ul = btn:FindFirstChild("UL")
+-- Active underline indicator
+local function setActiveBtn(btn, on)
+    local ul = btn:FindFirstChild("_ul")
     if not ul then
         ul = make("Frame", {
-            Name             = "UL",
-            Size             = UDim2.new(0.7, 0, 0, 2),
-            Position         = UDim2.new(0.15, 0, 1, -1),
+            Name             = "_ul",
+            Size             = UDim2.new(0.75, 0, 0, 2),
+            Position         = UDim2.new(0.125, 0, 1, -3),
             BackgroundColor3 = T.ACCENT,
             BorderSizePixel  = 0,
-            ZIndex           = 5,
+            ZIndex           = 13,
         }, btn)
         addCorner(ul, 1)
     end
@@ -224,114 +218,110 @@ local function setActive(btn, on)
     tween(btn, {TextColor3 = on and T.ACCENT or T.WHITE})
 end
 
--- ════════════════════════════════════════════════════════════════════
---  NOTIFICATION SYSTEM  (defined before panels so menu can use it)
--- ════════════════════════════════════════════════════════════════════
-local notifOn = true
-local nQ = {}
-local nBusy = false
+-- ══════════════════════════════════════════════════════════════════════
+--  NOTIFICATIONS  (defined before Menu so menu items can call it)
+-- ══════════════════════════════════════════════════════════════════════
+local notifEnabled = true
+local notifQueue   = {}
+local notifBusy    = false
 
 local function notify(title, body, color)
-    if not notifOn then return end
-    table.insert(nQ, {title = title, body = body, c = color or T.ACCENT})
-    if nBusy then return end
-    nBusy = true
+    if not notifEnabled then return end
+    table.insert(notifQueue, {title = title, body = body, color = color or T.ACCENT})
+    if notifBusy then return end
+    notifBusy = true
     task.spawn(function()
-        while #nQ > 0 do
-            local n = table.remove(nQ, 1)
+        while #notifQueue > 0 do
+            local n = table.remove(notifQueue, 1)
             local f = make("Frame", {
                 Size             = UDim2.new(0, 255, 0, 60),
                 Position         = UDim2.new(1, 10, 1, -68),
                 AnchorPoint      = Vector2.new(1, 1),
                 BackgroundColor3 = T.BG2,
-                ZIndex           = 100,
+                ZIndex           = 500,
             }, Root)
-            addCorner(f, 8)
-            addStroke(f, n.c, 1)
+            addCorner(f, 9)
+            addStroke(f, n.color, 1)
             make("Frame", {
                 Size = UDim2.new(0, 3, 1, -10), Position = UDim2.new(0, 0, 0, 5),
-                BackgroundColor3 = n.c, BorderSizePixel = 0, ZIndex = 101,
+                BackgroundColor3 = n.color, BorderSizePixel = 0, ZIndex = 501,
             }, f)
             make("TextLabel", {
-                Size = UDim2.new(1, -8, 0, 20), Position = UDim2.new(0, 9, 0, 5),
-                BackgroundTransparency = 1, Text = n.title, TextColor3 = n.c,
-                TextSize = 12, Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 101,
+                Size = UDim2.new(1, -12, 0, 20), Position = UDim2.new(0, 10, 0, 5),
+                BackgroundTransparency = 1, Text = n.title, TextColor3 = n.color,
+                TextSize = 13, Font = Enum.Font.GothamBold,
+                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 501,
             }, f)
             make("TextLabel", {
-                Size = UDim2.new(1, -8, 0, 22), Position = UDim2.new(0, 9, 0, 24),
-                BackgroundTransparency = 1, Text = n.body, TextColor3 = T.DIMTEXT,
+                Size = UDim2.new(1, -12, 0, 24), Position = UDim2.new(0, 10, 0, 26),
+                BackgroundTransparency = 1, Text = body, TextColor3 = T.DIM,
                 TextSize = 11, Font = Enum.Font.Gotham, TextWrapped = true,
-                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 101,
+                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 501,
             }, f)
-            tween(f, {Position = UDim2.new(1, -6, 1, -68)}, 0.2)
-            task.wait(3.5)
-            tween(f, {Position = UDim2.new(1, 270, 1, -68)}, 0.2)
+            tween(f, {Position = UDim2.new(1, -8, 1, -68)}, 0.2)
+            task.wait(3.2)
+            tween(f, {Position = UDim2.new(1, 280, 1, -68)}, 0.2)
             task.wait(0.25)
             f:Destroy()
             task.wait(0.1)
         end
-        nBusy = false
+        notifBusy = false
     end)
 end
 
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  PANEL FACTORY
---  Panels drop down just below the bar (Y = BAR_H + 2)
--- ════════════════════════════════════════════════════════════════════
-local PANEL_TOP = BAR_H + 2
-
+-- ══════════════════════════════════════════════════════════════════════
 local function makePanel(name, w, h, title, accent)
     local p = make("Frame", {
         Name             = name,
         Size             = UDim2.new(0, w, 0, h),
-        Position         = UDim2.new(0, 4, 0, PANEL_TOP),
+        Position         = UDim2.new(0, 4, 0, BAR_H + 4),
         BackgroundColor3 = T.BG,
         Visible          = false,
         ClipsDescendants = true,
-        ZIndex           = 5,
+        ZIndex           = 20,
     }, Root)
     addCorner(p, 10)
     addStroke(p, T.BORDER, 1)
 
-    -- Header strip
+    -- Header bar
     local hdr = make("Frame", {
         Name             = "Hdr",
         Size             = UDim2.new(1, 0, 0, 42),
         BackgroundColor3 = T.BG2,
-        ZIndex           = 6,
+        ZIndex           = 21,
     }, p)
     addCorner(hdr, 10)
-    -- Fill the bottom-round corners of header so it blends into body
+    -- fill the bottom-rounded corners of header
     make("Frame", {
         Size = UDim2.new(1, 0, 0, 10), Position = UDim2.new(0, 0, 1, -10),
-        BackgroundColor3 = T.BG2, BorderSizePixel = 0, ZIndex = 6,
+        BackgroundColor3 = T.BG2, BorderSizePixel = 0, ZIndex = 21,
     }, hdr)
 
-    -- Coloured left strip
+    -- Colour strip on left of header
     local strip = make("Frame", {
-        Size             = UDim2.new(0, 3, 1, -14),
-        Position         = UDim2.new(0, 8, 0.5, 0),
-        AnchorPoint      = Vector2.new(0, 0.5),
+        Size             = UDim2.new(0, 3, 0, 24),
+        Position         = UDim2.new(0, 9, 0.5, -12),
         BackgroundColor3 = accent,
         BorderSizePixel  = 0,
-        ZIndex           = 7,
+        ZIndex           = 22,
     }, hdr)
     addCorner(strip, 2)
 
     make("TextLabel", {
-        Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 18, 0, 0),
+        Size = UDim2.new(1, -80, 1, 0), Position = UDim2.new(0, 18, 0, 0),
         BackgroundTransparency = 1, Text = title, TextColor3 = T.TEXT,
-        TextSize = 13, Font = Enum.Font.GothamBold,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
+        TextSize = 14, Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 22,
     }, hdr)
 
     -- Close button
     local close = make("TextButton", {
-        Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -32, 0.5, -13),
+        Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -34, 0.5, -13),
         BackgroundColor3 = T.RED, Text = "✕", TextColor3 = T.WHITE,
-        TextSize = 11, Font = Enum.Font.GothamBold,
-        AutoButtonColor = false, ZIndex = 8,
+        TextSize = 12, Font = Enum.Font.GothamBold,
+        AutoButtonColor = false, ZIndex = 23,
     }, hdr)
     addCorner(close, 6)
     onHover(close, T.RED, Color3.fromRGB(255, 80, 80))
@@ -340,12 +330,12 @@ local function makePanel(name, w, h, title, accent)
     return p
 end
 
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  MENU PANEL
--- ════════════════════════════════════════════════════════════════════
-local MenuPanel = makePanel("Menu", 252, 395, "  ⚙   Menu", T.ACCENT)
+-- ══════════════════════════════════════════════════════════════════════
+local MenuPanel = makePanel("Menu", 252, 402, "  ⚙  Menu", T.ACCENT)
 
-local MS = make("ScrollingFrame", {
+local mScroll = make("ScrollingFrame", {
     Size                 = UDim2.new(1, 0, 1, -46),
     Position             = UDim2.new(0, 0, 0, 46),
     BackgroundTransparency = 1,
@@ -354,138 +344,147 @@ local MS = make("ScrollingFrame", {
     CanvasSize           = UDim2.new(0, 0, 0, 0),
     AutomaticCanvasSize  = Enum.AutomaticSize.Y,
     ElasticBehavior      = Enum.ElasticBehavior.Never,
-    ZIndex               = 6,
+    ZIndex               = 21,
 }, MenuPanel)
-addPad(MS, 8)
-make("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}, MS)
+addPadding(mScroll, 8)
+make("UIListLayout", {
+    Padding   = UDim.new(0, 5),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+}, mScroll)
 
-local function sec(txt, ord)
+local function sectionLabel(text, order)
     make("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1,
-        Text = txt, TextColor3 = T.DIMTEXT, TextSize = 9,
-        Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = ord, ZIndex = 7,
-    }, MS)
+        Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
+        Text = text, TextColor3 = T.DIM, TextSize = 10,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = order, ZIndex = 22,
+    }, mScroll)
 end
 
-local function toggle(label, icon, ord, def, cb)
+local function menuToggle(label, icon, order, default, callback)
     local row = make("Frame", {
         Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = T.BG2,
-        LayoutOrder = ord, ZIndex = 6,
-    }, MS)
-    addCorner(row, 8); addStroke(row, T.BORDER)
+        LayoutOrder = order, ZIndex = 22,
+    }, mScroll)
+    addCorner(row, 8)
+    addStroke(row, T.BORDER)
 
     make("TextLabel", {
-        Size = UDim2.new(0, 30, 1, 0), Position = UDim2.new(0, 8, 0, 0),
-        BackgroundTransparency = 1, Text = icon, TextSize = 17, Font = Enum.Font.Gotham, ZIndex = 7,
+        Size = UDim2.new(0, 32, 1, 0), Position = UDim2.new(0, 8, 0, 0),
+        BackgroundTransparency = 1, Text = icon, TextSize = 17,
+        Font = Enum.Font.Gotham, ZIndex = 23,
     }, row)
     make("TextLabel", {
-        Size = UDim2.new(1, -82, 1, 0), Position = UDim2.new(0, 42, 0, 0),
+        Size = UDim2.new(1, -88, 1, 0), Position = UDim2.new(0, 44, 0, 0),
         BackgroundTransparency = 1, Text = label, TextColor3 = T.TEXT,
-        TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
+        TextSize = 13, Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 23,
     }, row)
 
     local pill = make("TextButton", {
-        Size = UDim2.new(0, 42, 0, 21), Position = UDim2.new(1, -50, 0.5, -10.5),
-        BackgroundColor3 = def and T.ACCENT or T.BTN,
-        Text = "", AutoButtonColor = false, ZIndex = 7,
+        Size = UDim2.new(0, 44, 0, 22), Position = UDim2.new(1, -52, 0.5, -11),
+        BackgroundColor3 = default and T.ACCENT or T.BTN,
+        Text = "", AutoButtonColor = false, ZIndex = 23,
     }, row)
     addCorner(pill, 11)
 
     local knob = make("Frame", {
-        Size = UDim2.new(0, 15, 0, 15),
-        Position = def and UDim2.new(1, -18, 0.5, -7.5) or UDim2.new(0, 3, 0.5, -7.5),
-        BackgroundColor3 = T.WHITE, ZIndex = 8,
+        Size = UDim2.new(0, 16, 0, 16),
+        Position = default and UDim2.new(1,-19,0.5,-8) or UDim2.new(0,3,0.5,-8),
+        BackgroundColor3 = T.WHITE, ZIndex = 24,
     }, pill)
     addCorner(knob, 8)
 
-    local state = def or false
+    local state = default or false
     pill.MouseButton1Click:Connect(function()
         state = not state
         tween(pill, {BackgroundColor3 = state and T.ACCENT or T.BTN})
-        tween(knob, {Position = state and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)})
-        if cb then cb(state) end
+        tween(knob, {Position = state and UDim2.new(1,-19,0.5,-8) or UDim2.new(0,3,0.5,-8)})
+        if callback then callback(state) end
     end)
 end
 
-local function btn(label, icon, ord, cb)
+local function menuButton(label, icon, order, callback)
     local b = make("TextButton", {
         Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = T.BG2,
-        Text = "", AutoButtonColor = false, LayoutOrder = ord, ZIndex = 6,
-    }, MS)
-    addCorner(b, 8); addStroke(b, T.BORDER); onHover(b, T.BG2, T.BTNHOV)
+        Text = "", AutoButtonColor = false, LayoutOrder = order, ZIndex = 22,
+    }, mScroll)
+    addCorner(b, 8)
+    addStroke(b, T.BORDER)
+    onHover(b, T.BG2, T.HOVER)
 
     make("TextLabel", {
-        Size = UDim2.new(0, 30, 1, 0), Position = UDim2.new(0, 8, 0, 0),
-        BackgroundTransparency = 1, Text = icon, TextSize = 17, Font = Enum.Font.Gotham, ZIndex = 7,
+        Size = UDim2.new(0, 32, 1, 0), Position = UDim2.new(0, 8, 0, 0),
+        BackgroundTransparency = 1, Text = icon, TextSize = 17,
+        Font = Enum.Font.Gotham, ZIndex = 23,
     }, b)
     make("TextLabel", {
-        Size = UDim2.new(1, -44, 1, 0), Position = UDim2.new(0, 42, 0, 0),
+        Size = UDim2.new(1, -50, 1, 0), Position = UDim2.new(0, 44, 0, 0),
         BackgroundTransparency = 1, Text = label, TextColor3 = T.TEXT,
-        TextSize = 12, Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7,
+        TextSize = 13, Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 23,
     }, b)
-
-    b.MouseButton1Click:Connect(function() if cb then cb() end end)
+    b.MouseButton1Click:Connect(function() if callback then callback() end end)
 end
 
--- FPS label
-local fpsOn  = false
-local fpsLbl = make("TextLabel", {
-    Size             = UDim2.new(0, 80, 0, 22),
-    Position         = UDim2.new(1, -84, 0, 7),
-    BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-    BackgroundTransparency = 0.35,
-    Text             = "FPS: --",
-    TextColor3       = T.GREEN,
-    TextSize         = 12,
-    Font             = Enum.Font.GothamBold,
-    Visible          = false,
-    ZIndex           = 20,
+-- FPS counter overlay
+local fpsOn = false
+local fpsLabel = make("TextLabel", {
+    Size = UDim2.new(0, 80, 0, 22), Position = UDim2.new(1, -84, 0, 7),
+    BackgroundColor3 = T.BLACK, BackgroundTransparency = 0.3,
+    Text = "FPS: --", TextColor3 = T.GREEN, TextSize = 12,
+    Font = Enum.Font.GothamBold, Visible = false, ZIndex = 15,
 }, Root)
-addCorner(fpsLbl, 6); addPad(fpsLbl, 5)
-
+addCorner(fpsLabel, 5)
+addPadding(fpsLabel, 5)
 do
     local fc, lt = 0, tick()
     RunService.RenderStepped:Connect(function()
         fc += 1
-        if tick() - lt >= 1 then
-            fpsLbl.Text    = ("FPS: %d"):format(fc)
-            fpsLbl.Visible = fpsOn
-            fc, lt = 0, tick()
+        local now = tick()
+        if now - lt >= 1 then
+            fpsLabel.Text    = ("FPS: %d"):format(fc)
+            fpsLabel.Visible = fpsOn
+            fc, lt = 0, now
         end
     end)
 end
 
-sec("DISPLAY", 10)
-toggle("FPS Counter",         "📊", 11, false, function(v) fpsOn = v end)
-toggle("Shift-Lock",          "🔒", 12, false, function(v)
+-- Populate menu
+sectionLabel("DISPLAY", 10)
+menuToggle("FPS Counter",        "📊", 11, false, function(v) fpsOn = v end)
+menuToggle("Shift-Lock",         "🔒", 12, false, function(v)
     LocalPlayer.DevEnableMouseLock = v
 end)
-toggle("Show Notifications",  "🔔", 13, true, function(v) notifOn = v end)
+menuToggle("Show Notifications", "🔔", 13, true, function(v)
+    notifEnabled = v
+end)
 
-sec("PLAYER", 20)
-btn("Reset Character",  "🔄", 21, function()
-    local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+sectionLabel("PLAYER", 20)
+menuButton("Reset Character", "🔄", 21, function()
+    local h = LocalPlayer.Character and
+              LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if h then h.Health = 0 end
 end)
-btn("Toggle Nameplate", "🏷", 22, function()
+menuButton("Toggle Nameplates", "🏷", 22, function()
     local head = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
     if head then
-        for _, g in ipairs(head:GetChildren()) do
-            if g:IsA("BillboardGui") then g.Enabled = not g.Enabled end
+        for _, v in ipairs(head:GetChildren()) do
+            if v:IsA("BillboardGui") then v.Enabled = not v.Enabled end
         end
     end
 end)
-btn("Show User ID",     "🪪", 23, function()
+menuButton("Show User ID", "🪪", 23, function()
     notify("Your User ID", tostring(LocalPlayer.UserId), T.ACCENT)
 end)
 
-sec("PERFORMANCE", 30)
-toggle("Low Graphics",    "🖥", 31, false, function(v)
+sectionLabel("PERFORMANCE", 30)
+menuToggle("Low Graphics", "🖥", 31, false, function(v)
     game:GetService("Lighting").GlobalShadows = not v
     settings().Rendering.QualityLevel = v and 1 or 10
 end)
-toggle("Hide Others",     "👤", 32, false, function(v)
+menuToggle("Hide Other Players", "👤", 32, false, function(v)
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             p.Character.Parent = v and nil or workspace
@@ -493,271 +492,287 @@ toggle("Hide Others",     "👤", 32, false, function(v)
     end
 end)
 
-sec("GAME", 40)
-btn("Rejoin",      "🔁", 41, function()
+sectionLabel("GAME", 40)
+menuButton("Rejoin Server",   "🔁", 41, function()
     game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
 end)
-btn("Leave Game",  "🚪", 42, function()
+menuButton("Leave to Roblox", "🚪", 42, function()
     game:GetService("TeleportService"):Teleport(1818)
 end)
 
--- ════════════════════════════════════════════════════════════════════
---  CHAT PANEL BUILDER
--- ════════════════════════════════════════════════════════════════════
-local COLORS = {
+-- ══════════════════════════════════════════════════════════════════════
+--  CHAT PANEL HELPER
+-- ══════════════════════════════════════════════════════════════════════
+local playerColors = {}
+local colorList    = {
     Color3.fromRGB(0,162,255), Color3.fromRGB(255,80,80),
-    Color3.fromRGB(60,210,90), Color3.fromRGB(255,195,0),
-    Color3.fromRGB(195,90,255), Color3.fromRGB(255,135,35),
-    Color3.fromRGB(0,215,195), Color3.fromRGB(255,70,175),
+    Color3.fromRGB(80,220,80), Color3.fromRGB(255,200,0),
+    Color3.fromRGB(190,90,255), Color3.fromRGB(255,135,40),
+    Color3.fromRGB(0,215,195),  Color3.fromRGB(255,80,175),
 }
-local nameColors, nameIdx = {}, 0
-local function getNameColor(n)
-    if not nameColors[n] then
-        nameIdx = (nameIdx % #COLORS) + 1
-        nameColors[n] = COLORS[nameIdx]
+local colorCursor = 0
+
+local function playerColor(name)
+    if not playerColors[name] then
+        colorCursor = (colorCursor % #colorList) + 1
+        playerColors[name] = colorList[colorCursor]
     end
-    return nameColors[n]
+    return playerColors[name]
 end
 
-local function makeChatPanel(name, w, h, title, accent, ph)
-    local panel = makePanel(name, w, h, title, accent)
+local function buildChatPanel(panelName, w, h, title, accent, hint)
+    local panel = makePanel(panelName, w, h, title, accent)
 
     local scroll = make("ScrollingFrame", {
-        Size                 = UDim2.new(1, -2, 1, -96),
-        Position             = UDim2.new(0, 1, 0, 46),
+        Size                 = UDim2.new(1, -4, 1, -94),
+        Position             = UDim2.new(0, 2, 0, 46),
         BackgroundTransparency = 1,
         ScrollBarThickness   = 4,
         ScrollBarImageColor3 = accent,
         CanvasSize           = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize  = Enum.AutomaticSize.Y,
         ElasticBehavior      = Enum.ElasticBehavior.Never,
-        ZIndex               = 6,
+        ZIndex               = 21,
     }, panel)
     make("UIListLayout", {Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder}, scroll)
-    addPad(scroll, 7)
+    addPadding(scroll, 7)
 
-    -- Divider
+    -- Thin divider
     make("Frame", {
-        Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -50),
-        BackgroundColor3 = T.BORDER, BorderSizePixel = 0, ZIndex = 6,
+        Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -48),
+        BackgroundColor3 = T.BORDER, BorderSizePixel = 0, ZIndex = 21,
     }, panel)
 
-    -- Input row
-    local inputRow = make("Frame", {
-        Size = UDim2.new(1, 0, 0, 48), Position = UDim2.new(0, 0, 1, -48),
-        BackgroundColor3 = T.BG2, ZIndex = 6,
+    -- Input bar
+    local inputBar = make("Frame", {
+        Size = UDim2.new(1, 0, 0, 46), Position = UDim2.new(0, 0, 1, -46),
+        BackgroundColor3 = T.BG2, ZIndex = 21,
     }, panel)
-    -- Fill top-round corners of input row
+    -- fill top round corners of bar
     make("Frame", {
-        Size = UDim2.new(1, 0, 0, 8), BackgroundColor3 = T.BG2, BorderSizePixel = 0, ZIndex = 6,
-    }, inputRow)
-    addCorner(inputRow, 10)
+        Size = UDim2.new(1, 0, 0, 8), BackgroundColor3 = T.BG2,
+        BorderSizePixel = 0, ZIndex = 21,
+    }, inputBar)
 
-    local tbox = make("TextBox", {
-        Size                = UDim2.new(1, -50, 1, -12),
-        Position            = UDim2.new(0, 6, 0, 6),
-        BackgroundColor3    = T.BG3,
-        TextColor3          = T.TEXT,
-        PlaceholderText     = ph or "Type a message…",
-        PlaceholderColor3   = T.DIMTEXT,
-        Text                = "",
-        TextSize            = 12,
-        Font                = Enum.Font.Gotham,
-        ClearTextOnFocus    = false,
-        TextXAlignment      = Enum.TextXAlignment.Left,
-        ZIndex              = 7,
-    }, inputRow)
-    addCorner(tbox, 6); addPad(tbox, 7)
+    local textBox = make("TextBox", {
+        Size = UDim2.new(1, -50, 1, -12), Position = UDim2.new(0, 6, 0, 6),
+        BackgroundColor3 = T.BG3, TextColor3 = T.TEXT,
+        PlaceholderText = hint, PlaceholderColor3 = T.DIM,
+        Text = "", TextSize = 13, Font = Enum.Font.Gotham,
+        ClearTextOnFocus = false,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 22,
+    }, inputBar)
+    addCorner(textBox, 6)
+    addPadding(textBox, 7)
 
     local sendBtn = make("TextButton", {
-        Size = UDim2.new(0, 34, 0, 30), Position = UDim2.new(1, -40, 0, 9),
+        Size = UDim2.new(0, 34, 0, 30), Position = UDim2.new(1, -40, 0, 8),
         BackgroundColor3 = accent, Text = "➤", TextColor3 = T.WHITE,
-        TextSize = 14, Font = Enum.Font.GothamBold, AutoButtonColor = false, ZIndex = 7,
-    }, inputRow)
+        TextSize = 14, Font = Enum.Font.GothamBold,
+        AutoButtonColor = false, ZIndex = 22,
+    }, inputBar)
     addCorner(sendBtn, 6)
     onHover(sendBtn, accent, accent:Lerp(T.WHITE, 0.15))
 
-    local mc = 0
-    local function addMsg(sender, text, sys)
-        mc += 1
-        local col = sys and T.DIMTEXT or getNameColor(sender or "")
+    local n = 0
+    local function addMessage(sender, text, isSystem)
+        n += 1
+        local col = isSystem and T.DIM or playerColor(sender or "?")
 
         local bubble = make("Frame", {
-            Name = "M"..mc, Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundColor3 = T.BG2, BackgroundTransparency = sys and 1 or 0,
-            LayoutOrder = mc, ZIndex = 6,
+            Name = ("M%d"):format(n),
+            Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = T.BG2,
+            BackgroundTransparency = isSystem and 1 or 0,
+            LayoutOrder = n, ZIndex = 22,
         }, scroll)
-        if not sys then addCorner(bubble, 6) end
+        if not isSystem then addCorner(bubble, 5) end
 
         local inner = make("Frame", {
             Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1, ZIndex = 7,
+            BackgroundTransparency = 1, ZIndex = 23,
         }, bubble)
-        addPad(inner, 4)
+        addPadding(inner, 5)
         make("UIListLayout", {Padding = UDim.new(0, 1)}, inner)
 
-        if not sys then
-            local nr = make("Frame", {
-                Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, ZIndex = 7,
+        if not isSystem then
+            local nameRow = make("Frame", {
+                Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, ZIndex = 23,
             }, inner)
             make("Frame", {
-                Size = UDim2.new(0, 3, 1, -2), Position = UDim2.new(0, 0, 0, 1),
-                BackgroundColor3 = col, BorderSizePixel = 0, ZIndex = 8,
-            }, nr)
+                Size = UDim2.new(0, 2, 1, -4), Position = UDim2.new(0, 0, 0, 2),
+                BackgroundColor3 = col, BorderSizePixel = 0, ZIndex = 24,
+            }, nameRow)
             make("TextLabel", {
-                Size = UDim2.new(1, -7, 1, 0), Position = UDim2.new(0, 7, 0, 0),
+                Size = UDim2.new(1, -6, 1, 0), Position = UDim2.new(0, 6, 0, 0),
                 BackgroundTransparency = 1, Text = sender, TextColor3 = col,
-                TextSize = 10, Font = Enum.Font.GothamBold,
-                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 8,
-            }, nr)
+                TextSize = 11, Font = Enum.Font.GothamBold,
+                TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 24,
+            }, nameRow)
         end
 
         make("TextLabel", {
             Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundTransparency = 1, Text = text,
-            TextColor3 = sys and T.DIMTEXT or T.TEXT,
-            TextSize = 12, Font = sys and Enum.Font.GothamItalic or Enum.Font.Gotham,
-            TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true, ZIndex = 7,
+            TextColor3 = isSystem and T.DIM or T.TEXT,
+            TextSize = 13,
+            Font = isSystem and Enum.Font.GothamItalic or Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextWrapped = true, ZIndex = 23,
         }, inner)
 
         task.defer(function()
             scroll.CanvasPosition = Vector2.new(0, math.huge)
         end)
 
+        -- Prune to 60 messages
         local frames = {}
         for _, c in ipairs(scroll:GetChildren()) do
             if c:IsA("Frame") then frames[#frames+1] = c end
         end
         if #frames > 60 then
-            table.sort(frames, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+            table.sort(frames, function(a,b) return a.LayoutOrder < b.LayoutOrder end)
             frames[1]:Destroy()
         end
     end
 
-    return panel, tbox, sendBtn, addMsg
+    return panel, textBox, sendBtn, addMessage
 end
 
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  SERVER CHAT
--- ════════════════════════════════════════════════════════════════════
-local ChatPanel, chatBox, chatSendBtn, addLocalMsg =
-    makeChatPanel("Chat", 305, 410, "  💬  Server Chat", T.ACCENT,
+-- ══════════════════════════════════════════════════════════════════════
+local ChatPanel, chatBox, chatSend, addLocalMsg =
+    buildChatPanel("Chat", 308, 418,
+        "  💬  Server Chat", T.ACCENT,
         "Message players on this server…")
 
-addLocalMsg(nil, "📡 Visible to others on this server running the same script.", true)
-addLocalMsg(nil, "—————————————————————————————————", true)
+addLocalMsg(nil, "📡 Visible to other players on this server running this script.", true)
+addLocalMsg(nil, "────────────────────────────────────", true)
 
--- RemoteEvent relay (optional server script makes this cross-player)
-local LocalRemote = nil
+-- Shared RemoteEvent (requires tiny server relay script for cross-client delivery)
+local LocalChatRemote = nil
 task.spawn(function()
-    local folder = ReplicatedStorage:FindFirstChild("CGUI")
-               or make("Folder", {Name = "CGUI"}, ReplicatedStorage)
-    local re = folder:FindFirstChild("Chat")
-            or make("RemoteEvent", {Name = "Chat"}, folder)
-    LocalRemote = re
+    local folder = ReplicatedStorage:FindFirstChild("CGUIv1")
+                or make("Folder", {Name = "CGUIv1"}, ReplicatedStorage)
+    local re = folder:FindFirstChild("LocalChat")
+              or make("RemoteEvent", {Name = "LocalChat"}, folder)
+    LocalChatRemote = re
     re.OnClientEvent:Connect(function(sender, msg)
-        if type(sender) ~= "string" or type(msg) ~= "string" then return end
-        if sender == LocalPlayer.Name then return end
-        addLocalMsg(sender, msg)
+        if type(sender) == "string" and type(msg) == "string" then
+            if sender ~= LocalPlayer.Name then
+                addLocalMsg(sender, msg)
+            end
+        end
     end)
 end)
 
-local lastChat = 0
+local lastLocalSend = 0
 local function sendLocal()
-    local txt = chatBox.Text:match("^%s*(.-)%s*$")
-    if txt == "" or tick() - lastChat < 1 then return end
-    lastChat = tick()
+    local msg = chatBox.Text:match("^%s*(.-)%s*$")
+    if msg == "" then return end
+    if tick() - lastLocalSend < 0.8 then return end
+    lastLocalSend = tick()
     chatBox.Text = ""
-    txt = txt:sub(1, MAX_LEN)
-    addLocalMsg(LocalPlayer.Name, txt)
-    if LocalRemote then pcall(function() LocalRemote:FireServer(txt) end) end
+    msg = msg:sub(1, 200)
+    addLocalMsg(LocalPlayer.Name, msg)   -- always echo to self
+    if LocalChatRemote then
+        pcall(function() LocalChatRemote:FireServer(msg) end)
+    end
 end
-
-chatSendBtn.MouseButton1Click:Connect(sendLocal)
+chatSend.MouseButton1Click:Connect(sendLocal)
 chatBox.FocusLost:Connect(function(enter) if enter then sendLocal() end end)
 
--- ════════════════════════════════════════════════════════════════════
---  GLOBAL CHAT
--- ════════════════════════════════════════════════════════════════════
-local GlobalPanel, globalBox, globalSendBtn, addGlobalMsg =
-    makeChatPanel("Global", 305, 410, "  🌐  Global Chat", T.GLOB,
+-- ══════════════════════════════════════════════════════════════════════
+--  GLOBAL CHAT  (MessagingService — published games only)
+-- ══════════════════════════════════════════════════════════════════════
+local GLOBAL_CHANNEL = "CGUIv1_Global"
+local SERVER_ID      = tostring(game.JobId):sub(1, 6)
+
+local GlobalPanel, globalBox, globalSend, addGlobalMsg =
+    buildChatPanel("Global", 308, 418,
+        "  🌐  Global Chat", T.ACCENT_GLOB,
         "Message players across all servers…")
 
 addGlobalMsg(nil, "🌐 Chat with everyone using this script across all servers.", true)
-addGlobalMsg(nil, "⚠ Needs a published game — not available in Studio test.", true)
-addGlobalMsg(nil, "—————————————————————————————————", true)
+addGlobalMsg(nil, "⚠ Requires a published game (not Studio solo-test).", true)
+addGlobalMsg(nil, "────────────────────────────────────", true)
 
 task.spawn(function()
     local ok, err = pcall(function()
         MessagingService:SubscribeAsync(GLOBAL_CHANNEL, function(data)
-            local d = data.Data
-            if type(d) ~= "table" then return end
-            if type(d.s) ~= "string" or type(d.m) ~= "string" then return end
-            if d.s == LocalPlayer.Name and d.id == SERVER_ID then return end
-            local pfx = d.id and ("["..d.id.."] ") or ""
-            addGlobalMsg(pfx .. d.s, d.m:sub(1, MAX_LEN))
+            local p = data.Data
+            if type(p) ~= "table" then return end
+            if type(p.s) ~= "string" or type(p.m) ~= "string" then return end
+            if p.s == LocalPlayer.Name and p.id == SERVER_ID then return end
+            local prefix = p.id and ("["..p.id.."] ") or ""
+            addGlobalMsg(prefix .. p.s, p.m:sub(1, 200))
             if not GlobalPanel.Visible then
-                notify("Global · " .. d.s, d.m:sub(1, 55), T.GLOB)
+                notify("Global · " .. p.s, p.m:sub(1, 55), T.ACCENT_GLOB)
             end
         end)
     end)
     if not ok then
-        addGlobalMsg(nil, "⚠ MessagingService unavailable: " .. tostring(err), true)
+        addGlobalMsg(nil, "⚠ MessagingService unavailable: "..tostring(err), true)
     end
 end)
 
-local lastGlobal = 0
+local lastGlobalSend = 0
 local function sendGlobal()
-    local txt = globalBox.Text:match("^%s*(.-)%s*$")
-    if txt == "" or tick() - lastGlobal < 1.5 then return end
-    lastGlobal = tick()
+    local msg = globalBox.Text:match("^%s*(.-)%s*$")
+    if msg == "" then return end
+    if tick() - lastGlobalSend < 1.2 then return end
+    lastGlobalSend = tick()
     globalBox.Text = ""
-    txt = txt:sub(1, MAX_LEN)
-    addGlobalMsg("[" .. SERVER_ID .. "] " .. LocalPlayer.Name, txt)
+    msg = msg:sub(1, 200)
+    addGlobalMsg("["..SERVER_ID.."] "..LocalPlayer.Name, msg)
     task.spawn(function()
         local ok, err = pcall(function()
             MessagingService:PublishAsync(GLOBAL_CHANNEL, {
-                s = LocalPlayer.Name, m = txt, id = SERVER_ID,
+                s  = LocalPlayer.Name,
+                m  = msg,
+                id = SERVER_ID,
             })
         end)
         if not ok then
-            addGlobalMsg(nil, "⚠ Failed to send: " .. tostring(err), true)
+            addGlobalMsg(nil, "⚠ Publish failed: "..tostring(err), true)
         end
     end)
 end
-
-globalSendBtn.MouseButton1Click:Connect(sendGlobal)
+globalSend.MouseButton1Click:Connect(sendGlobal)
 globalBox.FocusLost:Connect(function(enter) if enter then sendGlobal() end end)
 
--- ════════════════════════════════════════════════════════════════════
---  PANEL TOGGLE  — one open at a time
--- ════════════════════════════════════════════════════════════════════
-local allPanels = {
+-- ══════════════════════════════════════════════════════════════════════
+--  PANEL TOGGLE LOGIC
+-- ══════════════════════════════════════════════════════════════════════
+local panelMap = {
     {btn = BtnMenu,   panel = MenuPanel},
     {btn = BtnChat,   panel = ChatPanel},
     {btn = BtnGlobal, panel = GlobalPanel},
 }
 
-for _, e in ipairs(allPanels) do
-    e.btn.MouseButton1Click:Connect(function()
-        local willOpen = not e.panel.Visible
-        for _, x in ipairs(allPanels) do
-            x.panel.Visible = false
-            setActive(x.btn, false)
+for _, entry in ipairs(panelMap) do
+    entry.btn.MouseButton1Click:Connect(function()
+        local opening = not entry.panel.Visible
+        -- Close all panels and deactivate all buttons first
+        for _, e in ipairs(panelMap) do
+            e.panel.Visible = false
+            setActiveBtn(e.btn, false)
         end
-        if willOpen then
-            e.panel.Visible = true
-            setActive(e.btn, true)
+        -- Then open the clicked one
+        if opening then
+            entry.panel.Visible = true
+            setActiveBtn(entry.btn, true)
         end
     end)
 end
 
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 --  DONE
--- ════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════
 task.delay(1, function()
-    notify("Custom GUI Ready", "Tap  ☰  💬  🌐  to get started.")
+    notify("Custom GUI Ready ✓", "Tap  ☰  💬  🌐  to get started.")
 end)
 
-print("[CustomGUI] Loaded for", LocalPlayer.Name)
+print("[CustomGUI] Loaded successfully for", LocalPlayer.Name)
