@@ -1,718 +1,562 @@
---test2
+--[[
+    ╔══════════════════════════════════════════╗
+    ║         SECRET CHAT LOCALSCRIPT          ║
+    ║  Only visible between players with this  ║
+    ║  exact script. Handshake-verified chat.  ║
+    ╚══════════════════════════════════════════╝
 
--- ╔══════════════════════════════════════════════════════════════════╗
--- ║  Custom GUI  ·  LocalScript                                      ║
--- ║  Place in: StarterPlayer > StarterPlayerScripts                  ║
--- ╚══════════════════════════════════════════════════════════════════╝
+    HOW IT WORKS:
+    • On load, your client broadcasts a silent handshake tag via chat.
+    • Any other player running this script detects the tag and marks
+      you as a "verified" user — and vice versa.
+    • Secret messages are prefixed with a hidden tag. Players WITHOUT
+      the script see nothing. Players WITH it see the custom chat GUI.
+    • A periodic ping re-verifies users every ~10 seconds.
 
+    CONTROLS:
+    • Press [Right Shift] to toggle the chat window.
+    • Press [Enter] inside the text box to send a message.
+    • Drag the title bar to move the window.
+
+    NOTE: Roblox's SafeChat filter may sanitize outgoing messages in
+    some servers/accounts. This script works best on 13+ accounts or
+    in games with relaxed chat filtering. If handshakes are filtered,
+    mutual detection may not occur.
+]]
+
+-- ─────────────────────────────────────────────────────────
+--  SERVICES & LOCALS
+-- ─────────────────────────────────────────────────────────
 local Players          = game:GetService("Players")
-local ReplicatedStorage= game:GetService("ReplicatedStorage")
+local TextChatService  = game:GetService("TextChatService")
 local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local TweenService     = game:GetService("TweenService")
-local MessagingService = game:GetService("MessagingService")
-local StarterGui       = game:GetService("StarterGui")
 
-local LP      = Players.LocalPlayer
-local PGui    = LP:WaitForChild("PlayerGui")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
--- ─────────────────────────────────────────────────────────────────────
---  HIDE NATIVE ROBLOX GUI
---  Must wait a moment before calling SetCore — it errors if CoreGui
---  hasn't fully loaded yet. We retry until it succeeds.
--- ─────────────────────────────────────────────────────────────────────
-local function nukeRobloxGui()
-    -- Hide every CoreGui category
-    for _, t in ipairs({
-        Enum.CoreGuiType.All,
-        Enum.CoreGuiType.Chat,
-        Enum.CoreGuiType.Backpack,
-        Enum.CoreGuiType.Health,
-        Enum.CoreGuiType.PlayerList,
-        Enum.CoreGuiType.EmotesMenu,
-        Enum.CoreGuiType.SelfView,
-    }) do
-        pcall(StarterGui.SetCoreGuiEnabled, StarterGui, t, false)
-    end
-    -- Hide the topbar pill (menu + voice chat icons)
-    pcall(StarterGui.SetCore, StarterGui, "TopbarEnabled", false)
-end
+-- ─────────────────────────────────────────────────────────
+--  CONFIGURATION
+-- ─────────────────────────────────────────────────────────
+local CFG = {
+    -- Change SCRIPT_KEY if you want your own isolated chat group.
+    -- Both users MUST have the same key to communicate.
+    SCRIPT_KEY     = "SCS_X9K2",
 
--- Retry loop — keeps calling until SetCore stops erroring
-task.spawn(function()
-    for _ = 1, 60 do        -- try for up to ~6 seconds
-        nukeRobloxGui()
-        task.wait(0.1)
-    end
-    -- Then re-apply every 5 s indefinitely (some games re-enable it)
-    while true do
-        nukeRobloxGui()
-        task.wait(5)
-    end
-end)
+    -- Tag injected before every secret message in the Roblox chat.
+    -- Invisible to users without the script.
+    HANDSHAKE_TAG  = "HS:",
+    MESSAGE_TAG    = "SC:",
 
--- Also re-apply on respawn
-LP.CharacterAdded:Connect(function()
-    task.wait(0.2)
-    nukeRobloxGui()
-end)
-
--- ─────────────────────────────────────────────────────────────────────
---  CONSTANTS
--- ─────────────────────────────────────────────────────────────────────
-local MAX_MSG      = 200
-local GCHANNEL     = "CGUI_Global_v2"
-local SID          = tostring(game.JobId):sub(1, 6)
-
--- ─────────────────────────────────────────────────────────────────────
---  COLOURS
--- ─────────────────────────────────────────────────────────────────────
-local C = {
-    BG      = Color3.fromRGB(18,  18,  24),
-    SURFACE = Color3.fromRGB(28,  28,  38),
-    RAISED  = Color3.fromRGB(38,  38,  52),
-    BORDER  = Color3.fromRGB(55,  55,  75),
-    ACC     = Color3.fromRGB(99,  102, 241),   -- indigo accent
-    GLOB    = Color3.fromRGB(245, 158,  11),   -- amber
-    TEXT    = Color3.fromRGB(240, 240, 248),
-    MUTED   = Color3.fromRGB(120, 120, 145),
-    GREEN   = Color3.fromRGB(52,  211, 153),
-    RED     = Color3.fromRGB(239,  68,  68),
-    WHITE   = Color3.new(1,1,1),
-    BLACK   = Color3.new(0,0,0),
+    PING_INTERVAL  = 10,   -- Seconds between handshake broadcasts
+    MAX_MESSAGES   = 80,   -- Max messages kept in the window
+    WINDOW_WIDTH   = 340,
+    WINDOW_HEIGHT  = 420,
 }
 
--- ─────────────────────────────────────────────────────────────────────
---  HELPERS
--- ─────────────────────────────────────────────────────────────────────
-local function inst(cls, props, parent)
-    local o = Instance.new(cls)
-    for k,v in pairs(props) do o[k]=v end
-    if parent then o.Parent=parent end
-    return o
+-- Full composite tags
+local HS_FULL  = CFG.HANDSHAKE_TAG .. CFG.SCRIPT_KEY .. ":"
+local MSG_FULL = CFG.MESSAGE_TAG   .. CFG.SCRIPT_KEY .. ":"
+
+-- ─────────────────────────────────────────────────────────
+--  STATE
+-- ─────────────────────────────────────────────────────────
+local scriptUsers   = {}  -- [playerName] = true
+local messageCount  = 0
+local chatVisible   = true
+local isDragging    = false
+local dragOffset    = Vector2.new(0, 0)
+
+-- ─────────────────────────────────────────────────────────
+--  CLEANUP: Remove any old instances of this GUI
+-- ─────────────────────────────────────────────────────────
+local old = PlayerGui:FindFirstChild("SecretChatGui")
+if old then old:Destroy() end
+
+-- ─────────────────────────────────────────────────────────
+--  GUI CONSTRUCTION
+-- ─────────────────────────────────────────────────────────
+local Root = Instance.new("ScreenGui")
+Root.Name            = "SecretChatGui"
+Root.ResetOnSpawn    = false
+Root.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+Root.DisplayOrder    = 999
+Root.Parent          = PlayerGui
+
+-- Helper: add UICorner
+local function corner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = parent
+    return c
 end
-local function rnd(o,r)  inst("UICorner",{CornerRadius=UDim.new(0,r or 8)},o) end
-local function brdr(o,c,t) inst("UIStroke",{Color=c or C.BORDER,Thickness=t or 1},o) end
-local function pdg(o,px)
-    local p=inst("UIPadding",{},o); local u=UDim.new(0,px)
-    p.PaddingLeft,p.PaddingRight,p.PaddingTop,p.PaddingBottom=u,u,u,u
+
+-- Helper: add UIPadding
+local function padding(parent, px)
+    local p = Instance.new("UIPadding")
+    p.PaddingLeft   = UDim.new(0, px)
+    p.PaddingRight  = UDim.new(0, px)
+    p.PaddingTop    = Udim and UDim.new(0, px) or UDim.new(0, math.floor(px/2))
+    p.PaddingBottom = Udim and UDim.new(0, px) or UDim.new(0, math.floor(px/2))
+    p.Parent = parent
 end
-local function tw(o,g,t)
-    TweenService:Create(o,TweenInfo.new(t or .15,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),g):Play()
-end
 
--- ─────────────────────────────────────────────────────────────────────
---  ROOT SCREENGUI
---  IgnoreGuiInset=true  → coords from absolute (0,0)
---  DisplayOrder=9999    → on top of everything
--- ─────────────────────────────────────────────────────────────────────
-local SG = inst("ScreenGui",{
-    Name           = "CustomGUI",
-    ResetOnSpawn   = false,
-    ZIndexBehavior = Enum.ZIndexBehavior.Global,
-    DisplayOrder   = 9999,
-    IgnoreGuiInset = true,
-}, PGui)
+-- ── Main Window ──────────────────────────────────────────
+local Window = Instance.new("Frame")
+Window.Name              = "Window"
+Window.Size              = UDim2.new(0, CFG.WINDOW_WIDTH, 0, CFG.WINDOW_HEIGHT)
+Window.Position          = UDim2.new(0, 14, 0.5, -CFG.WINDOW_HEIGHT/2)
+Window.BackgroundColor3  = Color3.fromRGB(10, 11, 18)
+Window.BorderSizePixel   = 0
+Window.ClipsDescendants  = true
+Window.Parent            = Root
+corner(Window, 10)
 
--- ─────────────────────────────────────────────────────────────────────
---  FLOATING LAUNCHER WIDGET
---  A small vertical card on the left edge holding 3 icon buttons.
---  Not a bar — it floats and has a shadow.
--- ─────────────────────────────────────────────────────────────────────
--- Shadow (rendered behind the card)
-local shadow = inst("Frame",{
-    Size             = UDim2.new(0,60,0,144),
-    Position         = UDim2.new(0,6,0,66),   -- slightly offset for shadow effect
-    BackgroundColor3 = C.BLACK,
-    BackgroundTransparency = 0.65,
-    ZIndex           = 1,
-},SG)
-rnd(shadow,16)
+-- Subtle border glow (achieved via a slightly larger frame underneath)
+local Glow = Instance.new("Frame")
+Glow.Name             = "Glow"
+Glow.Size             = UDim2.new(1, 4, 1, 4)
+Glow.Position         = UDim2.new(0, -2, 0, -2)
+Glow.BackgroundColor3 = Color3.fromRGB(80, 160, 255)
+Glow.BackgroundTransparency = 0.72
+Glow.BorderSizePixel  = 0
+Glow.ZIndex           = 0
+Glow.Parent           = Window
+corner(Glow, 12)
 
--- Main card
-local Card = inst("Frame",{
-    Name             = "LauncherCard",
-    Size             = UDim2.new(0,52,0,136),
-    Position         = UDim2.new(0,8,0,62),
-    BackgroundColor3 = C.SURFACE,
-    ZIndex           = 2,
-},SG)
-rnd(Card,14)
-brdr(Card,C.BORDER,1)
+-- ── Title Bar ─────────────────────────────────────────────
+local TitleBar = Instance.new("Frame")
+TitleBar.Name            = "TitleBar"
+TitleBar.Size            = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3= Color3.fromRGB(18, 20, 32)
+TitleBar.BorderSizePixel = 0
+TitleBar.ZIndex          = 2
+TitleBar.Parent          = Window
+corner(TitleBar, 10)
 
--- Vertical list inside card
-inst("UIListLayout",{
-    FillDirection=Enum.FillDirection.Vertical,
-    HorizontalAlignment=Enum.HorizontalAlignment.Center,
-    VerticalAlignment=Enum.VerticalAlignment.Center,
-    Padding=UDim.new(0,4),
-},Card)
-pdg(Card,6)
+-- Solid bottom strip to square-off the bottom of title bar
+local TitleFix = Instance.new("Frame")
+TitleFix.Size            = UDim2.new(1, 0, 0, 10)
+TitleFix.Position        = UDim2.new(0, 0, 1, -10)
+TitleFix.BackgroundColor3= Color3.fromRGB(18, 20, 32)
+TitleFix.BorderSizePixel = 0
+TitleFix.ZIndex          = 2
+TitleFix.Parent          = TitleBar
 
--- ─────────────────────────────────────────────────────────────────────
---  ICON BUTTON FACTORY
--- ─────────────────────────────────────────────────────────────────────
-local function iconBtn(icon, color, tipText)
-    local wrap = inst("Frame",{
-        Size=UDim2.new(1,0,0,36),
-        BackgroundTransparency=1,
-        ZIndex=3,
-    },Card)
+-- Lock icon + title text
+local TitleIcon = Instance.new("TextLabel")
+TitleIcon.Size               = UDim2.new(0, 24, 1, 0)
+TitleIcon.Position           = UDim2.new(0, 10, 0, 0)
+TitleIcon.BackgroundTransparency = 1
+TitleIcon.Text               = "🔒"
+TitleIcon.TextSize           = 16
+TitleIcon.Font               = Enum.Font.GothamBold
+TitleIcon.ZIndex             = 3
+TitleIcon.Parent             = TitleBar
 
-    local btn = inst("TextButton",{
-        Size=UDim2.new(1,0,1,0),
-        BackgroundColor3=C.RAISED,
-        Text=icon,
-        TextColor3=C.TEXT,
-        TextSize=18,
-        Font=Enum.Font.GothamBold,
-        AutoButtonColor=false,
-        ZIndex=4,
-    },wrap)
-    rnd(btn,10)
+local TitleText = Instance.new("TextLabel")
+TitleText.Size               = UDim2.new(0, 160, 1, 0)
+TitleText.Position           = UDim2.new(0, 38, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text               = "Secret Chat"
+TitleText.TextColor3         = Color3.fromRGB(200, 220, 255)
+TitleText.TextSize           = 13
+TitleText.Font               = Enum.Font.GothamBold
+TitleText.TextXAlignment     = Enum.TextXAlignment.Left
+TitleText.ZIndex             = 3
+TitleText.Parent             = TitleBar
 
-    -- Coloured bottom accent line
-    local accent = inst("Frame",{
-        Size=UDim2.new(0.6,0,0,2),
-        Position=UDim2.new(0.2,0,1,-3),
-        BackgroundColor3=color,
-        BorderSizePixel=0,
-        Visible=false,
-        ZIndex=5,
-    },btn)
-    rnd(accent,1)
+-- Online counter badge
+local Badge = Instance.new("Frame")
+Badge.Name            = "Badge"
+Badge.Size            = UDim2.new(0, 80, 0, 22)
+Badge.Position        = UDim2.new(1, -88, 0.5, -11)
+Badge.BackgroundColor3= Color3.fromRGB(30, 200, 100)
+Badge.BorderSizePixel = 0
+Badge.ZIndex          = 3
+Badge.Parent          = TitleBar
+corner(Badge, 11)
 
-    -- Hover / press feedback
-    btn.MouseEnter:Connect(function()
-        tw(btn,{BackgroundColor3=color:Lerp(C.RAISED,0.6)})
-        tw(btn,{TextColor3=color})
+local BadgeLabel = Instance.new("TextLabel")
+BadgeLabel.Name          = "BadgeLabel"
+BadgeLabel.Size          = UDim2.new(1, 0, 1, 0)
+BadgeLabel.BackgroundTransparency = 1
+BadgeLabel.Text          = "● 0 online"
+BadgeLabel.TextColor3    = Color3.fromRGB(10, 10, 10)
+BadgeLabel.TextSize      = 11
+BadgeLabel.Font          = Enum.Font.GothamBold
+BadgeLabel.ZIndex        = 4
+BadgeLabel.Parent        = Badge
+
+-- Close / hide button
+local HideBtn = Instance.new("TextButton")
+HideBtn.Size             = UDim2.new(0, 26, 0, 26)
+HideBtn.Position         = UDim2.new(1, -32, 0.5, -13)
+HideBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+HideBtn.BorderSizePixel  = 0
+HideBtn.Text             = "–"
+HideBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
+HideBtn.TextSize         = 16
+HideBtn.Font             = Enum.Font.GothamBold
+HideBtn.ZIndex           = 5
+HideBtn.Parent           = TitleBar
+corner(HideBtn, 5)
+
+-- ── Separator line ────────────────────────────────────────
+local Sep = Instance.new("Frame")
+Sep.Size             = UDim2.new(1, -20, 0, 1)
+Sep.Position         = UDim2.new(0, 10, 0, 40)
+Sep.BackgroundColor3 = Color3.fromRGB(50, 60, 90)
+Sep.BorderSizePixel  = 0
+Sep.Parent           = Window
+
+-- ── Messages Area ─────────────────────────────────────────
+local MsgScroll = Instance.new("ScrollingFrame")
+MsgScroll.Name                = "MsgScroll"
+MsgScroll.Size                = UDim2.new(1, -10, 1, -100)
+MsgScroll.Position            = UDim2.new(0, 5, 0, 48)
+MsgScroll.BackgroundTransparency = 1
+MsgScroll.BorderSizePixel     = 0
+MsgScroll.ScrollBarThickness  = 3
+MsgScroll.ScrollBarImageColor3= Color3.fromRGB(80, 140, 255)
+MsgScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+MsgScroll.CanvasSize          = UDim2.new(0, 0, 0, 0)
+MsgScroll.ClipsDescendants    = true
+MsgScroll.Parent              = Window
+
+local MsgLayout = Instance.new("UIListLayout")
+MsgLayout.Padding        = UDim.new(0, 3)
+MsgLayout.SortOrder      = Enum.SortOrder.LayoutOrder
+MsgLayout.Parent         = MsgScroll
+
+local MsgPad = Instance.new("UIPadding")
+MsgPad.PaddingLeft   = UDim.new(0, 4)
+MsgPad.PaddingRight  = UDim.new(0, 4)
+MsgPad.PaddingTop    = UDim.new(0, 4)
+MsgPad.PaddingBottom = UDim.new(0, 4)
+MsgPad.Parent        = MsgScroll
+
+-- ── Input Row ─────────────────────────────────────────────
+local InputRow = Instance.new("Frame")
+InputRow.Name            = "InputRow"
+InputRow.Size            = UDim2.new(1, -16, 0, 38)
+InputRow.Position        = UDim2.new(0, 8, 1, -50)
+InputRow.BackgroundColor3= Color3.fromRGB(20, 22, 36)
+InputRow.BorderSizePixel = 0
+InputRow.Parent          = Window
+corner(InputRow, 8)
+
+local InputBox = Instance.new("TextBox")
+InputBox.Name                = "InputBox"
+InputBox.Size                = UDim2.new(1, -52, 1, -8)
+InputBox.Position            = UDim2.new(0, 10, 0, 4)
+InputBox.BackgroundTransparency = 1
+InputBox.Text                = ""
+InputBox.PlaceholderText     = "Message script users..."
+InputBox.TextColor3          = Color3.fromRGB(210, 220, 240)
+InputBox.PlaceholderColor3   = Color3.fromRGB(80, 90, 120)
+InputBox.TextSize            = 13
+InputBox.Font                = Enum.Font.Gotham
+InputBox.TextXAlignment      = Enum.TextXAlignment.Left
+InputBox.ClearTextOnFocus    = false
+InputBox.MultiLine           = false
+InputBox.Parent              = InputRow
+
+local SendBtn = Instance.new("TextButton")
+SendBtn.Name             = "SendBtn"
+SendBtn.Size             = UDim2.new(0, 38, 0, 28)
+SendBtn.Position         = UDim2.new(1, -42, 0.5, -14)
+SendBtn.BackgroundColor3 = Color3.fromRGB(70, 140, 255)
+SendBtn.BorderSizePixel  = 0
+SendBtn.Text             = "▶"
+SendBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
+SendBtn.TextSize         = 14
+SendBtn.Font             = Enum.Font.GothamBold
+SendBtn.Parent           = InputRow
+corner(SendBtn, 6)
+
+-- ── Keyboard hint ─────────────────────────────────────────
+local Hint = Instance.new("TextLabel")
+Hint.Size               = UDim2.new(1, 0, 0, 16)
+Hint.Position           = UDim2.new(0, 0, 1, -16)
+Hint.BackgroundTransparency = 1
+Hint.Text               = "[RShift] toggle  ·  [Enter] send"
+Hint.TextColor3         = Color3.fromRGB(55, 65, 95)
+Hint.TextSize           = 10
+Hint.Font               = Enum.Font.Gotham
+Hint.Parent             = Window
+
+-- ─────────────────────────────────────────────────────────
+--  UTILITY FUNCTIONS
+-- ─────────────────────────────────────────────────────────
+
+local function scrollToBottom()
+    task.defer(function()
+        MsgScroll.CanvasPosition = Vector2.new(0, math.huge)
     end)
-    btn.MouseLeave:Connect(function()
-        tw(btn,{BackgroundColor3=C.RAISED})
-        tw(btn,{TextColor3=C.TEXT})
-    end)
+end
 
-    -- Tooltip (appears to the right of card)
-    local tip = inst("TextLabel",{
-        Size=UDim2.new(0,0,0,26),
-        AutomaticSize=Enum.AutomaticSize.X,
-        Position=UDim2.new(1,6,0.5,-13),
-        AnchorPoint=Vector2.new(0,0.5),
-        BackgroundColor3=C.RAISED,
-        Text="  "..tipText.."  ",
-        TextColor3=C.TEXT,
-        TextSize=12,
-        Font=Enum.Font.Gotham,
-        Visible=false,
-        ZIndex=20,
-    },btn)
-    rnd(tip,6)
-    brdr(tip,C.BORDER,1)
-    btn.MouseEnter:Connect(function() tip.Visible=true  end)
-    btn.MouseLeave:Connect(function() tip.Visible=false end)
+local function updateBadge()
+    local count = 0
+    for _ in pairs(scriptUsers) do count += 1 end
+    BadgeLabel.Text = string.format("● %d online", count)
+    Badge.BackgroundColor3 = count > 0
+        and Color3.fromRGB(30, 200, 100)
+        or  Color3.fromRGB(100, 100, 120)
+end
 
-    local function setActive(on)
-        accent.Visible=on
-        if on then
-            tw(btn,{BackgroundColor3=color:Lerp(C.RAISED,0.5)})
-            tw(btn,{TextColor3=color})
+-- Add a message bubble to the scroll frame
+local function addMessage(sender, body, msgType)
+    -- msgType: "system" | "self" | "other"
+    messageCount += 1
+    if messageCount > CFG.MAX_MESSAGES then
+        local first = MsgScroll:FindFirstChildWhichIsA("Frame")
+        if first then first:Destroy() end
+    end
+
+    local Row = Instance.new("Frame")
+    Row.Name             = "Msg_" .. messageCount
+    Row.LayoutOrder      = messageCount
+    Row.Size             = UDim2.new(1, 0, 0, 0)
+    Row.AutomaticSize    = Enum.AutomaticSize.Y
+    Row.BackgroundTransparency = 1
+    Row.Parent           = MsgScroll
+
+    local Label = Instance.new("TextLabel")
+    Label.Size           = UDim2.new(1, 0, 0, 0)
+    Label.AutomaticSize  = Enum.AutomaticSize.Y
+    Label.BackgroundTransparency = 1
+    Label.TextWrapped    = true
+    Label.RichText       = true
+    Label.TextSize       = 12
+    Label.Font           = Enum.Font.Gotham
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent         = Row
+
+    if msgType == "system" then
+        Label.Text = string.format(
+            '<font color="#4a5270"><i>⚙ %s</i></font>', body)
+    elseif msgType == "self" then
+        Label.Text = string.format(
+            '<font color="#4a8aff"><b>%s</b></font><font color="#7080a0">: </font><font color="#ccd4ee">%s</font>',
+            sender, body)
+    else
+        Label.Text = string.format(
+            '<font color="#ff9044"><b>%s</b></font><font color="#7080a0">: </font><font color="#ccd4ee">%s</font>',
+            sender, body)
+    end
+
+    scrollToBottom()
+end
+
+-- ─────────────────────────────────────────────────────────
+--  CHAT CHANNEL
+-- ─────────────────────────────────────────────────────────
+local function getGeneralChannel()
+    local channels = TextChatService:FindFirstChild("TextChannels")
+    if channels then
+        return channels:FindFirstChild("RBXGeneral")
+    end
+    return nil
+end
+
+local function trySendRaw(text)
+    local ch = getGeneralChannel()
+    if ch then
+        -- pcall in case of rate limiting or other errors
+        local ok, err = pcall(function()
+            ch:SendAsync(text)
+        end)
+        if not ok then
+            warn("[SecretChat] SendAsync failed:", err)
+        end
+    else
+        warn("[SecretChat] RBXGeneral channel not found.")
+    end
+end
+
+-- ─────────────────────────────────────────────────────────
+--  HANDSHAKE & MESSAGING
+-- ─────────────────────────────────────────────────────────
+local function broadcastHandshake()
+    trySendRaw(HS_FULL)
+end
+
+local function sendSecretMessage(text)
+    text = text:match("^%s*(.-)%s*$")  -- trim whitespace
+    if text == "" then return end
+    trySendRaw(MSG_FULL .. text)
+    addMessage(LocalPlayer.Name, text, "self")
+end
+
+-- ─────────────────────────────────────────────────────────
+--  INTERCEPT INCOMING MESSAGES
+-- ─────────────────────────────────────────────────────────
+TextChatService.OnIncomingMessage = function(msg)
+    local text   = msg.Text or ""
+    local source = msg.TextSource
+    if not source then return msg end
+
+    local sender = Players:GetPlayerByUserId(source.UserId)
+    if not sender or sender == LocalPlayer then
+        -- Still suppress our own handshake / secret messages from Roblox chat
+        if text:sub(1, #HS_FULL) == HS_FULL or text:sub(1, #MSG_FULL) == MSG_FULL then
+            msg.Text = ""
+        end
+        return msg
+    end
+
+    -- ── Handshake detection ───────────────────────────────
+    if text:sub(1, #HS_FULL) == HS_FULL then
+        if not scriptUsers[sender.Name] then
+            scriptUsers[sender.Name] = true
+            updateBadge()
+            addMessage("System",
+                sender.Name .. " is running the script — chat unlocked 🔓", "system")
+            -- Reply with our own handshake so they detect us too
+            task.delay(0.5, broadcastHandshake)
+        end
+        msg.Text = ""   -- hide from Roblox chat
+        return msg
+    end
+
+    -- ── Secret message ────────────────────────────────────
+    if text:sub(1, #MSG_FULL) == MSG_FULL then
+        local body = text:sub(#MSG_FULL + 1)
+        if scriptUsers[sender.Name] then
+            addMessage(sender.Name, body, "other")
         else
-            tw(btn,{BackgroundColor3=C.RAISED})
-            tw(btn,{TextColor3=C.TEXT})
+            -- Message arrived before handshake — accept and register them
+            scriptUsers[sender.Name] = true
+            updateBadge()
+            addMessage(sender.Name, body, "other")
+            addMessage("System",
+                sender.Name .. " joined secret chat 🔓", "system")
+            task.delay(0.5, broadcastHandshake)
         end
+        msg.Text = ""   -- hide from Roblox chat
+        return msg
     end
 
-    return btn, setActive
+    return msg
 end
 
-local menuBtn,   setMenuActive   = iconBtn("☰",  C.ACC,  "Menu")
-local chatBtn,   setChatActive   = iconBtn("💬", C.ACC,  "Server Chat")
-local globalBtn, setGlobalActive = iconBtn("🌐", C.GLOB, "Global Chat")
-
--- ─────────────────────────────────────────────────────────────────────
---  NOTIFICATIONS
--- ─────────────────────────────────────────────────────────────────────
-local notifOn  = true
-local nQ, nBusy = {}, false
-
-local function notify(title, body, col)
-    if not notifOn then return end
-    table.insert(nQ,{title=title,body=body,col=col or C.ACC})
-    if nBusy then return end
-    nBusy=true
-    task.spawn(function()
-        while #nQ>0 do
-            local n=table.remove(nQ,1)
-            local f=inst("Frame",{
-                Size=UDim2.new(0,255,0,60),
-                Position=UDim2.new(1,10,1,-68),
-                AnchorPoint=Vector2.new(1,1),
-                BackgroundColor3=C.SURFACE,
-                ZIndex=500,
-            },SG)
-            rnd(f,10); brdr(f,n.col,1)
-            inst("Frame",{Size=UDim2.new(0,3,1,-10),Position=UDim2.new(0,0,0,5),
-                BackgroundColor3=n.col,BorderSizePixel=0,ZIndex=501},f)
-            inst("TextLabel",{Size=UDim2.new(1,-12,0,20),Position=UDim2.new(0,10,0,5),
-                BackgroundTransparency=1,Text=n.title,TextColor3=n.col,
-                TextSize=13,Font=Enum.Font.GothamBold,
-                TextXAlignment=Enum.TextXAlignment.Left,ZIndex=501},f)
-            inst("TextLabel",{Size=UDim2.new(1,-12,0,24),Position=UDim2.new(0,10,0,25),
-                BackgroundTransparency=1,Text=n.body,TextColor3=C.MUTED,
-                TextSize=11,Font=Enum.Font.Gotham,TextWrapped=true,
-                TextXAlignment=Enum.TextXAlignment.Left,ZIndex=501},f)
-            tw(f,{Position=UDim2.new(1,-8,1,-68)},0.2)
-            task.wait(3.2)
-            tw(f,{Position=UDim2.new(1,280,1,-68)},0.2)
-            task.wait(0.25); f:Destroy(); task.wait(0.1)
-        end
-        nBusy=false
-    end)
-end
-
--- ─────────────────────────────────────────────────────────────────────
---  PANEL FACTORY
---  Panels open to the RIGHT of the launcher card.
--- ─────────────────────────────────────────────────────────────────────
-local function makePanel(name, w, h, title, accent)
-    -- Shadow
-    local pshadow = inst("Frame",{
-        Size=UDim2.new(0,w+8,0,h+8),
-        Position=UDim2.new(0,70,0,58),
-        BackgroundColor3=C.BLACK,
-        BackgroundTransparency=0.6,
-        Visible=false,
-        ZIndex=9,
-    },SG)
-    rnd(pshadow,16)
-
-    local p = inst("Frame",{
-        Name=name,
-        Size=UDim2.new(0,w,0,h),
-        Position=UDim2.new(0,68,0,62),
-        BackgroundColor3=C.BG,
-        Visible=false,
-        ClipsDescendants=true,
-        ZIndex=10,
-    },SG)
-    rnd(p,14)
-    brdr(p,C.BORDER,1)
-
-    -- Sync shadow visibility with panel
-    p:GetPropertyChangedSignal("Visible"):Connect(function()
-        pshadow.Visible=p.Visible
-    end)
-
-    -- Header
-    local hdr = inst("Frame",{
-        Name="Hdr",
-        Size=UDim2.new(1,0,0,44),
-        BackgroundColor3=C.SURFACE,
-        ZIndex=11,
-    },p)
-    rnd(hdr,14)
-    inst("Frame",{  -- fill bottom corners of header
-        Size=UDim2.new(1,0,0,14),Position=UDim2.new(0,0,1,-14),
-        BackgroundColor3=C.SURFACE,BorderSizePixel=0,ZIndex=11,
-    },hdr)
-
-    -- Accent dot
-    inst("Frame",{
-        Size=UDim2.new(0,8,0,8),Position=UDim2.new(0,14,0.5,-4),
-        BackgroundColor3=accent,BorderSizePixel=0,ZIndex=12,
-    },hdr):FindFirstAncestorWhichIsA("GuiObject") -- noop, just trigger parent
-    local dot=inst("Frame",{
-        Size=UDim2.new(0,8,0,8),Position=UDim2.new(0,14,0.5,-4),
-        BackgroundColor3=accent,BorderSizePixel=0,ZIndex=12,
-    },hdr)
-    rnd(dot,4)
-
-    inst("TextLabel",{
-        Size=UDim2.new(1,-80,1,0),Position=UDim2.new(0,28,0,0),
-        BackgroundTransparency=1,Text=title,TextColor3=C.TEXT,
-        TextSize=14,Font=Enum.Font.GothamBold,
-        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=12,
-    },hdr)
-
-    local close=inst("TextButton",{
-        Size=UDim2.new(0,28,0,28),Position=UDim2.new(1,-36,0.5,-14),
-        BackgroundColor3=Color3.fromRGB(55,38,38),Text="✕",TextColor3=C.RED,
-        TextSize=13,Font=Enum.Font.GothamBold,AutoButtonColor=false,ZIndex=13,
-    },hdr)
-    rnd(close,7)
-    close.MouseEnter:Connect(function() tw(close,{BackgroundColor3=C.RED,TextColor3=C.WHITE}) end)
-    close.MouseLeave:Connect(function() tw(close,{BackgroundColor3=Color3.fromRGB(55,38,38),TextColor3=C.RED}) end)
-    close.MouseButton1Click:Connect(function() p.Visible=false end)
-
-    return p
-end
-
--- ─────────────────────────────────────────────────────────────────────
---  MENU PANEL
--- ─────────────────────────────────────────────────────────────────────
-local MenuPanel = makePanel("Menu",260,410,"Menu",C.ACC)
-
-local mScroll = inst("ScrollingFrame",{
-    Size=UDim2.new(1,0,1,-48),Position=UDim2.new(0,0,0,48),
-    BackgroundTransparency=1,ScrollBarThickness=4,
-    ScrollBarImageColor3=C.ACC,CanvasSize=UDim2.new(0,0,0,0),
-    AutomaticCanvasSize=Enum.AutomaticSize.Y,
-    ElasticBehavior=Enum.ElasticBehavior.Never,ZIndex=11,
-},MenuPanel)
-pdg(mScroll,8)
-inst("UIListLayout",{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder},mScroll)
-
-local function secLbl(txt,ord)
-    inst("TextLabel",{
-        Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,
-        Text=txt,TextColor3=C.MUTED,TextSize=10,
-        Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,
-        LayoutOrder=ord,ZIndex=12,
-    },mScroll)
-end
-
-local function toggle(label,icon,ord,def,cb)
-    local row=inst("Frame",{
-        Size=UDim2.new(1,0,0,40),BackgroundColor3=C.SURFACE,
-        LayoutOrder=ord,ZIndex=12,
-    },mScroll)
-    rnd(row,8); brdr(row,C.BORDER)
-
-    inst("TextLabel",{Size=UDim2.new(0,30,1,0),Position=UDim2.new(0,8,0,0),
-        BackgroundTransparency=1,Text=icon,TextSize=16,
-        Font=Enum.Font.Gotham,ZIndex=13},row)
-    inst("TextLabel",{Size=UDim2.new(1,-86,1,0),Position=UDim2.new(0,42,0,0),
-        BackgroundTransparency=1,Text=label,TextColor3=C.TEXT,
-        TextSize=12,Font=Enum.Font.Gotham,
-        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=13},row)
-
-    local pill=inst("TextButton",{
-        Size=UDim2.new(0,42,0,22),Position=UDim2.new(1,-50,0.5,-11),
-        BackgroundColor3=def and C.ACC or C.RAISED,
-        Text="",AutoButtonColor=false,ZIndex=13,
-    },row)
-    rnd(pill,11)
-
-    local knob=inst("Frame",{
-        Size=UDim2.new(0,16,0,16),
-        Position=def and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8),
-        BackgroundColor3=C.WHITE,ZIndex=14,
-    },pill)
-    rnd(knob,8)
-
-    local state=def or false
-    pill.MouseButton1Click:Connect(function()
-        state=not state
-        tw(pill,{BackgroundColor3=state and C.ACC or C.RAISED})
-        tw(knob,{Position=state and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8)})
-        if cb then cb(state) end
-    end)
-end
-
-local function menuBtn2(label,icon,ord,cb)
-    local b=inst("TextButton",{
-        Size=UDim2.new(1,0,0,40),BackgroundColor3=C.SURFACE,
-        Text="",AutoButtonColor=false,LayoutOrder=ord,ZIndex=12,
-    },mScroll)
-    rnd(b,8); brdr(b,C.BORDER)
-    b.MouseEnter:Connect(function() tw(b,{BackgroundColor3=C.RAISED}) end)
-    b.MouseLeave:Connect(function() tw(b,{BackgroundColor3=C.SURFACE}) end)
-
-    inst("TextLabel",{Size=UDim2.new(0,30,1,0),Position=UDim2.new(0,8,0,0),
-        BackgroundTransparency=1,Text=icon,TextSize=16,
-        Font=Enum.Font.Gotham,ZIndex=13},b)
-    inst("TextLabel",{Size=UDim2.new(1,-48,1,0),Position=UDim2.new(0,42,0,0),
-        BackgroundTransparency=1,Text=label,TextColor3=C.TEXT,
-        TextSize=12,Font=Enum.Font.Gotham,
-        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=13},b)
-    b.MouseButton1Click:Connect(function() if cb then cb() end end)
-end
-
--- FPS overlay
-local fpsOn=false
-local fpsLbl=inst("TextLabel",{
-    Size=UDim2.new(0,80,0,22),Position=UDim2.new(0,70,0,8),
-    BackgroundColor3=C.SURFACE,BackgroundTransparency=0,
-    Text="FPS: --",TextColor3=C.GREEN,TextSize=12,
-    Font=Enum.Font.GothamBold,Visible=false,ZIndex=100,
-},SG)
-rnd(fpsLbl,6); brdr(fpsLbl,C.BORDER); pdg(fpsLbl,6)
-do
-    local fc,lt=0,tick()
-    RunService.RenderStepped:Connect(function()
-        fc+=1
-        local now=tick()
-        if now-lt>=1 then
-            fpsLbl.Text=("FPS: %d"):format(fc)
-            fpsLbl.Visible=fpsOn
-            fc,lt=0,now
-        end
-    end)
-end
-
-secLbl("DISPLAY",10)
-toggle("FPS Counter",        "📊",11,false,function(v) fpsOn=v end)
-toggle("Shift-Lock",         "🔒",12,false,function(v) LP.DevEnableMouseLock=v end)
-toggle("Show Notifications", "🔔",13,true, function(v) notifOn=v end)
-
-secLbl("PLAYER",20)
-menuBtn2("Reset Character","🔄",21,function()
-    local h=LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-    if h then h.Health=0 end
-end)
-menuBtn2("Toggle Nameplates","🏷",22,function()
-    local head=LP.Character and LP.Character:FindFirstChild("Head")
-    if head then
-        for _,v in ipairs(head:GetChildren()) do
-            if v:IsA("BillboardGui") then v.Enabled=not v.Enabled end
-        end
-    end
-end)
-menuBtn2("Show User ID","🪪",23,function()
-    notify("User ID",tostring(LP.UserId),C.ACC)
-end)
-
-secLbl("PERFORMANCE",30)
-toggle("Low Graphics",  "🖥",31,false,function(v)
-    game:GetService("Lighting").GlobalShadows=not v
-    settings().Rendering.QualityLevel=v and 1 or 10
-end)
-toggle("Hide Others","👤",32,false,function(v)
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p~=LP and p.Character then
-            p.Character.Parent=v and nil or workspace
-        end
+-- ─────────────────────────────────────────────────────────
+--  PLAYER LEAVE CLEANUP
+-- ─────────────────────────────────────────────────────────
+Players.PlayerRemoving:Connect(function(player)
+    if scriptUsers[player.Name] then
+        scriptUsers[player.Name] = nil
+        updateBadge()
+        addMessage("System", player.Name .. " left the server.", "system")
     end
 end)
 
-secLbl("GAME",40)
-menuBtn2("Rejoin","🔁",41,function()
-    game:GetService("TeleportService"):Teleport(game.PlaceId,LP)
-end)
-menuBtn2("Leave Game","🚪",42,function()
-    game:GetService("TeleportService"):Teleport(1818)
-end)
-
--- ─────────────────────────────────────────────────────────────────────
---  CHAT PANEL BUILDER
--- ─────────────────────────────────────────────────────────────────────
-local pColors,pCI={},0
-local clrs={
-    Color3.fromRGB(99,102,241), Color3.fromRGB(244,114,182),
-    Color3.fromRGB(52,211,153), Color3.fromRGB(251,191,36),
-    Color3.fromRGB(167,139,250),Color3.fromRGB(251,146,60),
-    Color3.fromRGB(34,211,238), Color3.fromRGB(74,222,128),
-}
-local function pColor(n)
-    if not pColors[n] then pCI=(pCI%#clrs)+1; pColors[n]=clrs[pCI] end
-    return pColors[n]
+-- ─────────────────────────────────────────────────────────
+--  INPUT: SEND BUTTON & ENTER KEY
+-- ─────────────────────────────────────────────────────────
+local function handleSend()
+    local msg = InputBox.Text
+    sendSecretMessage(msg)
+    InputBox.Text = ""
 end
 
-local function buildChat(name,w,h,title,accent,hint)
-    local panel=makePanel(name,w,h,title,accent)
+SendBtn.MouseButton1Click:Connect(handleSend)
 
-    local scroll=inst("ScrollingFrame",{
-        Size=UDim2.new(1,-4,1,-96),Position=UDim2.new(0,2,0,48),
-        BackgroundTransparency=1,ScrollBarThickness=4,
-        ScrollBarImageColor3=accent,CanvasSize=UDim2.new(0,0,0,0),
-        AutomaticCanvasSize=Enum.AutomaticSize.Y,
-        ElasticBehavior=Enum.ElasticBehavior.Never,ZIndex=11,
-    },panel)
-    inst("UIListLayout",{Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder},scroll)
-    pdg(scroll,7)
+InputBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then handleSend() end
+end)
 
-    inst("Frame",{  -- divider
-        Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-48),
-        BackgroundColor3=C.BORDER,BorderSizePixel=0,ZIndex=11,
-    },panel)
+-- Hover effect on send button
+SendBtn.MouseEnter:Connect(function()
+    TweenService:Create(SendBtn, TweenInfo.new(0.15), {
+        BackgroundColor3 = Color3.fromRGB(100, 170, 255)
+    }):Play()
+end)
+SendBtn.MouseLeave:Connect(function()
+    TweenService:Create(SendBtn, TweenInfo.new(0.15), {
+        BackgroundColor3 = Color3.fromRGB(70, 140, 255)
+    }):Play()
+end)
 
-    local bar=inst("Frame",{
-        Size=UDim2.new(1,0,0,46),Position=UDim2.new(0,0,1,-46),
-        BackgroundColor3=C.SURFACE,ZIndex=11,
-    },panel)
-    rnd(bar,14)
-    inst("Frame",{  -- fill top round corners
-        Size=UDim2.new(1,0,0,14),BackgroundColor3=C.SURFACE,
-        BorderSizePixel=0,ZIndex=11,
-    },bar)
+-- ─────────────────────────────────────────────────────────
+--  TOGGLE VISIBILITY  [Right Shift]
+-- ─────────────────────────────────────────────────────────
+local function setVisible(v)
+    chatVisible = v
+    local targetSize = v
+        and UDim2.new(0, CFG.WINDOW_WIDTH, 0, CFG.WINDOW_HEIGHT)
+        or  UDim2.new(0, CFG.WINDOW_WIDTH, 0, 40)
 
-    local tbox=inst("TextBox",{
-        Size=UDim2.new(1,-48,1,-12),Position=UDim2.new(0,6,0,6),
-        BackgroundColor3=C.RAISED,TextColor3=C.TEXT,
-        PlaceholderText=hint,PlaceholderColor3=C.MUTED,
-        Text="",TextSize=12,Font=Enum.Font.Gotham,
-        ClearTextOnFocus=false,
-        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=12,
-    },bar)
-    rnd(tbox,7); pdg(tbox,7)
+    TweenService:Create(Window, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
+        Size = targetSize
+    }):Play()
 
-    local send=inst("TextButton",{
-        Size=UDim2.new(0,34,0,30),Position=UDim2.new(1,-40,0,8),
-        BackgroundColor3=accent,Text="↑",TextColor3=C.WHITE,
-        TextSize=16,Font=Enum.Font.GothamBold,AutoButtonColor=false,ZIndex=12,
-    },bar)
-    rnd(send,8)
-    send.MouseEnter:Connect(function() tw(send,{BackgroundColor3=accent:Lerp(C.WHITE,0.15)}) end)
-    send.MouseLeave:Connect(function() tw(send,{BackgroundColor3=accent}) end)
+    MsgScroll.Visible = v
+    InputRow.Visible  = v
+    Sep.Visible       = v
+    Hint.Visible      = v
+end
 
-    local msgN=0
-    local function addMsg(sender,text,sys)
-        msgN+=1
-        local col=sys and C.MUTED or pColor(sender or "?")
-        local bubble=inst("Frame",{
-            Name=("M%d"):format(msgN),
-            Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
-            BackgroundColor3=C.SURFACE,
-            BackgroundTransparency=sys and 1 or 0,
-            LayoutOrder=msgN,ZIndex=12,
-        },scroll)
-        if not sys then rnd(bubble,6) end
+HideBtn.MouseButton1Click:Connect(function()
+    setVisible(not chatVisible)
+end)
 
-        local inner=inst("Frame",{
-            Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
-            BackgroundTransparency=1,ZIndex=13,
-        },bubble)
-        pdg(inner,5)
-        inst("UIListLayout",{Padding=UDim.new(0,1)},inner)
-
-        if not sys then
-            local nr=inst("Frame",{Size=UDim2.new(1,0,0,15),BackgroundTransparency=1,ZIndex=13},inner)
-            inst("Frame",{Size=UDim2.new(0,2,1,-4),Position=UDim2.new(0,0,0,2),
-                BackgroundColor3=col,BorderSizePixel=0,ZIndex=14},nr)
-            inst("TextLabel",{Size=UDim2.new(1,-6,1,0),Position=UDim2.new(0,6,0,0),
-                BackgroundTransparency=1,Text=sender,TextColor3=col,
-                TextSize=11,Font=Enum.Font.GothamBold,
-                TextXAlignment=Enum.TextXAlignment.Left,ZIndex=14},nr)
-        end
-
-        inst("TextLabel",{
-            Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
-            BackgroundTransparency=1,Text=text,
-            TextColor3=sys and C.MUTED or C.TEXT,
-            TextSize=12,Font=sys and Enum.Font.GothamItalic or Enum.Font.Gotham,
-            TextXAlignment=Enum.TextXAlignment.Left,TextWrapped=true,ZIndex=13,
-        },inner)
-
-        task.defer(function() scroll.CanvasPosition=Vector2.new(0,math.huge) end)
-
-        local all={}
-        for _,c in ipairs(scroll:GetChildren()) do if c:IsA("Frame") then all[#all+1]=c end end
-        if #all>60 then
-            table.sort(all,function(a,b) return a.LayoutOrder<b.LayoutOrder end)
-            all[1]:Destroy()
-        end
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        setVisible(not chatVisible)
     end
+end)
 
-    return panel,tbox,send,addMsg
-end
+-- ─────────────────────────────────────────────────────────
+--  DRAG: TITLE BAR
+-- ─────────────────────────────────────────────────────────
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDragging = true
+        local wPos  = Window.AbsolutePosition
+        local mPos  = UserInputService:GetMouseLocation()
+        dragOffset  = mPos - wPos
+    end
+end)
 
--- ─────────────────────────────────────────────────────────────────────
---  SERVER CHAT
--- ─────────────────────────────────────────────────────────────────────
-local ChatPanel,chatBox,chatSend,addLocalMsg=
-    buildChat("ServerChat",310,420,"Server Chat",C.ACC,"Message players here…")
+UserInputService.InputChanged:Connect(function(input)
+    if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local mPos   = UserInputService:GetMouseLocation()
+        local newPos = mPos - dragOffset
+        local vSize  = Root.AbsoluteSize
+        -- Clamp within screen
+        newPos = Vector2.new(
+            math.clamp(newPos.X, 0, vSize.X - Window.AbsoluteSize.X),
+            math.clamp(newPos.Y, 0, vSize.Y - Window.AbsoluteSize.Y)
+        )
+        Window.Position = UDim2.new(0, newPos.X, 0, newPos.Y)
+    end
+end)
 
-addLocalMsg(nil,"📡 Players on this server running this script can see these messages.",true)
-addLocalMsg(nil,"──────────────────────────────",true)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDragging = false
+    end
+end)
 
-local LocalRemote=nil
+-- ─────────────────────────────────────────────────────────
+--  PERIODIC HANDSHAKE BROADCAST
+-- ─────────────────────────────────────────────────────────
 task.spawn(function()
-    local folder=ReplicatedStorage:FindFirstChild("CGUIv1")
-               or inst("Folder",{Name="CGUIv1"},ReplicatedStorage)
-    local re=folder:FindFirstChild("LC")
-           or inst("RemoteEvent",{Name="LC"},folder)
-    LocalRemote=re
-    re.OnClientEvent:Connect(function(s,m)
-        if type(s)=="string" and type(m)=="string" and s~=LP.Name then
-            addLocalMsg(s,m)
-        end
-    end)
+    -- Initial broadcast
+    task.wait(2)
+    broadcastHandshake()
+    addMessage("System",
+        "Secret Chat ready. Waiting for other script users...", "system")
+
+    -- Recurring ping
+    while true do
+        task.wait(CFG.PING_INTERVAL)
+        broadcastHandshake()
+    end
 end)
 
-local lastLS=0
-local function sendLocal()
-    local m=chatBox.Text:match("^%s*(.-)%s*$")
-    if m=="" then return end
-    if tick()-lastLS<0.8 then return end
-    lastLS=tick(); chatBox.Text=""
-    m=m:sub(1,MAX_MSG)
-    addLocalMsg(LP.Name,m)
-    if LocalRemote then pcall(function() LocalRemote:FireServer(m) end) end
-end
-chatSend.MouseButton1Click:Connect(sendLocal)
-chatBox.FocusLost:Connect(function(e) if e then sendLocal() end end)
-
--- ─────────────────────────────────────────────────────────────────────
---  GLOBAL CHAT
--- ─────────────────────────────────────────────────────────────────────
-local GlobalPanel,globalBox,globalSend,addGlobalMsg=
-    buildChat("GlobalChat",310,420,"Global Chat",C.GLOB,"Message everyone across servers…")
-
-addGlobalMsg(nil,"🌐 Chat with everyone using this script across all servers.",true)
-addGlobalMsg(nil,"⚠ Requires a published game — not available in Studio.",true)
-addGlobalMsg(nil,"──────────────────────────────",true)
-
-task.spawn(function()
-    local ok,err=pcall(function()
-        MessagingService:SubscribeAsync(GCHANNEL,function(data)
-            local p=data.Data
-            if type(p)~="table" then return end
-            if type(p.s)~="string" or type(p.m)~="string" then return end
-            if p.s==LP.Name and p.id==SID then return end
-            addGlobalMsg((p.id and "["..p.id.."] " or "")..p.s, p.m:sub(1,MAX_MSG))
-            if not GlobalPanel.Visible then
-                notify("Global · "..p.s, p.m:sub(1,55), C.GLOB)
-            end
-        end)
-    end)
-    if not ok then addGlobalMsg(nil,"⚠ MessagingService: "..tostring(err),true) end
-end)
-
-local lastGS=0
-local function sendGlobal()
-    local m=globalBox.Text:match("^%s*(.-)%s*$")
-    if m=="" then return end
-    if tick()-lastGS<1.2 then return end
-    lastGS=tick(); globalBox.Text=""
-    m=m:sub(1,MAX_MSG)
-    addGlobalMsg("["..SID.."] "..LP.Name,m)
-    task.spawn(function()
-        local ok,err=pcall(function()
-            MessagingService:PublishAsync(GCHANNEL,{s=LP.Name,m=m,id=SID})
-        end)
-        if not ok then addGlobalMsg(nil,"⚠ "..tostring(err),true) end
-    end)
-end
-globalSend.MouseButton1Click:Connect(sendGlobal)
-globalBox.FocusLost:Connect(function(e) if e then sendGlobal() end end)
-
--- ─────────────────────────────────────────────────────────────────────
---  PANEL TOGGLE
--- ─────────────────────────────────────────────────────────────────────
-local entries={
-    {btn=menuBtn,   setActive=setMenuActive,   panel=MenuPanel},
-    {btn=chatBtn,   setActive=setChatActive,   panel=ChatPanel},
-    {btn=globalBtn, setActive=setGlobalActive, panel=GlobalPanel},
-}
-
-for _,e in ipairs(entries) do
-    e.btn.MouseButton1Click:Connect(function()
-        local opening=not e.panel.Visible
-        for _,x in ipairs(entries) do
-            x.panel.Visible=false
-            x.setActive(false)
-        end
-        if opening then
-            e.panel.Visible=true
-            e.setActive(true)
-        end
-    end)
-end
-
--- ─────────────────────────────────────────────────────────────────────
---  DONE
--- ─────────────────────────────────────────────────────────────────────
-task.delay(1.5,function()
-    notify("Custom GUI Ready","Tap ☰  💬  🌐 on the left panel.")
-end)
-
-print("[CustomGUI] Loaded for",LP.Name)
+print("[SecretChat] Loaded successfully. Script key:", CFG.SCRIPT_KEY)
