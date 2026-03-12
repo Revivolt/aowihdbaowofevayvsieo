@@ -514,7 +514,7 @@ tab:button({
 })
 
 local tab = gui:tab{
-    Icon = "rbxassetid://71261959291728",
+    Icon = "rbxassetid://77621395675576",
     Name = "Games"
 }
 
