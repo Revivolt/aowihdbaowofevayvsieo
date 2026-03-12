@@ -28,6 +28,18 @@ tab:button({
 })
 
 tab:button({
+    Name = "OPAdmin",
+    Description = "",
+    Callback = function()
+        local options = { -- change false to true for binds autosaving
+    binds_autosave = false
+}
+
+loadstring(game:HttpGet('https://raw.githubusercontent.com/addihallstar/opadminsupreme/refs/heads/main/opadmin_new.lua'))(options)
+    end,
+})
+
+tab:button({
     Name = "Chat Command Line",
     Description = "",
     Callback = function()
