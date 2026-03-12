@@ -528,9 +528,17 @@ tab:button({
 
 tab:button({
     Name = "Murder Mystery 2",
-    Description = "",
+    Description = "Thunder Hub",
     Callback = function()
         loadstring(game:HttpGet('https://raw.githubusercontent.com/thunderXhub/ThunderXHUB/refs/heads/main/loader'))()
+    end,
+})
+
+tab:button({
+    Name = "Murder Mystery 2",
+    Description = "Overdrive",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/axiordev/Overdrive/refs/heads/main/loader.lua"))()
     end,
 })
 
