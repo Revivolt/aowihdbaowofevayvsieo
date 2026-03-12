@@ -526,6 +526,14 @@ tab:button({
     end,
 })
 
+tab:button({
+    Name = "Murder Mystery 2",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/thunderXhub/ThunderXHUB/refs/heads/main/loader'))()
+    end,
+})
+
 -- Services
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
