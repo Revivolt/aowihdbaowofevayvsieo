@@ -43,6 +43,14 @@ tab:button({
     end,
 })
 
+tab:button({
+    Name = "Server Lagger",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://gist.githubusercontent.com/sr9n/0e122fee7623d6360f46df3f12e168fe/raw/df07cc0f1833d4a6968f7560fde494b475a42890/Zwn.lua" ))()
+    end,
+})
+
 local tab = gui:tab{
     Icon = "rbxassetid://82680787978049",
     Name = "R15 FE"
@@ -490,6 +498,19 @@ tab:button({
     Description = "",
     Callback = function()
         loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%97%82%F0%9D%97%87%F0%9D%97%88%20%F0%9D%96%B6%F0%9D%96%BA%F0%9D%97%85%F0%9D%97%84"))()
+    end,
+})
+
+local tab = gui:tab{
+    Icon = "rbxassetid://71261959291728",
+    Name = "Games"
+}
+
+tab:button({
+    Name = "Lucky Block Battlegrounds",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://pastebin.com/raw/JbWJ7R7i", true))()
     end,
 })
 
