@@ -1,4 +1,4 @@
---// Headless
+--// Headless + Korblox
 
 -----------------------------
 -- CONFIG
@@ -6,11 +6,11 @@
 
 -- DEFAULT ANIMS
 local TRANSFORMATION_ID = 0
-local IDLE_ID = 100199766676370
-local WALK_ID = 100199766676370
-local SPRINT_ID = 100199766676370
-local JUMP_ID = 100199766676370
-local FALL_ID = 100199766676370
+local IDLE_ID = 97069996546256
+local WALK_ID = 97069996546256
+local SPRINT_ID = 97069996546256
+local JUMP_ID = 97069996546256
+local FALL_ID = 97069996546256
 local M1_ID = 0
 local M1_LOOP = false
 
