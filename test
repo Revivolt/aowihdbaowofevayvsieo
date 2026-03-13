@@ -1,4 +1,4 @@
--- Animation Asset ID Printer  (remastered compact UI)
+-- Animation Asset ID Printer  (remastered compact UI) test
 
 local Players            = game:GetService("Players")
 local TweenService       = game:GetService("TweenService")
@@ -37,7 +37,7 @@ local DEFAULT_NUM = {
     [616015781]=true,[616016027]=true,[616000974]=true,[616007727]=true,
     [2510235]=true,  [2506281]=true,  [2510238]=true,  [2506268]=true,
     [182393478]=true,[182494918]=true,[182494909]=true,[182494910]=true,
-    [180435571]=true,
+    [180435571]=true,[913402848]=true,[913376220]=true,
 }
 local function isDefault(id)
     if DEFAULT_IDS[id] then return true end
