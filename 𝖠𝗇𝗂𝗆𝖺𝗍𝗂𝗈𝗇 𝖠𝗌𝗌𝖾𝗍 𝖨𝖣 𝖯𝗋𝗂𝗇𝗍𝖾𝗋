@@ -37,7 +37,8 @@ local DEFAULT_NUM = {
     [616015781]=true,[616016027]=true,[616000974]=true,[616007727]=true,
     [2510235]=true,  [2506281]=true,  [2510238]=true,  [2506268]=true,
     [182393478]=true,[182494918]=true,[182494909]=true,[182494910]=true,
-    [180435571]=true,[913402848]=true,[913376220]=true,
+    [180435571]=true,[913402848]=true,[913376220]=true,[180435792]=true,
+    [180426354]=true,[125750702]=true,[180436148]=true,
 }
 local function isDefault(id)
     if DEFAULT_IDS[id] then return true end
