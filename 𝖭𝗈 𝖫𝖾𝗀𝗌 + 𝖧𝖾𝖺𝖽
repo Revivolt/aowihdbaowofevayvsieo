@@ -1,4 +1,4 @@
---// Korblox
+--// No Legs + Head
 
 -----------------------------
 -- CONFIG
@@ -6,11 +6,11 @@
 
 -- DEFAULT ANIMS
 local TRANSFORMATION_ID = 0
-local IDLE_ID = 97069996546256
-local WALK_ID = 97069996546256
-local SPRINT_ID = 97069996546256
-local JUMP_ID = 97069996546256
-local FALL_ID = 97069996546256
+local IDLE_ID = 136168809732700
+local WALK_ID = 136168809732700
+local SPRINT_ID = 136168809732700
+local JUMP_ID = 136168809732700
+local FALL_ID = 136168809732700
 local M1_ID = 0
 local M1_LOOP = false
 
@@ -31,10 +31,10 @@ local EMOTE_U_ID = 0
 local TRANSFORMATION_DURATION = 0
 
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 16
+local BASE_WALK_SPEED = 10
 local SPRINT_SPEED = 28
 
--- Animation Playback Speeds
+-- ANIMATION SPEEDS
 local TRANSFORM_ANIM_SPEED = 1
 local IDLE_ANIM_SPEED = 1
 local WALK_ANIM_SPEED = 1
@@ -57,6 +57,15 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 humanoid.AutoRotate = true
+
+-- STIFF BODY: Disable the default Animate script and kill all its tracks
+local animateScript = character:FindFirstChild("Animate")
+if animateScript then
+    animateScript.Enabled = false
+end
+for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+    track:Stop(0)
+end
 
 -----------------------------
 -- STATE
@@ -300,18 +309,23 @@ end
 -- TRANSFORMATION
 -----------------------------
 local function playTransformation()
-	if isValidId(TRANSFORMATION_ID) then
-		transformationTrack = loadAnimation(TRANSFORMATION_ID, false, Enum.AnimationPriority.Movement)
-		if transformationTrack then
-			transformationTrack:Play()
-			transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
-		end
-	end
+    -- Flush any default tracks that snuck back in
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        track:Stop(0)
+    end
 
-	transformed = true
-	humanoid.WalkSpeed = BASE_WALK_SPEED
+    if isValidId(TRANSFORMATION_ID) then
+        transformationTrack = loadAnimation(TRANSFORMATION_ID, false, Enum.AnimationPriority.Movement)
+        if transformationTrack then
+            transformationTrack:Play()
+            transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
+        end
+    end
 
-	task.delay(TRANSFORMATION_DURATION, refreshState)
+    transformed = true
+    humanoid.WalkSpeed = BASE_WALK_SPEED
+
+    task.delay(TRANSFORMATION_DURATION, refreshState)
 end
 
 -----------------------------
