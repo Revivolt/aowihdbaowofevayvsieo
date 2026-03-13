@@ -154,7 +154,7 @@ closeBtn.Position = UDim2.new(1,-23,0.5,-9)
 closeBtn.BackgroundColor3 = W
 closeBtn.BackgroundTransparency = 0.88
 closeBtn.BorderSizePixel = 0
-closeBtn.Text = "✕"
+closeBtn.Text = "X"
 closeBtn.TextColor3 = W; closeBtn.TextTransparency = 0.15
 closeBtn.TextSize = 9; closeBtn.Font = Enum.Font.GothamBold
 closeBtn.ZIndex = 5; closeBtn.AutoButtonColor = false
