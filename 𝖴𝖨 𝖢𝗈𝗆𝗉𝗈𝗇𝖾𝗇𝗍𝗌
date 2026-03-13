@@ -416,7 +416,7 @@ function Library:create(options)
 	end
 
 	options = self:set_defaults({
-		Name = "Revolution",
+		Name = "Happy Tier",
 		Size = UDim2.fromOffset(600, 400),
 		Theme = self.Themes[settings.Theme],
 		Link = "FE Panel"
@@ -600,7 +600,7 @@ function Library:create(options)
 		Position = UDim2.new(0, 26, 0.5, 0),
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, -30, .6, 0),
-		Text = options.Link .. "",
+		Text = options.Link .. "home",
 		Theme = {TextColor3 = "WeakText"},
 		TextSize = 14,
 		TextScaled = false,
