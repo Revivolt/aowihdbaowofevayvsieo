@@ -49,6 +49,15 @@ local humanoid  = character:WaitForChild("Humanoid")
 local animator  = humanoid:WaitForChild("Animator")
 humanoid.AutoRotate = true
 
+-- STIFF BODY: Disable the default Animate script and kill all its tracks
+local animateScript = character:FindFirstChild("Animate")
+if animateScript then
+    animateScript.Enabled = false
+end
+for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+    track:Stop(0)
+end
+
 -----------------------------
 -- STATE
 -----------------------------
