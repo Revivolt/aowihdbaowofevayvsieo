@@ -151,7 +151,7 @@ toggleButton.Position = UDim2.new(0.5, -TOGGLE_W / 2, 1, TOGGLE_OFFSET)
 toggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 toggleButton.BackgroundTransparency = 0.30
 toggleButton.BorderSizePixel = 0
-toggleButton.Text = "▲  Body Lang"
+toggleButton.Text = "▲  BL"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleButton.TextTransparency = 0.10
 toggleButton.TextSize = 11
@@ -439,7 +439,7 @@ local function setPanelOpen(open)
     TweenService:Create(frame, tweenInfo, {
         Position = UDim2.new(0.5, -PANEL_W / 2, 1, targetOffset)
     }):Play()
-    toggleButton.Text = open and "▼  Body Lang" or "▲  Body Lang"
+    toggleButton.Text = open and "▼  BL" or "▲  BL"
 end
 
 toggleButton.MouseButton1Click:Connect(function()
