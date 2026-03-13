@@ -1,7 +1,8 @@
--- Body Language
+-- Body Language test
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -44,11 +45,11 @@ local ANIMATION_IDS = {
 }
 
 -- ============================================================
---  SPEED / DURATION  (controlled by slider below)
+--  SPEED / DURATION
 -- ============================================================
 local SPEED_MIN = 0.1
 local SPEED_MAX = 3.0
-local ANIM_DURATION = 1.0  -- live value, updated by slider
+local ANIM_DURATION = 1.0
 
 -- ============================================================
 --  PRE-LOAD ANIMATION OBJECTS
@@ -92,10 +93,8 @@ end
 local function playAnimationsForText(text)
     if isPlaying then return end
     isPlaying = true
-
     setLimbStiffness(true)
     stopAllOtherTracks()
-
     local upperText = string.upper(text)
     for i = 1, #upperText do
         if not isPlaying then break end
@@ -113,14 +112,30 @@ local function playAnimationsForText(text)
             task.wait(0.2)
         end
     end
-
     stopCurrentTrack()
     setLimbStiffness(false)
     isPlaying = false
 end
 
 -- ============================================================
---  GUI SETUP  — Clean Transparent Style
+--  GUI LAYOUT CONSTANTS
+-- ============================================================
+local PANEL_W  = 280
+local PANEL_H  = 148
+local TOGGLE_W = 90
+local TOGGLE_H = 24
+
+-- Toggle sits 10px above the very bottom of the screen
+local TOGGLE_OFFSET = -(TOGGLE_H + 10)
+
+-- Panel shown: sits 6px above the toggle button
+local PANEL_SHOWN_OFFSET  = TOGGLE_OFFSET - PANEL_H - 6
+
+-- Panel hidden: fully below the screen
+local PANEL_HIDDEN_OFFSET = TOGGLE_H + 20
+
+-- ============================================================
+--  SCREEN GUI
 -- ============================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AlphabetAnimGUI"
@@ -128,11 +143,38 @@ screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = player.PlayerGui
 
--- Main frame — semi-transparent dark grey
+-- ── Toggle button (always visible, bottom-center) ────────────
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "ToggleButton"
+toggleButton.Size = UDim2.new(0, TOGGLE_W, 0, TOGGLE_H)
+toggleButton.Position = UDim2.new(0.5, -TOGGLE_W / 2, 1, TOGGLE_OFFSET)
+toggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+toggleButton.BackgroundTransparency = 0.30
+toggleButton.BorderSizePixel = 0
+toggleButton.Text = "▲  Body Lang"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextTransparency = 0.10
+toggleButton.TextSize = 11
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.AutoButtonColor = false
+toggleButton.ZIndex = 10
+toggleButton.Parent = screenGui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 6)
+toggleCorner.Parent = toggleButton
+
+local toggleStroke = Instance.new("UIStroke")
+toggleStroke.Color = Color3.fromRGB(255, 255, 255)
+toggleStroke.Transparency = 0.80
+toggleStroke.Thickness = 1
+toggleStroke.Parent = toggleButton
+
+-- ── Main panel (hidden below screen at startup) ──────────────
 local frame = Instance.new("Frame")
 frame.Name = "MainFrame"
-frame.Size = UDim2.new(0, 280, 0, 155)
-frame.Position = UDim2.new(0.5, -140, 1, -175)
+frame.Size = UDim2.new(0, PANEL_W, 0, PANEL_H)
+frame.Position = UDim2.new(0.5, -PANEL_W / 2, 1, PANEL_HIDDEN_OFFSET)
 frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 frame.BackgroundTransparency = 0.25
 frame.BorderSizePixel = 0
@@ -143,34 +185,36 @@ local uiCorner = Instance.new("UICorner")
 uiCorner.CornerRadius = UDim.new(0, 10)
 uiCorner.Parent = frame
 
--- Thin white border for frosted-glass feel
 local uiStroke = Instance.new("UIStroke")
 uiStroke.Color = Color3.fromRGB(255, 255, 255)
 uiStroke.Transparency = 0.80
 uiStroke.Thickness = 1
 uiStroke.Parent = frame
 
--- ── Title bar ───────────────────────────────────────────────
-local titleBar = Instance.new("TextButton")
+-- ── Title bar (display only, not draggable) ──────────────────
+local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
 titleBar.Size = UDim2.new(1, 0, 0, 26)
 titleBar.Position = UDim2.new(0, 0, 0, 0)
 titleBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 titleBar.BackgroundTransparency = 0.90
 titleBar.BorderSizePixel = 0
-titleBar.Text = "Body Language"
-titleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleBar.TextTransparency = 0.15
-titleBar.TextSize = 11
-titleBar.Font = Enum.Font.GothamBold
-titleBar.AutoButtonColor = false
 titleBar.Parent = frame
 
 local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 10)
 titleCorner.Parent = titleBar
 
--- Thin separator line under title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Body Language"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextTransparency = 0.15
+titleLabel.TextSize = 11
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = titleBar
+
 local divider = Instance.new("Frame")
 divider.Size = UDim2.new(1, -16, 0, 1)
 divider.Position = UDim2.new(0, 8, 0, 26)
@@ -178,26 +222,6 @@ divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 divider.BackgroundTransparency = 0.85
 divider.BorderSizePixel = 0
 divider.Parent = frame
-
--- ── Close button ─────────────────────────────────────────────
-local closeButton = Instance.new("TextButton")
-closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 20, 0, 20)
-closeButton.Position = UDim2.new(1, -24, 0, 3)
-closeButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-closeButton.BackgroundTransparency = 0.85
-closeButton.BorderSizePixel = 0
-closeButton.Text = "✕"
-closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeButton.TextTransparency = 0.2
-closeButton.TextSize = 10
-closeButton.Font = Enum.Font.GothamBold
-closeButton.ZIndex = 5
-closeButton.Parent = frame
-
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(1, 0)
-closeCorner.Parent = closeButton
 
 -- ── Status label ─────────────────────────────────────────────
 local statusLabel = Instance.new("TextLabel")
@@ -207,7 +231,7 @@ statusLabel.Position = UDim2.new(0, 8, 0, 29)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Type a word and press Enter or Play"
 statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-statusLabel.TextTransparency = 0.1
+statusLabel.TextTransparency = 0.10
 statusLabel.TextSize = 10
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -268,7 +292,7 @@ pbStroke.Parent = playButton
 local stopButton = Instance.new("TextButton")
 stopButton.Name = "StopButton"
 stopButton.Size = UDim2.new(0, 58, 0, 50)
-stopButton.Position = UDim2.new(0, 6, 0, 88)
+stopButton.Position = UDim2.new(0, 6, 0, 84)
 stopButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 stopButton.BackgroundTransparency = 0.88
 stopButton.BorderSizePixel = 0
@@ -293,11 +317,10 @@ sbStroke.Parent = stopButton
 -- ============================================================
 local SLIDER_X   = 70
 local SLIDER_END = 274
-local TRACK_W    = SLIDER_END - SLIDER_X  -- 204px
+local TRACK_W    = SLIDER_END - SLIDER_X
 local KNOB_SIZE  = 12
-local SLIDER_Y   = 88
+local SLIDER_Y   = 84
 
--- "Speed:" label
 local speedLabel = Instance.new("TextLabel")
 speedLabel.Size = UDim2.new(0, 44, 0, 14)
 speedLabel.Position = UDim2.new(0, SLIDER_X, 0, SLIDER_Y + 2)
@@ -309,7 +332,6 @@ speedLabel.Font = Enum.Font.GothamBold
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 speedLabel.Parent = frame
 
--- Value label
 local speedValueLabel = Instance.new("TextLabel")
 speedValueLabel.Size = UDim2.new(0, 34, 0, 14)
 speedValueLabel.Position = UDim2.new(0, SLIDER_END - 34, 0, SLIDER_Y + 2)
@@ -321,11 +343,10 @@ speedValueLabel.Font = Enum.Font.GothamBold
 speedValueLabel.TextXAlignment = Enum.TextXAlignment.Right
 speedValueLabel.Parent = frame
 
--- Track background
 local sliderTrack = Instance.new("Frame")
 sliderTrack.Name = "SliderTrack"
 sliderTrack.Size = UDim2.new(0, TRACK_W, 0, 4)
-sliderTrack.Position = UDim2.new(0, SLIDER_X, 0, SLIDER_Y + 26)
+sliderTrack.Position = UDim2.new(0, SLIDER_X, 0, SLIDER_Y + 22)
 sliderTrack.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 sliderTrack.BackgroundTransparency = 0.82
 sliderTrack.BorderSizePixel = 0
@@ -335,11 +356,9 @@ local trackCorner = Instance.new("UICorner")
 trackCorner.CornerRadius = UDim.new(1, 0)
 trackCorner.Parent = sliderTrack
 
--- Track fill
 local sliderFill = Instance.new("Frame")
 sliderFill.Name = "SliderFill"
 sliderFill.Size = UDim2.new(0, 0, 1, 0)
-sliderFill.Position = UDim2.new(0, 0, 0, 0)
 sliderFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 sliderFill.BackgroundTransparency = 0.35
 sliderFill.BorderSizePixel = 0
@@ -349,7 +368,6 @@ local fillCorner = Instance.new("UICorner")
 fillCorner.CornerRadius = UDim.new(1, 0)
 fillCorner.Parent = sliderFill
 
--- Knob
 local knob = Instance.new("TextButton")
 knob.Name = "Knob"
 knob.Size = UDim2.new(0, KNOB_SIZE, 0, KNOB_SIZE)
@@ -366,7 +384,6 @@ local knobCorner = Instance.new("UICorner")
 knobCorner.CornerRadius = UDim.new(1, 0)
 knobCorner.Parent = knob
 
--- ── Slider helper ────────────────────────────────────────────
 local function setSliderRatio(ratio)
     ratio = math.clamp(ratio, 0, 1)
     local px = ratio * TRACK_W
@@ -376,10 +393,8 @@ local function setSliderRatio(ratio)
     speedValueLabel.Text = string.format("%.1fs", ANIM_DURATION)
 end
 
-local defaultRatio = (1.0 - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)
-setSliderRatio(defaultRatio)
+setSliderRatio((1.0 - SPEED_MIN) / (SPEED_MAX - SPEED_MIN))
 
--- ── Slider drag ──────────────────────────────────────────────
 local slidingKnob = false
 
 knob.InputBegan:Connect(function(input)
@@ -400,8 +415,7 @@ sliderTrack.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
     or input.UserInputType == Enum.UserInputType.Touch then
         slidingKnob = true
-        local trackAbsPos = sliderTrack.AbsolutePosition.X
-        local ratio = (input.Position.X - trackAbsPos) / TRACK_W
+        local ratio = (input.Position.X - sliderTrack.AbsolutePosition.X) / TRACK_W
         setSliderRatio(ratio)
     end
 end)
@@ -414,43 +428,39 @@ sliderTrack.InputEnded:Connect(function(input)
 end)
 
 -- ============================================================
---  DRAG LOGIC  (title bar)
+--  TOGGLE PANEL (slide up / down with tween)
 -- ============================================================
-local dragging = false
-local dragStartPos
-local frameStartPos
+local panelOpen = false
+local tweenInfo = TweenInfo.new(0.30, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStartPos = input.Position
-        frameStartPos = frame.Position
-    end
+local function setPanelOpen(open)
+    panelOpen = open
+    local targetOffset = open and PANEL_SHOWN_OFFSET or PANEL_HIDDEN_OFFSET
+    TweenService:Create(frame, tweenInfo, {
+        Position = UDim2.new(0.5, -PANEL_W / 2, 1, targetOffset)
+    }):Play()
+    toggleButton.Text = open and "▼  Body Lang" or "▲  Body Lang"
+end
+
+toggleButton.MouseButton1Click:Connect(function()
+    setPanelOpen(not panelOpen)
 end)
 
-titleBar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
+toggleButton.MouseEnter:Connect(function()
+    toggleButton.BackgroundTransparency = 0.15
+end)
+toggleButton.MouseLeave:Connect(function()
+    toggleButton.BackgroundTransparency = 0.30
 end)
 
+-- ============================================================
+--  INPUT CHANGED (slider drag only now, no panel drag)
+-- ============================================================
 UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement
     or input.UserInputType == Enum.UserInputType.Touch then
-        if dragging then
-            local delta = input.Position - dragStartPos
-            frame.Position = UDim2.new(
-                frameStartPos.X.Scale,
-                frameStartPos.X.Offset + delta.X,
-                frameStartPos.Y.Scale,
-                frameStartPos.Y.Offset + delta.Y
-            )
-        end
         if slidingKnob then
-            local trackAbsPos = sliderTrack.AbsolutePosition.X
-            local ratio = (input.Position.X - trackAbsPos) / TRACK_W
+            local ratio = (input.Position.X - sliderTrack.AbsolutePosition.X) / TRACK_W
             setSliderRatio(ratio)
         end
     end
@@ -460,12 +470,11 @@ UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
     or input.UserInputType == Enum.UserInputType.Touch then
         slidingKnob = false
-        dragging = false
     end
 end)
 
 -- ============================================================
---  BUTTON / INPUT LOGIC
+--  PLAY / STOP LOGIC
 -- ============================================================
 local function triggerPlay()
     if isPlaying then
@@ -503,20 +512,6 @@ playButton.MouseEnter:Connect(function()
 end)
 playButton.MouseLeave:Connect(function()
     if not isPlaying then playButton.BackgroundTransparency = 0.80 end
-end)
-
-closeButton.MouseButton1Click:Connect(function()
-    isPlaying = false
-    stopCurrentTrack()
-    setLimbStiffness(false)
-    screenGui:Destroy()
-end)
-
-closeButton.MouseEnter:Connect(function()
-    closeButton.BackgroundTransparency = 0.70
-end)
-closeButton.MouseLeave:Connect(function()
-    closeButton.BackgroundTransparency = 0.85
 end)
 
 stopButton.MouseButton1Click:Connect(function()
