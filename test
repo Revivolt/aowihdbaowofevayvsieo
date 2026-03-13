@@ -1,4 +1,4 @@
--- Animation Asset ID Printer test
+-- Animation Asset ID Printer test2
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -8,294 +8,311 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- ============================================================
--- DEFAULT ROBLOX ANIMATION IDs TO FILTER OUT
+-- DEFAULT ANIMATION FILTER
 -- ============================================================
 local DEFAULT_ANIMATION_IDS = {
-    ["http://www.roblox.com/asset/?id=180435571"] = true,
-    ["rbxassetid://180435571"] = true,
-    ["rbxassetid://507767714"] = true,
-    ["rbxassetid://507767791"] = true,
-    ["rbxassetid://507767792"] = true,
-    ["rbxassetid://507765000"] = true,
-    ["rbxassetid://507765644"] = true,
-    ["rbxassetid://507766388"] = true,
-    ["rbxassetid://507766666"] = true,
-    ["rbxassetid://507767968"] = true,
-    ["rbxassetid://507784897"] = true,
-    ["rbxassetid://507770239"] = true,
-    ["rbxassetid://507768375"] = true,
-    ["rbxassetid://522635514"] = true,
-    ["rbxassetid://913402848"] = true,
-    ["rbxassetid://913376220"] = true,
-    ["rbxassetid://616010382"] = true,
-    ["rbxassetid://616006778"] = true,
-    ["rbxassetid://616008087"] = true,
-    ["rbxassetid://616013216"] = true,
-    ["rbxassetid://616015781"] = true,
-    ["rbxassetid://616016027"] = true,
-    ["rbxassetid://616000974"] = true,
-    ["rbxassetid://616007727"] = true,
-    ["rbxassetid://2510235"]   = true,
-    ["rbxassetid://2506281"]   = true,
-    ["rbxassetid://2510238"]   = true,
-    ["rbxassetid://2506268"]   = true,
-    ["rbxassetid://182393478"] = true,
-    ["rbxassetid://182494918"] = true,
-    ["rbxassetid://182494909"] = true,
-    ["rbxassetid://182494910"] = true,
+    ["http://www.roblox.com/asset/?id=180435571"]=true,
+    ["rbxassetid://180435571"]=true,
+    ["rbxassetid://507767714"]=true, ["rbxassetid://507767791"]=true,
+    ["rbxassetid://507767792"]=true, ["rbxassetid://507765000"]=true,
+    ["rbxassetid://507765644"]=true, ["rbxassetid://507766388"]=true,
+    ["rbxassetid://507766666"]=true, ["rbxassetid://507767968"]=true,
+    ["rbxassetid://507784897"]=true, ["rbxassetid://507770239"]=true,
+    ["rbxassetid://507768375"]=true, ["rbxassetid://522635514"]=true,
+    ["rbxassetid://913402848"]=true, ["rbxassetid://913376220"]=true,
+    ["rbxassetid://616010382"]=true, ["rbxassetid://616006778"]=true,
+    ["rbxassetid://616008087"]=true, ["rbxassetid://616013216"]=true,
+    ["rbxassetid://616015781"]=true, ["rbxassetid://616016027"]=true,
+    ["rbxassetid://616000974"]=true, ["rbxassetid://616007727"]=true,
+    ["rbxassetid://2510235"]=true,   ["rbxassetid://2506281"]=true,
+    ["rbxassetid://2510238"]=true,   ["rbxassetid://2506268"]=true,
+    ["rbxassetid://182393478"]=true, ["rbxassetid://182494918"]=true,
+    ["rbxassetid://182494909"]=true, ["rbxassetid://182494910"]=true,
 }
-
 local DEFAULT_NUMERIC_IDS = {
-    [507767714]=true,[507767791]=true,[507767792]=true,
-    [507765000]=true,[507765644]=true,[507766388]=true,
-    [507766666]=true,[507767968]=true,[507784897]=true,
-    [507770239]=true,[507768375]=true,[522635514]=true,
-    [616010382]=true,[616006778]=true,[616008087]=true,
-    [616013216]=true,[616015781]=true,[616016027]=true,
-    [616000974]=true,[616007727]=true,[2510235]=true,
-    [2506281]=true,  [2510238]=true,  [2506268]=true,
-    [182393478]=true,[182494918]=true,[182494909]=true,
-    [182494910]=true,[180435571]=true,
+    [507767714]=true,[507767791]=true,[507767792]=true,[507765000]=true,
+    [507765644]=true,[507766388]=true,[507766666]=true,[507767968]=true,
+    [507784897]=true,[507770239]=true,[507768375]=true,[522635514]=true,
+    [616010382]=true,[616006778]=true,[616008087]=true,[616013216]=true,
+    [616015781]=true,[616016027]=true,[616000974]=true,[616007727]=true,
+    [2510235]=true,  [2506281]=true,  [2510238]=true,  [2506268]=true,
+    [182393478]=true,[182494918]=true,[182494909]=true,[182494910]=true,
+    [180435571]=true,
 }
-
-local function isDefaultAnimation(animId)
-    if DEFAULT_ANIMATION_IDS[animId] then return true end
-    local numId = tonumber(animId:match("%d+$"))
-    if numId and DEFAULT_NUMERIC_IDS[numId] then return true end
-    return false
+local function isDefaultAnimation(id)
+    if DEFAULT_ANIMATION_IDS[id] then return true end
+    local n = tonumber(id:match("%d+$"))
+    return n and DEFAULT_NUMERIC_IDS[n]
 end
-
-local function extractNumericId(animId)
-    return animId:match("%d+$") or animId
+local function extractNumericId(id)
+    return id:match("%d+$") or id
 end
 
 -- ============================================================
--- FETCH ANIMATION NAME  (async, pcall-protected)
+-- NAME FETCH
 -- ============================================================
-local function fetchAnimName(numericId)
+local function fetchAnimName(numId)
     local ok, info = pcall(function()
-        return MarketplaceService:GetProductInfo(tonumber(numericId), Enum.InfoType.Asset)
+        return MarketplaceService:GetProductInfo(tonumber(numId), Enum.InfoType.Asset)
     end)
-    if ok and info and info.Name then
-        return info.Name
-    end
-    return "Unknown"
+    return (ok and info and info.Name) or "Unknown"
 end
 
 -- ============================================================
--- SMALL HELPERS
+-- BUILDER HELPERS
 -- ============================================================
-local function mkCorner(parent, r)
+local W = Color3.fromRGB(255, 255, 255)
+
+local function addCorner(p, r)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, r or 8)
-    c.Parent = parent
+    c.Parent = p
 end
-
-local function mkStroke(parent, t, w)
+local function addStroke(p, t, w)
     local s = Instance.new("UIStroke")
-    s.Color = Color3.fromRGB(255, 255, 255)
-    s.Transparency = t or 0.82
-    s.Thickness = w or 1
-    s.Parent = parent
+    s.Color = W; s.Transparency = t or 0.82; s.Thickness = w or 1
+    s.Parent = p
+end
+local function newFrame(props)
+    local f = Instance.new("Frame")
+    for k, v in pairs(props) do f[k] = v end
+    return f
+end
+local function newLabel(props)
+    local l = Instance.new("TextLabel")
+    l.BackgroundTransparency = 1
+    for k, v in pairs(props) do l[k] = v end
+    return l
+end
+local function newButton(props)
+    local b = Instance.new("TextButton")
+    b.BorderSizePixel = 0; b.AutoButtonColor = false
+    for k, v in pairs(props) do b[k] = v end
+    return b
+end
+local function hover(btn, onT, offT)
+    btn.MouseEnter:Connect(function()  btn.BackgroundTransparency = onT  end)
+    btn.MouseLeave:Connect(function()  btn.BackgroundTransparency = offT end)
 end
 
 -- ============================================================
--- CONSTANTS
+-- LAYOUT CONSTANTS
 -- ============================================================
-local W     = 300
-local H     = 400
-local PAD   = 12
-local WHITE = Color3.fromRGB(255, 255, 255)
-local DARK  = Color3.fromRGB(22, 22, 22)
-local MID   = Color3.fromRGB(170, 170, 170)
+local PANEL_W     = 320
+local PANEL_H     = 430
+local HEADER_H    = 48
+local TOOLBAR_H   = 36
+local FOOTER_H    = 32
+local PAD         = 14
+local ROW_H       = 62
+local DARK        = Color3.fromRGB(22, 22, 22)
+local GREY        = Color3.fromRGB(160, 160, 160)
+local SCROLL_H    = PANEL_H - HEADER_H - TOOLBAR_H - FOOTER_H - 16
 
 -- ============================================================
 -- SCREEN GUI
 -- ============================================================
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AnimDetectorGUI"
+screenGui.Name       = "AnimDetectorGUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = playerGui
+screenGui.Parent     = playerGui
 
--- Main frame
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, W, 0, H)
-mainFrame.Position = UDim2.new(0, 20, 0.5, -H / 2)
-mainFrame.BackgroundColor3 = DARK
-mainFrame.BackgroundTransparency = 0.20
-mainFrame.BorderSizePixel = 0
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-mkCorner(mainFrame, 12)
-mkStroke(mainFrame, 0.82, 1)
+-- ── Panel ────────────────────────────────────────────────────
+local panel = newFrame {
+    Name = "Panel",
+    Size = UDim2.new(0, PANEL_W, 0, PANEL_H),
+    Position = UDim2.new(0, 20, 0.5, -PANEL_H / 2),
+    BackgroundColor3 = DARK,
+    BackgroundTransparency = 0.18,
+    BorderSizePixel = 0,
+    Active = true,
+    Draggable = true,
+    Parent = screenGui,
+}
+addCorner(panel, 14)
+addStroke(panel, 0.82, 1)
 
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 36)
-titleBar.BackgroundColor3 = WHITE
-titleBar.BackgroundTransparency = 0.92
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-mkCorner(titleBar, 12)
+-- ── Header ───────────────────────────────────────────────────
+local header = newFrame {
+    Size = UDim2.new(1, 0, 0, HEADER_H),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.92,
+    BorderSizePixel = 0,
+    Parent = panel,
+}
+addCorner(header, 14)
 
--- Patch bottom corners of title bar
-local tbFix = Instance.new("Frame")
-tbFix.Size = UDim2.new(1, 0, 0.5, 0)
-tbFix.Position = UDim2.new(0, 0, 0.5, 0)
-tbFix.BackgroundColor3 = WHITE
-tbFix.BackgroundTransparency = 0.92
-tbFix.BorderSizePixel = 0
-tbFix.Parent = titleBar
+-- Patch bottom corners of header
+newFrame {
+    Size = UDim2.new(1, 0, 0.5, 0),
+    Position = UDim2.new(0, 0, 0.5, 0),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.92,
+    BorderSizePixel = 0,
+    Parent = header,
+}
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -44, 1, 0)
-titleLabel.Position = UDim2.new(0, 14, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Anim Detector"
-titleLabel.TextColor3 = WHITE
-titleLabel.TextTransparency = 0.08
-titleLabel.TextSize = 12
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = titleBar
+newLabel {
+    Size = UDim2.new(1, -50, 1, 0),
+    Position = UDim2.new(0, PAD, 0, 0),
+    Text = "Anim Detector",
+    TextColor3 = W,
+    TextTransparency = 0.06,
+    TextSize = 13,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = header,
+}
 
--- Divider
-local divider = Instance.new("Frame")
-divider.Size = UDim2.new(1, -PAD * 2, 0, 1)
-divider.Position = UDim2.new(0, PAD, 0, 36)
-divider.BackgroundColor3 = WHITE
-divider.BackgroundTransparency = 0.86
-divider.BorderSizePixel = 0
-divider.Parent = mainFrame
+-- Header bottom divider
+newFrame {
+    Size = UDim2.new(1, -PAD * 2, 0, 1),
+    Position = UDim2.new(0, PAD, 0, HEADER_H),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.87,
+    BorderSizePixel = 0,
+    Parent = panel,
+}
 
 -- Close button
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 22, 0, 22)
-closeBtn.Position = UDim2.new(1, -28, 0, 7)
-closeBtn.BackgroundColor3 = WHITE
-closeBtn.BackgroundTransparency = 0.86
-closeBtn.BorderSizePixel = 0
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = WHITE
-closeBtn.TextTransparency = 0.12
-closeBtn.TextSize = 10
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.ZIndex = 5
-closeBtn.Parent = mainFrame
-mkCorner(closeBtn, 11)
-
-closeBtn.MouseEnter:Connect(function() closeBtn.BackgroundTransparency = 0.62 end)
-closeBtn.MouseLeave:Connect(function() closeBtn.BackgroundTransparency = 0.86 end)
+local closeBtn = newButton {
+    Size = UDim2.new(0, 24, 0, 24),
+    Position = UDim2.new(1, -30, 0.5, -12),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.87,
+    Text = "✕",
+    TextColor3 = W,
+    TextTransparency = 0.12,
+    TextSize = 10,
+    Font = Enum.Font.GothamBold,
+    ZIndex = 5,
+    Parent = header,
+}
+addCorner(closeBtn, 12)
+hover(closeBtn, 0.62, 0.87)
 closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
--- Stats row
-local statsRow = Instance.new("Frame")
-statsRow.Size = UDim2.new(1, -PAD * 2, 0, 28)
-statsRow.Position = UDim2.new(0, PAD, 0, 44)
-statsRow.BackgroundTransparency = 1
-statsRow.BorderSizePixel = 0
-statsRow.Parent = mainFrame
+-- ── Toolbar ──────────────────────────────────────────────────
+local toolbar = newFrame {
+    Size = UDim2.new(1, -PAD * 2, 0, TOOLBAR_H),
+    Position = UDim2.new(0, PAD, 0, HEADER_H + 8),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.93,
+    BorderSizePixel = 0,
+    Parent = panel,
+}
+addCorner(toolbar, 8)
+addStroke(toolbar, 0.88, 1)
 
-local countLabel = Instance.new("TextLabel")
-countLabel.Size = UDim2.new(0.55, 0, 1, 0)
-countLabel.BackgroundTransparency = 1
-countLabel.Text = "0 captured"
-countLabel.TextColor3 = MID
-countLabel.TextSize = 11
-countLabel.Font = Enum.Font.Gotham
-countLabel.TextXAlignment = Enum.TextXAlignment.Left
-countLabel.Parent = statsRow
+local countLabel = newLabel {
+    Size = UDim2.new(0.5, 0, 1, 0),
+    Position = UDim2.new(0, 12, 0, 0),
+    Text = "0 captured",
+    TextColor3 = GREY,
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = toolbar,
+}
 
-local clearBtn = Instance.new("TextButton")
-clearBtn.Size = UDim2.new(0, 70, 0, 22)
-clearBtn.Position = UDim2.new(1, -70, 0.5, -11)
-clearBtn.BackgroundColor3 = WHITE
-clearBtn.BackgroundTransparency = 0.88
-clearBtn.BorderSizePixel = 0
-clearBtn.Text = "Clear All"
-clearBtn.TextColor3 = WHITE
-clearBtn.TextTransparency = 0.14
-clearBtn.TextSize = 10
-clearBtn.Font = Enum.Font.GothamBold
-clearBtn.Parent = statsRow
-mkCorner(clearBtn, 6)
-mkStroke(clearBtn, 0.82, 1)
+local clearBtn = newButton {
+    Size = UDim2.new(0, 72, 0, 24),
+    Position = UDim2.new(1, -78, 0.5, -12),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.88,
+    Text = "Clear All",
+    TextColor3 = W,
+    TextTransparency = 0.12,
+    TextSize = 10,
+    Font = Enum.Font.GothamBold,
+    Parent = toolbar,
+}
+addCorner(clearBtn, 6)
+addStroke(clearBtn, 0.84, 1)
+hover(clearBtn, 0.70, 0.88)
 
-clearBtn.MouseEnter:Connect(function() clearBtn.BackgroundTransparency = 0.70 end)
-clearBtn.MouseLeave:Connect(function() clearBtn.BackgroundTransparency = 0.88 end)
+-- ── Scroll area ──────────────────────────────────────────────
+local scrollY = HEADER_H + TOOLBAR_H + 16
 
--- Scroll container
-local SCROLL_TOP = 80
-local SCROLL_H   = H - SCROLL_TOP - 42
-
-local scrollContainer = Instance.new("Frame")
-scrollContainer.Size = UDim2.new(1, -PAD * 2, 0, SCROLL_H)
-scrollContainer.Position = UDim2.new(0, PAD, 0, SCROLL_TOP)
-scrollContainer.BackgroundColor3 = WHITE
-scrollContainer.BackgroundTransparency = 0.96
-scrollContainer.BorderSizePixel = 0
-scrollContainer.ClipsDescendants = true
-scrollContainer.Parent = mainFrame
-mkCorner(scrollContainer, 8)
-mkStroke(scrollContainer, 0.88, 1)
+local scrollOuter = newFrame {
+    Size = UDim2.new(1, -PAD * 2, 0, SCROLL_H),
+    Position = UDim2.new(0, PAD, 0, scrollY),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.97,
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+    Parent = panel,
+}
+addCorner(scrollOuter, 10)
+addStroke(scrollOuter, 0.89, 1)
 
 local scrollFrame = Instance.new("ScrollingFrame")
 scrollFrame.Size = UDim2.new(1, 0, 1, 0)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.BorderSizePixel = 0
 scrollFrame.ScrollBarThickness = 3
-scrollFrame.ScrollBarImageColor3 = MID
+scrollFrame.ScrollBarImageColor3 = GREY
 scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scrollFrame.Parent = scrollContainer
+scrollFrame.Parent = scrollOuter
 
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 6)
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Parent = scrollFrame
+do
+    local ll = Instance.new("UIListLayout")
+    ll.Padding = UDim.new(0, 6)
+    ll.SortOrder = Enum.SortOrder.LayoutOrder
+    ll.Parent = scrollFrame
 
-local listPad = Instance.new("UIPadding")
-listPad.PaddingTop    = UDim.new(0, 8)
-listPad.PaddingBottom = UDim.new(0, 8)
-listPad.PaddingLeft   = UDim.new(0, 8)
-listPad.PaddingRight  = UDim.new(0, 8)
-listPad.Parent = scrollFrame
+    local lp = Instance.new("UIPadding")
+    lp.PaddingTop = UDim.new(0, 8); lp.PaddingBottom = UDim.new(0, 8)
+    lp.PaddingLeft = UDim.new(0, 8); lp.PaddingRight = UDim.new(0, 8)
+    lp.Parent = scrollFrame
+end
 
-local emptyLabel = Instance.new("TextLabel")
-emptyLabel.Size = UDim2.new(1, 0, 1, 0)
-emptyLabel.BackgroundTransparency = 1
-emptyLabel.Text = "No animations detected yet.\nPlay an emote to see it here."
-emptyLabel.TextColor3 = MID
-emptyLabel.TextTransparency = 0.35
-emptyLabel.TextSize = 12
-emptyLabel.Font = Enum.Font.Gotham
-emptyLabel.TextWrapped = true
-emptyLabel.Parent = scrollContainer
+local emptyLabel = newLabel {
+    Size = UDim2.new(1, 0, 1, 0),
+    Text = "No animations detected yet.\nPlay an emote to see it appear here.",
+    TextColor3 = GREY,
+    TextTransparency = 0.30,
+    TextSize = 12,
+    Font = Enum.Font.Gotham,
+    TextWrapped = true,
+    Parent = scrollOuter,
+}
 
--- Status bar
-local statusBar = Instance.new("Frame")
-statusBar.Size = UDim2.new(1, -PAD * 2, 0, 26)
-statusBar.Position = UDim2.new(0, PAD, 1, -36)
-statusBar.BackgroundColor3 = WHITE
-statusBar.BackgroundTransparency = 0.92
-statusBar.BorderSizePixel = 0
-statusBar.Parent = mainFrame
-mkCorner(statusBar, 6)
-mkStroke(statusBar, 0.86, 1)
+-- ── Footer / status bar ───────────────────────────────────────
+local footer = newFrame {
+    Size = UDim2.new(1, -PAD * 2, 0, FOOTER_H),
+    Position = UDim2.new(0, PAD, 1, -(FOOTER_H + 8)),
+    BackgroundColor3 = W,
+    BackgroundTransparency = 0.93,
+    BorderSizePixel = 0,
+    Parent = panel,
+}
+addCorner(footer, 8)
+addStroke(footer, 0.88, 1)
 
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -12, 1, 0)
-statusLabel.Position = UDim2.new(0, 10, 0, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "● Listening for animations"
-statusLabel.TextColor3 = MID
-statusLabel.TextSize = 10
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
-statusLabel.Parent = statusBar
+-- Dot indicator
+local dot = newFrame {
+    Size = UDim2.new(0, 7, 0, 7),
+    Position = UDim2.new(0, 12, 0.5, -3),
+    BackgroundColor3 = GREY,
+    BorderSizePixel = 0,
+    Parent = footer,
+}
+addCorner(dot, 4)
+
+local statusLabel = newLabel {
+    Size = UDim2.new(1, -34, 1, 0),
+    Position = UDim2.new(0, 24, 0, 0),
+    Text = "Listening for animations…",
+    TextColor3 = GREY,
+    TextSize = 10,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    Parent = footer,
+}
 
 -- ============================================================
 -- ENTRY LOGIC
@@ -306,124 +323,150 @@ local seenIds = {}
 local function setStatus(msg)
     statusLabel.Text = msg
 end
-
 local function flashStatus(msg)
     setStatus(msg)
-    task.delay(2.5, function()
-        setStatus("● Listening for animations")
-    end)
+    task.delay(2.5, function() setStatus("Listening for animations…") end)
 end
 
 local function addAnimationEntry(animId)
-    local numericId = extractNumericId(animId)
-
-    if seenIds[numericId] then
-        flashStatus("Already captured: " .. numericId)
+    local numId = extractNumericId(animId)
+    if seenIds[numId] then
+        flashStatus("Already captured: " .. numId)
         return
     end
 
-    seenIds[numericId] = true
-    capturedCount = capturedCount + 1
+    seenIds[numId] = true
+    capturedCount += 1
     emptyLabel.Visible = false
     countLabel.Text = capturedCount .. " captured"
-    setStatus("Fetching name...")
+    setStatus("Fetching name…")
 
-    -- Row
-    local row = Instance.new("Frame")
-    row.LayoutOrder = capturedCount
-    row.Size = UDim2.new(1, 0, 0, 58)
-    row.BackgroundColor3 = WHITE
-    row.BackgroundTransparency = 0.91
-    row.BorderSizePixel = 0
-    row.Parent = scrollFrame
-    mkCorner(row, 8)
-    mkStroke(row, 0.86, 1)
+    -- ── Row ─────────────────────────────────────────────────
+    local row = newFrame {
+        LayoutOrder = capturedCount,
+        Size = UDim2.new(1, 0, 0, ROW_H),
+        BackgroundColor3 = W,
+        BackgroundTransparency = 0.92,
+        BorderSizePixel = 0,
+        Parent = scrollFrame,
+    }
+    addCorner(row, 8)
+    addStroke(row, 0.87, 1)
 
-    -- Index pill
-    local pill = Instance.new("Frame")
-    pill.Size = UDim2.new(0, 24, 0, 24)
-    pill.Position = UDim2.new(0, 10, 0.5, -12)
-    pill.BackgroundColor3 = WHITE
-    pill.BackgroundTransparency = 0.84
-    pill.BorderSizePixel = 0
-    pill.Parent = row
-    mkCorner(pill, 6)
+    -- Left accent bar
+    local accent = newFrame {
+        Size = UDim2.new(0, 3, 1, -18),
+        Position = UDim2.new(0, 0, 0, 9),
+        BackgroundColor3 = GREY,
+        BackgroundTransparency = 0.60,
+        BorderSizePixel = 0,
+        Parent = row,
+    }
+    addCorner(accent, 2)
 
-    local pillNum = Instance.new("TextLabel")
-    pillNum.Size = UDim2.new(1, 0, 1, 0)
-    pillNum.BackgroundTransparency = 1
-    pillNum.Text = tostring(capturedCount)
-    pillNum.TextColor3 = WHITE
-    pillNum.TextTransparency = 0.10
-    pillNum.TextSize = 10
-    pillNum.Font = Enum.Font.GothamBold
-    pillNum.Parent = pill
+    -- Index badge
+    local badge = newLabel {
+        Size = UDim2.new(0, 22, 0, 22),
+        Position = UDim2.new(0, 12, 0.5, -11),
+        BackgroundColor3 = W,
+        BackgroundTransparency = 0.86,
+        Text = tostring(capturedCount),
+        TextColor3 = W,
+        TextTransparency = 0.12,
+        TextSize = 10,
+        Font = Enum.Font.GothamBold,
+        Parent = row,
+    }
+    badge.BackgroundTransparency = 0.86  -- override since newLabel forces 1
+    local badgeBg = newFrame {
+        Size = UDim2.new(0, 22, 0, 22),
+        Position = UDim2.new(0, 12, 0.5, -11),
+        BackgroundColor3 = W,
+        BackgroundTransparency = 0.86,
+        BorderSizePixel = 0,
+        ZIndex = 1,
+        Parent = row,
+    }
+    addCorner(badgeBg, 5)
 
-    -- Animation name (top line) — resolves async
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, -116, 0, 22)
-    nameLabel.Position = UDim2.new(0, 42, 0, 6)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = "Loading..."
-    nameLabel.TextColor3 = WHITE
-    nameLabel.TextTransparency = 0.10
-    nameLabel.TextSize = 12
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-    nameLabel.Parent = row
+    local badgeNum = newLabel {
+        Size = UDim2.new(1, 0, 1, 0),
+        Text = tostring(capturedCount),
+        TextColor3 = W,
+        TextTransparency = 0.12,
+        TextSize = 10,
+        Font = Enum.Font.GothamBold,
+        ZIndex = 2,
+        Parent = badgeBg,
+    }
 
-    -- Numeric ID (bottom line)
-    local idLabel = Instance.new("TextLabel")
-    idLabel.Size = UDim2.new(1, -116, 0, 16)
-    idLabel.Position = UDim2.new(0, 42, 0, 30)
-    idLabel.BackgroundTransparency = 1
-    idLabel.Text = numericId
-    idLabel.TextColor3 = MID
-    idLabel.TextTransparency = 0.18
-    idLabel.TextSize = 10
-    idLabel.Font = Enum.Font.Gotham
-    idLabel.TextXAlignment = Enum.TextXAlignment.Left
-    idLabel.TextTruncate = Enum.TextTruncate.AtEnd
-    idLabel.Parent = row
+    -- Text block
+    local textBlock = newFrame {
+        Size = UDim2.new(1, -110, 1, 0),
+        Position = UDim2.new(0, 44, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Parent = row,
+    }
+
+    local nameLabel = newLabel {
+        Size = UDim2.new(1, 0, 0, 26),
+        Position = UDim2.new(0, 0, 0, 10),
+        Text = "Loading…",
+        TextColor3 = W,
+        TextTransparency = 0.08,
+        TextSize = 12,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = textBlock,
+    }
+
+    local idLabel = newLabel {
+        Size = UDim2.new(1, 0, 0, 16),
+        Position = UDim2.new(0, 0, 0, 36),
+        Text = numId,
+        TextColor3 = GREY,
+        TextTransparency = 0.14,
+        TextSize = 10,
+        Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = textBlock,
+    }
 
     -- Copy button
-    local copyBtn = Instance.new("TextButton")
-    copyBtn.Size = UDim2.new(0, 52, 0, 28)
-    copyBtn.Position = UDim2.new(1, -60, 0.5, -14)
-    copyBtn.BackgroundColor3 = WHITE
-    copyBtn.BackgroundTransparency = 0.84
-    copyBtn.BorderSizePixel = 0
-    copyBtn.Text = "Copy"
-    copyBtn.TextColor3 = WHITE
-    copyBtn.TextTransparency = 0.10
-    copyBtn.TextSize = 10
-    copyBtn.Font = Enum.Font.GothamBold
-    copyBtn.Parent = row
-    mkCorner(copyBtn, 6)
-    mkStroke(copyBtn, 0.80, 1)
+    local copyBtn = newButton {
+        Size = UDim2.new(0, 52, 0, 28),
+        Position = UDim2.new(1, -60, 0.5, -14),
+        BackgroundColor3 = W,
+        BackgroundTransparency = 0.86,
+        Text = "Copy",
+        TextColor3 = W,
+        TextTransparency = 0.10,
+        TextSize = 10,
+        Font = Enum.Font.GothamBold,
+        Parent = row,
+    }
+    addCorner(copyBtn, 6)
+    addStroke(copyBtn, 0.82, 1)
+    hover(copyBtn, 0.68, 0.86)
 
-    copyBtn.MouseEnter:Connect(function()
-        if copyBtn.Text == "Copy" then copyBtn.BackgroundTransparency = 0.66 end
-    end)
-    copyBtn.MouseLeave:Connect(function()
-        if copyBtn.Text == "Copy" then copyBtn.BackgroundTransparency = 0.84 end
-    end)
     copyBtn.MouseButton1Click:Connect(function()
-        setclipboard(numericId)
+        setclipboard(numId)
         copyBtn.Text = "✓"
         copyBtn.BackgroundTransparency = 0.72
-        flashStatus("Copied: " .. numericId)
+        flashStatus("Copied: " .. numId)
         task.delay(1.5, function()
             copyBtn.Text = "Copy"
-            copyBtn.BackgroundTransparency = 0.84
+            copyBtn.BackgroundTransparency = 0.86
         end)
     end)
 
-    -- Fade-in
+    -- Fade in
     row.BackgroundTransparency = 1
     TweenService:Create(row, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {
-        BackgroundTransparency = 0.91
+        BackgroundTransparency = 0.92
     }):Play()
 
     task.defer(function()
@@ -432,16 +475,16 @@ local function addAnimationEntry(animId)
 
     -- Async name fetch
     task.spawn(function()
-        local animName = fetchAnimName(numericId)
-        nameLabel.Text = animName
-        flashStatus("Captured: " .. animName)
+        local name = fetchAnimName(numId)
+        nameLabel.Text = name
+        flashStatus("Captured: " .. name)
     end)
 end
 
 -- Clear
 clearBtn.MouseButton1Click:Connect(function()
-    for _, child in ipairs(scrollFrame:GetChildren()) do
-        if child:IsA("Frame") then child:Destroy() end
+    for _, c in ipairs(scrollFrame:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
     end
     seenIds = {}
     capturedCount = 0
@@ -454,25 +497,18 @@ end)
 -- ANIMATION DETECTION
 -- ============================================================
 local function onAnimationPlayed(track)
-    if track.Animation then
-        local animId = track.Animation.AnimationId
-        if animId and animId ~= "" and not isDefaultAnimation(animId) then
-            addAnimationEntry(animId)
-        end
+    if not track.Animation then return end
+    local id = track.Animation.AnimationId
+    if id and id ~= "" and not isDefaultAnimation(id) then
+        addAnimationEntry(id)
     end
 end
 
-local character = player.Character or player.CharacterAdded:Wait()
-
 local function connectHumanoid(char)
-    local humanoid = char:WaitForChild("Humanoid")
-    humanoid.AnimationPlayed:Connect(onAnimationPlayed)
+    char:WaitForChild("Humanoid").AnimationPlayed:Connect(onAnimationPlayed)
 end
 
-connectHumanoid(character)
-
-player.CharacterAdded:Connect(function(newChar)
-    connectHumanoid(newChar)
-end)
+connectHumanoid(player.Character or player.CharacterAdded:Wait())
+player.CharacterAdded:Connect(connectHumanoid)
 
 print("[AnimDetector] Loaded.")
