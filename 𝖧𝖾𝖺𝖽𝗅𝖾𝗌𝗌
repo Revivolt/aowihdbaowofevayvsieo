@@ -58,15 +58,6 @@ local humanoid = character:WaitForChild("Humanoid")
 local animator = humanoid:WaitForChild("Animator")
 humanoid.AutoRotate = true
 
--- STIFF BODY: Disable the default Animate script and kill all its tracks
-local animateScript = character:FindFirstChild("Animate")
-if animateScript then
-    animateScript.Enabled = false
-end
-for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-    track:Stop(0)
-end
-
 -----------------------------
 -- STATE
 -----------------------------
@@ -309,23 +300,18 @@ end
 -- TRANSFORMATION
 -----------------------------
 local function playTransformation()
-    -- Flush any default tracks that snuck back in
-    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-        track:Stop(0)
-    end
+	if isValidId(TRANSFORMATION_ID) then
+		transformationTrack = loadAnimation(TRANSFORMATION_ID, false, Enum.AnimationPriority.Movement)
+		if transformationTrack then
+			transformationTrack:Play()
+			transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
+		end
+	end
 
-    if isValidId(TRANSFORMATION_ID) then
-        transformationTrack = loadAnimation(TRANSFORMATION_ID, false, Enum.AnimationPriority.Movement)
-        if transformationTrack then
-            transformationTrack:Play()
-            transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
-        end
-    end
+	transformed = true
+	humanoid.WalkSpeed = BASE_WALK_SPEED
 
-    transformed = true
-    humanoid.WalkSpeed = BASE_WALK_SPEED
-
-    task.delay(TRANSFORMATION_DURATION, refreshState)
+	task.delay(TRANSFORMATION_DURATION, refreshState)
 end
 
 -----------------------------
