@@ -1,499 +1,423 @@
---[[
-    ╔══════════════════════════════════════════════════════════╗
-    ║               SECRET CHAT  —  LocalScript v2            ║
-    ║  Only players running this exact script can communicate  ║
-    ╚══════════════════════════════════════════════════════════╝
+--// Noli
 
-    HOW IT WORKS (v2 — uses the chat system for replication):
-    ─────────────────────────────────────────────────────────
-    Roblox LocalScript-created objects do NOT replicate to
-    other clients.  The only thing that does replicate between
-    clients without a ServerScript is the chat system.
+-----------------------------
+-- CONFIG
+-----------------------------
 
-    This script uses Roblox's chat as a transport layer:
+-- DEFAULT ANIMS
+local TRANSFORMATION_ID = 0
+local IDLE_ID = 112724398873969
+local WALK_ID = 90175656540190
+local SPRINT_ID = 119380285634530
+local JUMP_ID = 0
+local FALL_ID = 0
+local M1_ID = 0
+local M1_LOOP = false
 
-    • On load it broadcasts a special handshake chat message.
-    • Other running copies detect the handshake, mark you as
-      "verified", and reply with their own handshake so you
-      can discover each other.
-    • Real messages are sent as chat messages with an invisible-
-      looking prefix.  Only script users see them decoded in
-      the private UI window; everyone else sees the raw prefix
-      string in regular chat (a known tradeoff of LocalScript-
-      only solutions — no ServerScript = no secret transport).
+-- ALT ANIMS (TOGGLES)
+local ALT_IDLE_ID = 95203125292023 -- X
+local ALT_WALK_ID = 93206157668596 -- C
+local ALT_SPRINT_ID = 0 -- V
+local ALT_JUMP_ID = 0 -- B
+local ALT_FALL_ID = 0 -- N
+local ALT_M1_ID = 0 -- M
 
-    USAGE:
-    • Type in the secret window and press Enter / Send.
-    • Press Ctrl+H or click [─] to hide/show the window.
-    • Drag the title bar to move the window.
-    • The window shows how many other script users are online.
+-- EMOTES (movement cancels)
+local EMOTE_T_ID = 140494815503076
+local EMOTE_Y_ID = 70458620811301
+local EMOTE_U_ID = 73905365652295
 
-    NOTE:  All three CONFIG values must be IDENTICAL in every
-    copy of the script for players to recognise each other.
---]]
+-- TIMING
+local TRANSFORMATION_DURATION = 0
 
--- ─────────────────────────────────────────────
---  CONFIG  ← must be the same in every copy
--- ─────────────────────────────────────────────
-local SECRET       = "SC_v2_a9f3c2xK"   -- shared secret token
-local WINDOW_TITLE = "🔒 Secret Chat"
+-- MOVEMENT SPEEDS
+local BASE_WALK_SPEED = 16
+local SPRINT_SPEED = 50
 
--- Internal prefixes derived from the secret (don't touch)
-local HS_MSG  = "❮HS❯" .. SECRET .. "❮❯"   -- handshake broadcast
-local MSG_PFX = "❮SC❯" .. SECRET .. "❮❯"   -- secret message prefix
+-- Animation Playback Speeds
+local TRANSFORM_ANIM_SPEED = 1
+local IDLE_ANIM_SPEED = 1
+local WALK_ANIM_SPEED = 1
+local SPRINT_ANIM_SPEED = 1
+local JUMP_ANIM_SPEED = 1
+local FALL_ANIM_SPEED = 1
+local M1_ANIM_SPEED = 1
 
--- ─────────────────────────────────────────────
---  SERVICES
--- ─────────────────────────────────────────────
-local Players          = game:GetService("Players")
+-----------------------------
+-- SERVICES
+-----------------------------
+local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local TextChatService  = game:GetService("TextChatService")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+-----------------------------
+-- CHARACTER
+-----------------------------
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local animator = humanoid:WaitForChild("Animator")
+humanoid.AutoRotate = true
 
--- ─────────────────────────────────────────────
---  SEND A CHAT MESSAGE (supports both chat systems)
--- ─────────────────────────────────────────────
-local generalChannel  -- cached TextChannel for new chat system
+-- STIFF BODY: Disable the default Animate script and kill all its tracks
+local animateScript = character:FindFirstChild("Animate")
+if animateScript then
+    animateScript.Enabled = false
+end
+for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+    track:Stop(0)
+end
 
-local function findGeneralChannel()
-    local tcs = TextChatService
-    -- New system: TextChannels folder
-    local channelsFolder = tcs:FindFirstChild("TextChannels")
-    if channelsFolder then
-        for _, ch in ipairs(channelsFolder:GetChildren()) do
-            if ch:IsA("TextChannel") then
-                generalChannel = ch
-                return ch
-            end
+-----------------------------
+-- STATE
+-----------------------------
+local transformed = false
+local sprinting = false
+local m1Held = false
+local currentState = "None"
+
+local useAltIdle = false
+local useAltWalk = false
+local useAltSprint = false
+local useAltJump = false
+local useAltFall = false
+local useAltM1 = false
+
+-- Track reload detection
+local lastUseAltIdle = false
+local lastUseAltWalk = false
+local lastUseAltSprint = false
+
+local idleTrack, walkTrack, sprintTrack, jumpTrack, fallTrack
+local transformationTrack
+local actionTrack
+local emoteTrack
+
+-----------------------------
+-- HELPERS
+-----------------------------
+local function isValidId(id)
+	return typeof(id) == "number" and id > 0
+end
+
+local function loadAnimation(assetId, looped, priority)
+	if not isValidId(assetId) then return nil end
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. assetId
+	local track = animator:LoadAnimation(anim)
+	track.Looped = looped
+	track.Priority = priority
+	return track
+end
+
+local function destroyTrack(track)
+	if track then
+		track:Stop()
+		track:Destroy()
+	end
+end
+
+-----------------------------
+-- ACTION STOP
+-----------------------------
+local function stopAction()
+	if actionTrack then
+		destroyTrack(actionTrack)
+		actionTrack = nil
+	end
+end
+
+local function stopEmote()
+	if emoteTrack then
+		destroyTrack(emoteTrack)
+		emoteTrack = nil
+	end
+end
+
+-----------------------------
+-- MOVEMENT STATES
+-----------------------------
+local function playIdle()
+	if not transformed or currentState == "Idle" or emoteTrack then return end
+
+	currentState = "Idle"
+
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+
+	local animId = (useAltIdle and isValidId(ALT_IDLE_ID)) and ALT_IDLE_ID or IDLE_ID
+
+	destroyTrack(idleTrack)
+	idleTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
+
+	if idleTrack then
+		idleTrack:Play()
+		idleTrack:AdjustSpeed(IDLE_ANIM_SPEED)
+	end
+end
+
+local function playWalk()
+	if not transformed or currentState == "Walk" or sprinting or emoteTrack then return end
+
+	currentState = "Walk"
+
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+
+	local animId = (useAltWalk and isValidId(ALT_WALK_ID)) and ALT_WALK_ID or WALK_ID
+
+	destroyTrack(walkTrack)
+	walkTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
+
+	if walkTrack then
+		walkTrack:Play()
+		walkTrack:AdjustSpeed(WALK_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
+	end
+end
+
+local function playSprint()
+	if not transformed or currentState == "Sprint" or emoteTrack then return end
+
+	currentState = "Sprint"
+
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+
+	local animId = (useAltSprint and isValidId(ALT_SPRINT_ID)) and ALT_SPRINT_ID or SPRINT_ID
+
+	destroyTrack(sprintTrack)
+	sprintTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
+
+	if sprintTrack then
+		sprintTrack:Play()
+		sprintTrack:AdjustSpeed(SPRINT_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
+	end
+end
+
+local function playJump()
+	if not transformed then return end
+
+	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
+	if not isValidId(animId) then return end
+
+	-- Stop movement animations while jumping
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+
+	currentState = "Jump"
+
+	destroyTrack(jumpTrack)
+	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
+
+	if jumpTrack then
+		jumpTrack:Play()
+		jumpTrack:AdjustSpeed(JUMP_ANIM_SPEED)
+	end
+end
+
+local function playFall()
+	if not transformed then return end
+
+	local animId = (useAltFall and isValidId(ALT_FALL_ID)) and ALT_FALL_ID or FALL_ID
+	if not isValidId(animId) then return end
+
+	-- Stop movement animations while falling
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+	destroyTrack(jumpTrack); jumpTrack = nil
+
+	currentState = "Fall"
+
+	destroyTrack(fallTrack)
+	fallTrack = loadAnimation(animId, true, Enum.AnimationPriority.Action)
+
+	if fallTrack then
+		fallTrack:Play()
+		fallTrack:AdjustSpeed(FALL_ANIM_SPEED)
+	end
+end
+
+-----------------------------
+-- M1
+-----------------------------
+local function playM1()
+	stopAction()
+
+	local animId = (useAltM1 and isValidId(ALT_M1_ID)) and ALT_M1_ID or M1_ID
+	if not isValidId(animId) then return end
+
+	if M1_LOOP then
+		-- Loop mode: play looped, keep going while held
+		actionTrack = loadAnimation(animId, true, Enum.AnimationPriority.Action)
+		if actionTrack then
+			actionTrack:Play()
+			actionTrack:AdjustSpeed(M1_ANIM_SPEED)
+		end
+	else
+		-- Single-shot mode: plays once per click, does not repeat while held
+		actionTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
+		if actionTrack then
+			actionTrack:Play()
+			actionTrack:AdjustSpeed(M1_ANIM_SPEED)
+			actionTrack.Stopped:Connect(function()
+				destroyTrack(actionTrack)
+				actionTrack = nil
+			end)
+		end
+	end
+end
+
+-----------------------------
+-- LOOP EMOTE
+-----------------------------
+local function playLoopEmote(assetId)
+	if not isValidId(assetId) then return end
+	stopEmote()
+	emoteTrack = loadAnimation(assetId, true, Enum.AnimationPriority.Action)
+	if emoteTrack then emoteTrack:Play() end
+end
+
+-----------------------------
+-- REFRESH
+-----------------------------
+local function refreshState()
+	if not transformed then return end
+	if emoteTrack then return end
+
+	-- Reload if toggle changed
+	if lastUseAltIdle ~= useAltIdle or
+	   lastUseAltWalk ~= useAltWalk or
+	   lastUseAltSprint ~= useAltSprint then
+		currentState = "None"
+	end
+
+	lastUseAltIdle = useAltIdle
+	lastUseAltWalk = useAltWalk
+	lastUseAltSprint = useAltSprint
+
+	local speed = humanoid.MoveDirection.Magnitude
+
+	if speed > 0.1 then
+		if sprinting then playSprint() else playWalk() end
+	else
+		playIdle()
+	end
+end
+
+-----------------------------
+-- TRANSFORMATION
+-----------------------------
+local function playTransformation()
+    -- Flush any default tracks that snuck back in
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        track:Stop(0)
+    end
+
+    if isValidId(TRANSFORMATION_ID) then
+        transformationTrack = loadAnimation(TRANSFORMATION_ID, false, Enum.AnimationPriority.Movement)
+        if transformationTrack then
+            transformationTrack:Play()
+            transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
         end
     end
-    return nil
+
+    transformed = true
+    humanoid.WalkSpeed = BASE_WALK_SPEED
+
+    task.delay(TRANSFORMATION_DURATION, refreshState)
 end
 
-local function sendChat(text)
-    -- Try new TextChatService path first
-    local ch = generalChannel or findGeneralChannel()
-    if ch then
-        local ok = pcall(function() ch:SendAsync(text) end)
-        if ok then return end
-    end
-    -- Fallback: legacy Player:Chat()
-    pcall(function() LocalPlayer:Chat(text) end)
-end
+-----------------------------
+-- INPUT
+-----------------------------
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or not transformed then return end
 
--- ─────────────────────────────────────────────
---  HANDSHAKE LOGIC
--- ─────────────────────────────────────────────
-local verifiedSet  = {}   -- [Player] = true
-local lastHsSent   = 0    -- rate-limit our own HS broadcasts
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = true
+		humanoid.WalkSpeed = SPRINT_SPEED
+	end
 
-local function broadcastHandshake()
-    -- Throttle: don't spam HS more than once every 3 seconds
-    if (os.clock() - lastHsSent) < 3 then return end
-    lastHsSent = os.clock()
-    sendChat(HS_MSG)
-end
+	if input.KeyCode == Enum.KeyCode.T then
+		playLoopEmote(EMOTE_T_ID)
+	elseif input.KeyCode == Enum.KeyCode.Y then
+		playLoopEmote(EMOTE_Y_ID)
+	elseif input.KeyCode == Enum.KeyCode.U then
+		playLoopEmote(EMOTE_U_ID)
+	end
 
--- ─────────────────────────────────────────────
---  GUI BUILD
--- ─────────────────────────────────────────────
-local old = PlayerGui:FindFirstChild("_SecretChatGui")
-if old then old:Destroy() end
+	-- Toggle keys
+	if input.KeyCode == Enum.KeyCode.C then
+		useAltWalk = not useAltWalk
+		refreshState()
+	elseif input.KeyCode == Enum.KeyCode.V then
+		useAltSprint = not useAltSprint
+		refreshState()
+	elseif input.KeyCode == Enum.KeyCode.X then
+		useAltIdle = not useAltIdle
+		refreshState()
+	elseif input.KeyCode == Enum.KeyCode.B then
+		useAltJump = not useAltJump
+	elseif input.KeyCode == Enum.KeyCode.N then
+		useAltFall = not useAltFall
+	elseif input.KeyCode == Enum.KeyCode.M then
+		useAltM1 = not useAltM1
+	end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name           = "_SecretChatGui"
-ScreenGui.ResetOnSpawn   = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder   = 999
-ScreenGui.Parent         = PlayerGui
-
-local WIN_W, WIN_H = 380, 320
-
-local Window = Instance.new("Frame")
-Window.Name             = "Window"
-Window.Size             = UDim2.new(0, WIN_W, 0, WIN_H)
-Window.Position         = UDim2.new(0, 14, 1, -(WIN_H + 14))
-Window.BackgroundColor3 = Color3.fromRGB(13, 13, 20)
-Window.BorderSizePixel  = 0
-Window.ClipsDescendants = true
-Window.Parent           = ScreenGui
-Instance.new("UICorner", Window).CornerRadius = UDim.new(0, 10)
-
-local Stroke           = Instance.new("UIStroke", Window)
-Stroke.Color           = Color3.fromRGB(60, 90, 200)
-Stroke.Thickness       = 1.5
-Stroke.Transparency    = 0.3
-
--- Title bar
-local TitleBar             = Instance.new("Frame")
-TitleBar.Name              = "TitleBar"
-TitleBar.Size              = UDim2.new(1, 0, 0, 36)
-TitleBar.BackgroundColor3  = Color3.fromRGB(25, 40, 120)
-TitleBar.BorderSizePixel   = 0
-TitleBar.ZIndex            = 5
-TitleBar.Parent            = Window
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 10)
-
-local TitleFill             = Instance.new("Frame")  -- hides the rounded bottom of TitleBar
-TitleFill.Size              = UDim2.new(1, 0, 0.5, 0)
-TitleFill.Position          = UDim2.new(0, 0, 0.5, 0)
-TitleFill.BackgroundColor3  = Color3.fromRGB(25, 40, 120)
-TitleFill.BorderSizePixel   = 0
-TitleFill.ZIndex            = 4
-TitleFill.Parent            = TitleBar
-
-local TitleLabel             = Instance.new("TextLabel")
-TitleLabel.Size              = UDim2.new(1, -80, 1, 0)
-TitleLabel.Position          = UDim2.new(0, 12, 0, 0)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text              = WINDOW_TITLE
-TitleLabel.TextColor3        = Color3.fromRGB(210, 225, 255)
-TitleLabel.Font              = Enum.Font.GothamBold
-TitleLabel.TextSize          = 13
-TitleLabel.TextXAlignment    = Enum.TextXAlignment.Left
-TitleLabel.ZIndex            = 6
-TitleLabel.Parent            = TitleBar
-
-local ToggleBtn              = Instance.new("TextButton")
-ToggleBtn.Size               = UDim2.new(0, 28, 0, 22)
-ToggleBtn.Position           = UDim2.new(1, -34, 0.5, -11)
-ToggleBtn.BackgroundColor3   = Color3.fromRGB(40, 60, 160)
-ToggleBtn.Text               = "─"
-ToggleBtn.TextColor3         = Color3.fromRGB(180, 200, 255)
-ToggleBtn.Font               = Enum.Font.GothamBold
-ToggleBtn.TextSize           = 14
-ToggleBtn.ZIndex             = 7
-ToggleBtn.Parent             = TitleBar
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 5)
-
--- Online status
-local OnlineLabel            = Instance.new("TextLabel")
-OnlineLabel.Size             = UDim2.new(1, -24, 0, 20)
-OnlineLabel.Position         = UDim2.new(0, 12, 0, 38)
-OnlineLabel.BackgroundTransparency = 1
-OnlineLabel.Text             = "● No other users with script online"
-OnlineLabel.TextColor3       = Color3.fromRGB(160, 80, 80)
-OnlineLabel.Font             = Enum.Font.Gotham
-OnlineLabel.TextSize         = 11
-OnlineLabel.TextXAlignment   = Enum.TextXAlignment.Left
-OnlineLabel.Parent           = Window
-
--- Message scroll area
-local ScrollFrame            = Instance.new("ScrollingFrame")
-ScrollFrame.Name             = "Messages"
-ScrollFrame.Size             = UDim2.new(1, -16, 1, -110)
-ScrollFrame.Position         = UDim2.new(0, 8, 0, 62)
-ScrollFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
-ScrollFrame.BorderSizePixel  = 0
-ScrollFrame.ScrollBarThickness = 3
-ScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(60, 90, 200)
-ScrollFrame.CanvasSize       = UDim2.new(0, 0, 0, 0)
-ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ScrollFrame.ElasticBehavior  = Enum.ElasticBehavior.Never
-ScrollFrame.Parent           = Window
-Instance.new("UICorner", ScrollFrame).CornerRadius = UDim.new(0, 6)
-
-local ListLayout             = Instance.new("UIListLayout")
-ListLayout.Padding           = UDim.new(0, 2)
-ListLayout.SortOrder         = Enum.SortOrder.LayoutOrder
-ListLayout.Parent            = ScrollFrame
-
-local Pad                    = Instance.new("UIPadding", ScrollFrame)
-Pad.PaddingTop               = UDim.new(0, 6)
-Pad.PaddingBottom            = UDim.new(0, 6)
-Pad.PaddingLeft              = UDim.new(0, 6)
-Pad.PaddingRight             = UDim.new(0, 8)
-
--- Input row
-local InputBg                = Instance.new("Frame")
-InputBg.Size                 = UDim2.new(1, -16, 0, 36)
-InputBg.Position             = UDim2.new(0, 8, 1, -46)
-InputBg.BackgroundColor3     = Color3.fromRGB(20, 22, 35)
-InputBg.BorderSizePixel      = 0
-InputBg.Parent               = Window
-Instance.new("UICorner", InputBg).CornerRadius = UDim.new(0, 8)
-
-local InputBox               = Instance.new("TextBox")
-InputBox.Size                = UDim2.new(1, -70, 1, -8)
-InputBox.Position            = UDim2.new(0, 10, 0, 4)
-InputBox.BackgroundTransparency = 1
-InputBox.Text                = ""
-InputBox.PlaceholderText     = "Message..."
-InputBox.PlaceholderColor3   = Color3.fromRGB(80, 85, 110)
-InputBox.TextColor3          = Color3.fromRGB(220, 225, 255)
-InputBox.Font                = Enum.Font.Gotham
-InputBox.TextSize            = 13
-InputBox.TextXAlignment      = Enum.TextXAlignment.Left
-InputBox.ClearTextOnFocus    = false
-InputBox.MultiLine           = false
-InputBox.Parent              = InputBg
-
-local SendBtn                = Instance.new("TextButton")
-SendBtn.Size                 = UDim2.new(0, 58, 1, -8)
-SendBtn.Position             = UDim2.new(1, -64, 0, 4)
-SendBtn.BackgroundColor3     = Color3.fromRGB(40, 80, 200)
-SendBtn.Text                 = "Send"
-SendBtn.TextColor3           = Color3.new(1, 1, 1)
-SendBtn.Font                 = Enum.Font.GothamBold
-SendBtn.TextSize             = 13
-SendBtn.Parent               = InputBg
-Instance.new("UICorner", SendBtn).CornerRadius = UDim.new(0, 6)
-
--- ─────────────────────────────────────────────
---  MESSAGE RENDERING
--- ─────────────────────────────────────────────
-local msgCount = 0
-
-local function scrollToBottom()
-    task.defer(function()
-        ScrollFrame.CanvasPosition = Vector2.new(0, math.huge)
-    end)
-end
-
-local function addMessage(speaker, text, msgType)
-    msgCount += 1
-
-    local row            = Instance.new("Frame")
-    row.Size             = UDim2.new(1, 0, 0, 0)
-    row.AutomaticSize    = Enum.AutomaticSize.Y
-    row.BackgroundTransparency = 1
-    row.LayoutOrder      = msgCount
-    row.Parent           = ScrollFrame
-
-    if msgType == "system" then
-        local lbl           = Instance.new("TextLabel", row)
-        lbl.Size            = UDim2.new(1, 0, 0, 0)
-        lbl.AutomaticSize   = Enum.AutomaticSize.Y
-        lbl.BackgroundTransparency = 1
-        lbl.TextXAlignment  = Enum.TextXAlignment.Left
-        lbl.TextWrapped     = true
-        lbl.Font            = Enum.Font.Gotham
-        lbl.TextSize        = 11
-        lbl.TextColor3      = Color3.fromRGB(110, 120, 155)
-        lbl.Text            = "  ◈ " .. text
-
-    elseif msgType == "join" then
-        local lbl           = Instance.new("TextLabel", row)
-        lbl.Size            = UDim2.new(1, 0, 0, 16)
-        lbl.BackgroundTransparency = 1
-        lbl.TextXAlignment  = Enum.TextXAlignment.Left
-        lbl.Font            = Enum.Font.Gotham
-        lbl.TextSize        = 11
-        lbl.TextColor3      = Color3.fromRGB(80, 200, 120)
-        lbl.Text            = "  → " .. speaker .. " joined the secret channel"
-
-    elseif msgType == "leave" then
-        local lbl           = Instance.new("TextLabel", row)
-        lbl.Size            = UDim2.new(1, 0, 0, 16)
-        lbl.BackgroundTransparency = 1
-        lbl.TextXAlignment  = Enum.TextXAlignment.Left
-        lbl.Font            = Enum.Font.Gotham
-        lbl.TextSize        = 11
-        lbl.TextColor3      = Color3.fromRGB(200, 90, 80)
-        lbl.Text            = "  ← " .. speaker .. " left the secret channel"
-
-    else  -- "chat"
-        local isSelf        = (speaker == LocalPlayer.DisplayName)
-        local nameColor     = isSelf
-            and Color3.fromRGB(100, 160, 255)
-            or  Color3.fromRGB(200, 160, 255)
-
-        local nameLbl       = Instance.new("TextLabel", row)
-        nameLbl.Size        = UDim2.new(1, 0, 0, 15)
-        nameLbl.BackgroundTransparency = 1
-        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-        nameLbl.Font        = Enum.Font.GothamBold
-        nameLbl.TextSize    = 11
-        nameLbl.TextColor3  = nameColor
-        nameLbl.Text        = "  " .. speaker
-
-        local msgLbl        = Instance.new("TextLabel", row)
-        msgLbl.Size         = UDim2.new(1, 0, 0, 0)
-        msgLbl.Position     = UDim2.new(0, 12, 0, 15)
-        msgLbl.AutomaticSize = Enum.AutomaticSize.Y
-        msgLbl.BackgroundTransparency = 1
-        msgLbl.TextXAlignment = Enum.TextXAlignment.Left
-        msgLbl.TextWrapped  = true
-        msgLbl.Font         = Enum.Font.Gotham
-        msgLbl.TextSize     = 12
-        msgLbl.TextColor3   = Color3.fromRGB(210, 215, 240)
-        msgLbl.Text         = text
-    end
-
-    scrollToBottom()
-end
-
--- ─────────────────────────────────────────────
---  ONLINE COUNTER
--- ─────────────────────────────────────────────
-local function refreshOnlineLabel()
-    local count = 0
-    for _ in pairs(verifiedSet) do count += 1 end
-    if count == 0 then
-        OnlineLabel.Text       = "● No other users with script online"
-        OnlineLabel.TextColor3 = Color3.fromRGB(160, 80, 80)
-    else
-        OnlineLabel.Text       = "● " .. count .. " other user"
-            .. (count ~= 1 and "s" or "") .. " with script"
-        OnlineLabel.TextColor3 = Color3.fromRGB(80, 200, 120)
-    end
-end
-
--- ─────────────────────────────────────────────
---  PROCESS INCOMING CHAT MESSAGES
--- ─────────────────────────────────────────────
-local function onChatMessage(player, message)
-    if player == LocalPlayer then return end  -- we handle our own messages locally
-
-    -- Handshake received from another script user
-    if message == HS_MSG then
-        local isNew = not verifiedSet[player]
-        verifiedSet[player] = true
-        refreshOnlineLabel()
-        if isNew then
-            addMessage(player.DisplayName, nil, "join")
-            -- Reply with our handshake so they discover us too (throttled)
-            task.delay(0.5, broadcastHandshake)
-        end
-        return
-    end
-
-    -- Secret message from a verified player
-    if message:sub(1, #MSG_PFX) == MSG_PFX and verifiedSet[player] then
-        local decoded = message:sub(#MSG_PFX + 1)
-        if decoded ~= "" then
-            addMessage(player.DisplayName, decoded, "chat")
-        end
-        return
-    end
-end
-
--- ── Hook into legacy chat (Player.Chatted fires on all clients) ──
-local function hookPlayer(p)
-    p.Chatted:Connect(function(msg)
-        onChatMessage(p, msg)
-    end)
-end
-
-for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then hookPlayer(p) end
-end
-
-Players.PlayerAdded:Connect(function(p)
-    hookPlayer(p)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		m1Held = true
+		playM1()
+	end
 end)
 
-Players.PlayerRemoving:Connect(function(p)
-    if verifiedSet[p] then
-        verifiedSet[p] = nil
-        refreshOnlineLabel()
-        addMessage(p.DisplayName, nil, "leave")
-    end
+UserInputService.InputEnded:Connect(function(input)
+	if not transformed then return end
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = false
+		humanoid.WalkSpeed = BASE_WALK_SPEED
+	end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		m1Held = false
+		if M1_LOOP then
+			stopAction()
+		end
+	end
 end)
 
--- ── Also hook into new TextChatService if present ──
--- MessageReceived fires on all clients for all messages
-pcall(function()
-    TextChatService.MessageReceived:Connect(function(msg)
-        if not msg.TextSource then return end
-        local userId = msg.TextSource.UserId
-        local player = Players:GetPlayerByUserId(userId)
-        if player and player ~= LocalPlayer then
-            -- Strip any rich-text tags Roblox may inject
-            local rawText = msg.Text:gsub("<[^>]+>", "")
-            onChatMessage(player, rawText)
-        end
-    end)
+-----------------------------
+-- MOVEMENT
+-----------------------------
+humanoid.Running:Connect(function(speed)
+	if not transformed then return end
+
+	if speed > 0 and emoteTrack then
+		stopEmote()
+	end
+
+	refreshState()
 end)
 
--- ─────────────────────────────────────────────
---  SEND A SECRET MESSAGE
--- ─────────────────────────────────────────────
-local function submitMessage()
-    local text = InputBox.Text:match("^%s*(.-)%s*$")
-    if text == "" then return end
-    if #text > 150 then
-        addMessage(nil, "Too long — max 150 characters.", "system")
-        return
-    end
+humanoid.StateChanged:Connect(function(_, new)
+	if not transformed then return end
 
-    -- Show immediately in our own window
-    addMessage(LocalPlayer.DisplayName, text, "chat")
-    InputBox.Text = ""
+	if new == Enum.HumanoidStateType.Jumping then
+		playJump()
 
-    -- Broadcast via chat (prefixed so other scripts can decode it)
-    sendChat(MSG_PFX .. text)
-end
+	elseif new == Enum.HumanoidStateType.Freefall then
+		playFall()
 
-SendBtn.MouseButton1Click:Connect(submitMessage)
-
-InputBox.FocusLost:Connect(function(enterPressed)
-    if enterPressed then submitMessage() end
+	elseif new == Enum.HumanoidStateType.Landed then
+		destroyTrack(jumpTrack)
+		jumpTrack = nil
+		destroyTrack(fallTrack)
+		fallTrack = nil
+		currentState = "None"
+		refreshState()
+	end
 end)
 
--- ─────────────────────────────────────────────
---  DRAG TO MOVE
--- ─────────────────────────────────────────────
-local dragging, dragStart, startPos
-
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging  = true
-        dragStart = input.Position
-        startPos  = Window.Position
-    end
-end)
-
-TitleBar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        Window.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
--- ─────────────────────────────────────────────
---  HIDE / SHOW
--- ─────────────────────────────────────────────
-local hidden = false
-
-local function toggleWindow()
-    hidden = not hidden
-    Window.Size    = hidden
-        and UDim2.new(0, WIN_W, 0, 36)
-        or  UDim2.new(0, WIN_W, 0, WIN_H)
-    ToggleBtn.Text = hidden and "□" or "─"
-end
-
-ToggleBtn.MouseButton1Click:Connect(toggleWindow)
-
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.H
-        and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-        toggleWindow()
-    end
-end)
-
--- ─────────────────────────────────────────────
---  INIT
--- ─────────────────────────────────────────────
-addMessage(nil, "Secret Chat v2 loaded. Handshaking with other players...", "system")
-addMessage(nil, "Ctrl+H or [─] to hide  •  Drag title bar to move", "system")
-addMessage(nil, "Note: messages are sent through regular chat with a prefix.", "system")
-refreshOnlineLabel()
-
--- Broadcast our handshake so existing players can discover us
--- Also re-broadcast after a short delay in case timing is tight
-task.delay(0.5, broadcastHandshake)
-task.delay(3,   broadcastHandshake)  -- second attempt for slow loaders
+-----------------------------
+-- START
+-----------------------------
+playTransformation()
