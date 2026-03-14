@@ -1,149 +1,94 @@
---[[
-╔══════════════════════════════════════════════════════════════╗
-║                   TOP-MOUNT WELD  —  LocalScript            ║
-║                                                              ║
-║  Stacks your character horizontally on top of a target.     ║
-║  Runs entirely on the client via RenderStepped so it is     ║
-║  never delayed by a server round-trip.                       ║
-║                                                              ║
-║  ► Place in:  StarterCharacterScripts  (LocalScript)        ║
-╚══════════════════════════════════════════════════════════════╝
---]]
+-- LocalScript: Weld to Top of Player
+-- Place inside: StarterCharacterScripts or StarterPlayerScripts
+-- ============================================================
 
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Players       = game:GetService("Players")
+local RunService    = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-------------------------------------------------------------------------
--- CONFIGURATION
-------------------------------------------------------------------------
-local TARGET_NAME  = "62_AM"  -- ← Change to target's username
+-- ──────────────────────────────────────────────
+--  CONFIG  (edit these)
+-- ──────────────────────────────────────────────
+local TARGET_NAME   = "62_AM"   -- Username of the player to ride
+local VERT_OFFSET   = 5.5                    -- Studs above their HumanoidRootPart
+local DETACH_KEY    = Enum.KeyCode.X         -- Hold X to detach
+-- ──────────────────────────────────────────────
 
--- Vertical fine-tune: positive = higher, negative = lower (studs)
-local EXTRA_HEIGHT = 0
+local localPlayer   = Players.LocalPlayer
+local character     = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local hrp           = character:WaitForChild("HumanoidRootPart")
+local humanoid      = character:WaitForChild("Humanoid")
+local rootJoint     = character:WaitForChild("LowerTorso"):WaitForChild("Root")
 
--- LAY_FLAT = true  → your character lies horizontal (face-up) on their head
--- LAY_FLAT = false → your character stands upright on top of their head
-local LAY_FLAT = true
-------------------------------------------------------------------------
+-- ── Suppress the humanoid so it stops fighting the weld ──
+humanoid.PlatformStand    = true
+humanoid.AutoRotate       = false
+rootJoint.Enabled         = false   -- kills the root motor so physics doesn't wrestle us
 
-local lp   = Players.LocalPlayer
-local char = lp.Character or lp.CharacterAdded:Wait()
-local hum  = char:WaitForChild("Humanoid")
-local hrp  = char:WaitForChild("HumanoidRootPart")
-
-------------------------------------------------------------------------
--- Wait for the target player and their character
-------------------------------------------------------------------------
-local target
-repeat
-    task.wait(0.2)
-    target = Players:FindFirstChild(TARGET_NAME)
-until target
-
-print(("[TopMount] Found target: %s — waiting for character…"):format(TARGET_NAME))
-
-local tChar = target.Character or target.CharacterAdded:Wait()
-local tHRP  = tChar:WaitForChild("HumanoidRootPart")
-local tHum  = tChar:WaitForChild("Humanoid")
-
-print("[TopMount] Target character loaded. Mounting…")
-
-------------------------------------------------------------------------
--- Height calculation
---   HipHeight  = distance from ground/feet to HumanoidRootPart
---   head crown ≈ HRP + HipHeight + ~1 stud  (head sphere radius)
---
---   stackDist is the vertical gap between the two HRPs so that our
---   feet just clear the top of the target's head.
-------------------------------------------------------------------------
-local function calcStack()
-    local myHipH  = hum.HipHeight          -- my HRP sits this far above my feet
-    local tTopH   = tHum.HipHeight + 1     -- target's HRP to crown of their head
-    return tTopH + myHipH + EXTRA_HEIGHT
+-- ── Locate target ────────────────────────────────────────
+local targetPlayer = Players:FindFirstChild(TARGET_NAME)
+if not targetPlayer then
+    -- Wait up to 15 s in case they're still loading
+    local t = tick()
+    repeat task.wait(0.1) targetPlayer = Players:FindFirstChild(TARGET_NAME)
+    until targetPlayer or (tick() - t > 15)
 end
 
-local stackDist = calcStack()
+if not targetPlayer then
+    warn("[RideScript] Target player '" .. TARGET_NAME .. "' not found.")
+    return
+end
 
-------------------------------------------------------------------------
--- Freeze the local character's physics
---   ChangeState(Physics) → Humanoid stops issuing movement forces
---   Anchored = true      → Roblox physics engine won't move the part
---   Both are client-side only; the server still sees the character
---   at its last replicated position.
-------------------------------------------------------------------------
-hum:ChangeState(Enum.HumanoidStateType.Physics)
-hrp.Anchored = true
+local targetChar  = targetPlayer.Character or targetPlayer.CharacterAdded:Wait()
+local targetHRP   = targetChar:WaitForChild("HumanoidRootPart")
 
-------------------------------------------------------------------------
--- RenderStepped connection
---   RenderStepped fires every frame BEFORE the scene is rendered.
---   It runs entirely on the client thread — no server latency.
---   Setting CFrame here is the last word before the pixel hits screen.
-------------------------------------------------------------------------
-local conn
-conn = RunService.RenderStepped:Connect(function()
-    -- Safety: disconnect if either character has been destroyed / respawned
-    if not (tHRP and tHRP.Parent and hrp and hrp.Parent) then
-        conn:Disconnect()
-        hrp.Anchored  = false
-        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-        warn("[TopMount] Target or self lost — dismounting.")
-        return
-    end
+-- ── Snap into position BEFORE welding (WeldConstraint bakes the current delta) ──
+local offset = CFrame.new(0, VERT_OFFSET, 0)   -- pure vertical, horizontal orientation locked
+hrp.CFrame   = targetHRP.CFrame * offset
 
-    local tCF = tHRP.CFrame
-    local mountPos = tCF.Position + Vector3.new(0, stackDist, 0)
+task.wait()   -- one physics step so the engine registers the new position
 
-    if LAY_FLAT then
-        ----------------------------------------------------------------
-        -- Horizontal (flat) orientation
-        --   CFrame.fromMatrix(pos, rightVec, upVec)
-        --
-        --   We borrow the target's RightVector as OUR right axis,
-        --   and the target's LookVector as OUR up axis.
-        --   Result: our body is parallel to the ground, head pointing
-        --   in the same direction the target is facing.
-        ----------------------------------------------------------------
-        hrp.CFrame = CFrame.fromMatrix(mountPos, tCF.RightVector, tCF.LookVector)
-    else
-        ----------------------------------------------------------------
-        -- Upright orientation
-        --   Stand directly above target, facing the same direction.
-        ----------------------------------------------------------------
-        hrp.CFrame = CFrame.new(mountPos, mountPos + tCF.LookVector)
+-- ── Create WeldConstraint ────────────────────────────────
+local weld      = Instance.new("WeldConstraint")
+weld.Part0      = targetHRP          -- anchor
+weld.Part1      = hrp                -- rider
+weld.Parent     = hrp
+
+-- ── RenderStepped enforcement loop ──────────────────────
+-- This is the latency shield: every frame, before the camera renders,
+-- we slam the CFrame back to exactly where it should be.
+-- Client-authoritative — zero network round-trip involved.
+local enforceConn = RunService.RenderStepped:Connect(function()
+    if not targetHRP or not targetHRP.Parent then return end
+
+    -- Maintain exact upright horizontal position regardless of target tilt/rotation
+    local targetPos = targetHRP.Position
+    hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, VERT_OFFSET, 0))
+end)
+
+-- ── Detach on keypress ───────────────────────────────────
+local detachConn
+detachConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == DETACH_KEY then
+        enforceConn:Disconnect()
+        detachConn:Disconnect()
+        weld:Destroy()
+        humanoid.PlatformStand = false
+        humanoid.AutoRotate    = true
+        rootJoint.Enabled      = true
+        print("[RideScript] Detached.")
     end
 end)
 
-------------------------------------------------------------------------
--- Recalculate stack height if the target's HipHeight ever changes
--- (e.g. they resize) — keeps the mount precise at all times
-------------------------------------------------------------------------
-tHum:GetPropertyChangedSignal("HipHeight"):Connect(function()
-    stackDist = calcStack()
-end)
-hum:GetPropertyChangedSignal("HipHeight"):Connect(function()
-    stackDist = calcStack()
-end)
-
-------------------------------------------------------------------------
--- Cleanup when THIS character is removed (respawn / death)
-------------------------------------------------------------------------
-char.AncestryChanged:Connect(function()
-    if not char.Parent then
-        conn:Disconnect()
-    end
+-- ── Auto-cleanup if target leaves ───────────────────────
+targetPlayer.CharacterRemoving:Connect(function()
+    enforceConn:Disconnect()
+    weld:Destroy()
+    humanoid.PlatformStand = false
+    humanoid.AutoRotate    = true
+    rootJoint.Enabled      = true
+    warn("[RideScript] Target left — detached.")
 end)
 
-------------------------------------------------------------------------
--- Also dismount cleanly if the TARGET player leaves the game
-------------------------------------------------------------------------
-Players.PlayerRemoving:Connect(function(p)
-    if p == target then
-        conn:Disconnect()
-        hrp.Anchored = false
-        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-        warn("[TopMount] Target left the game — dismounting.")
-    end
-end)
-
-print("[TopMount] Mounted! Riding on top of " .. TARGET_NAME)
+print("[RideScript] Welded to " .. TARGET_NAME .. ". Press " .. DETACH_KEY.Name .. " to detach.")
