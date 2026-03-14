@@ -1,25 +1,25 @@
 -- ============================================================
---  WeldAbovePlayer LocalScript
+--  HoverAbovePlayer  •  LocalScript  (v2 – flat + no-lag)
 --  Place in: StarterPlayerScripts or StarterCharacterScripts
 -- ============================================================
 
-local Players       = game:GetService("Players")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local RunService    = game:GetService("RunService")
 
-local localPlayer   = Players.LocalPlayer
+local localPlayer = Players.LocalPlayer
 
 -- ── CONFIG ────────────────────────────────────────────────────
-local TARGET_NAME   = "62_AM"   -- ← change to the target's username
-local HEIGHT_OFFSET = 5                         -- studs above their HumanoidRootPart
-local WELD_NAME     = "AbovePlayerWeld"
+local TARGET_NAME   = "62_AM"  -- ← target's exact username
+local HEIGHT_OFFSET = 5                        -- studs above their HumanoidRootPart
 -- ─────────────────────────────────────────────────────────────
 
-local activeWeld: Weld? = nil
+local heartbeatConn: RBXScriptConnection? = nil
+local isHovering = false
 
 -- ── Helpers ───────────────────────────────────────────────────
 
-local function getRootPart(character: Model): BasePart?
+local function getRoot(character: Model): BasePart?
     return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
@@ -27,146 +27,150 @@ local function getHumanoid(character: Model): Humanoid?
     return character:FindFirstChildOfClass("Humanoid")
 end
 
-local function removeExistingWeld(localRoot: BasePart)
-    local existing = localRoot:FindFirstChild(WELD_NAME)
-    if existing then
-        existing:Destroy()
+-- ── Start hovering ────────────────────────────────────────────
+
+local function startHover(targetName: string)
+    if isHovering then
+        warn("[Hover] Already hovering. Call /unweld first.")
+        return
     end
-    activeWeld = nil
-end
 
--- ── Core: Weld local character above target ───────────────────
-
-local function weldAbovePlayer(targetName: string)
-    -- Resolve characters
     local localChar = localPlayer.Character
     if not localChar then
-        warn("[WeldAbove] Local character not found.")
+        warn("[Hover] Local character not ready.")
         return
     end
 
-    local targetPlayer = Players:FindFirstChild(targetName)
+    local targetPlayer = Players:FindFirstChild(targetName) :: Player?
     if not targetPlayer then
-        warn(("[WeldAbove] Player '%s' is not in the game."):format(targetName))
+        warn(("[Hover] Player '%s' not found."):format(targetName))
         return
     end
 
-    local targetChar = (targetPlayer :: Player).Character
+    local targetChar = targetPlayer.Character
     if not targetChar then
-        warn(("[WeldAbove] '%s' has no character yet."):format(targetName))
+        warn(("[Hover] '%s' has no character yet."):format(targetName))
         return
     end
 
-    local localRoot  = getRootPart(localChar)
-    local targetRoot = getRootPart(targetChar)
-
+    local localRoot  = getRoot(localChar)
+    local targetRoot = getRoot(targetChar)
     if not localRoot or not targetRoot then
-        warn("[WeldAbove] Could not find HumanoidRootParts.")
+        warn("[Hover] Missing HumanoidRootPart(s).")
         return
     end
 
-    -- Remove any existing weld first
-    removeExistingWeld(localRoot)
-
-    -- Freeze local humanoid so physics doesn't fight the weld
+    -- Freeze local character so normal physics don't fight us
     local humanoid = getHumanoid(localChar)
     if humanoid then
         humanoid.PlatformStand = true
     end
+    localRoot.Anchored = true
 
-    -- Snap the local root to the correct offset position before welding
-    -- so C0/C1 math is straightforward
-    localRoot.CFrame = targetRoot.CFrame * CFrame.new(0, HEIGHT_OFFSET, 0)
+    isHovering = true
+    print(("[Hover] ✅ Now hovering above %s"):format(targetName))
 
-    -- Build the Weld
-    --   Part0 = target root  (the anchor)
-    --   Part1 = local root   (the passenger)
-    --   C0    = offset expressed in Part0's local space (HEIGHT_OFFSET studs up)
-    --   C1    = identity (local root sits at its own origin)
-    local weld      = Instance.new("Weld")
-    weld.Name       = WELD_NAME
-    weld.Part0      = targetRoot
-    weld.Part1      = localRoot
-    weld.C0         = CFrame.new(0, HEIGHT_OFFSET, 0)
-    weld.C1         = CFrame.identity
-    weld.Parent     = localRoot   -- lives on the passenger part
-
-    activeWeld = weld
-
-    print(("[WeldAbove] ✅  Welded %s above %s at +%d studs.")
-        :format(localPlayer.Name, targetName, HEIGHT_OFFSET))
-
-    -- Auto-clean if the target's character is removed (respawn / leave)
-    targetChar.AncestryChanged:Connect(function(_, newParent)
-        if newParent == nil and activeWeld == weld then
-            unweld()
-            print("[WeldAbove] Target character removed – weld released.")
+    -- ── Heartbeat loop ────────────────────────────────────────
+    -- Runs every frame on the CLIENT only – no server round-trip,
+    -- so movement tracking has no network latency.
+    heartbeatConn = RunService.Heartbeat:Connect(function()
+        if not localChar.Parent or not targetChar.Parent then
+            stopHover()
+            print("[Hover] A character was removed – hover stopped.")
+            return
         end
+
+        localRoot  = getRoot(localChar)
+        targetRoot = getRoot(targetChar)
+        if not localRoot or not targetRoot then return end
+
+        --[[
+            CFrame breakdown:
+              hoverPos  – world position directly above the target
+              yawCF     – copy ONLY the target's horizontal yaw so we
+                          spin with them but keep a flat orientation
+              flatCF    – pitch our character –90° so their body lies
+                          FLAT / HORIZONTAL (parallel to the ground,
+                          face pointing downward like a plank)
+        --]]
+        local tPos  = targetRoot.Position
+        local tYaw  = math.atan2(
+                          -targetRoot.CFrame.LookVector.X,
+                          -targetRoot.CFrame.LookVector.Z
+                      )
+
+        local hoverPos = CFrame.new(tPos.X, tPos.Y + HEIGHT_OFFSET, tPos.Z)
+        local yawCF    = CFrame.Angles(0, tYaw, 0)
+        local flatCF   = CFrame.Angles(math.rad(-90), 0, 0)
+
+        localRoot.CFrame = hoverPos * yawCF * flatCF
     end)
 end
 
--- ── Core: Remove weld & restore control ───────────────────────
+-- ── Stop hovering ─────────────────────────────────────────────
 
-function unweld()
-    local localChar = localPlayer.Character
-    if localChar then
-        local localRoot = getRootPart(localChar)
-        if localRoot then
-            removeExistingWeld(localRoot)
-        end
-
-        local humanoid = getHumanoid(localChar)
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
+function stopHover()
+    if heartbeatConn then
+        heartbeatConn:Disconnect()
+        heartbeatConn = nil
     end
-    print("[WeldAbove] 🔓 Weld removed. Control restored.")
+    isHovering = false
+
+    local localChar = localPlayer.Character
+    if not localChar then return end
+
+    local localRoot = getRoot(localChar)
+    if localRoot then
+        localRoot.Anchored = false
+    end
+
+    local humanoid = getHumanoid(localChar)
+    if humanoid then
+        humanoid.PlatformStand = false
+    end
+
+    print("[Hover] 🔓 Hover removed. Control restored.")
 end
 
--- ── Chat Commands (optional convenience) ──────────────────────
---   /weld   PlayerName    → welds you above that player
---   /weld                 → welds you above TARGET_NAME
---   /unweld               → removes weld
+-- ── Chat commands ─────────────────────────────────────────────
+--   /hover  [PlayerName]   → hover above that player
+--   /unweld                → stop
 
 localPlayer.Chatted:Connect(function(msg: string)
     local lower = msg:lower()
-
-    if lower:sub(1, 7) == "/weld" then
-        local parts  = msg:split(" ")
-        local name   = parts[2] or TARGET_NAME
-        weldAbovePlayer(name)
-
+    local parts = msg:split(" ")
+    if lower:sub(1, 6) == "/hover" then
+        startHover(parts[2] or TARGET_NAME)
     elseif lower == "/unweld" then
-        unweld()
+        stopHover()
     end
 end)
 
--- ── Keyboard Shortcut (optional) ──────────────────────────────
---   F5  →  weld above TARGET_NAME
---   F6  →  unweld
+-- ── Keyboard shortcuts ────────────────────────────────────────
+--   F5  →  hover above TARGET_NAME
+--   F6  →  stop
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
     if input.KeyCode == Enum.KeyCode.F5 then
-        weldAbovePlayer(TARGET_NAME)
-
+        startHover(TARGET_NAME)
     elseif input.KeyCode == Enum.KeyCode.F6 then
-        unweld()
+        stopHover()
     end
 end)
 
--- ── Auto-run on character spawn ───────────────────────────────
---  If you want it to re-attach every time you respawn,
---  uncomment the block below.
-
+-- ── Re-attach after local respawn (optional) ──────────────────
+-- Uncomment to auto-resume hover when you respawn.
 --[[
 localPlayer.CharacterAdded:Connect(function()
-    task.wait(1)   -- let physics settle
-    weldAbovePlayer(TARGET_NAME)
+    if isHovering then
+        isHovering = false
+        task.wait(1)
+        startHover(TARGET_NAME)
+    end
 end)
 --]]
 
--- ── Initial call ──────────────────────────────────────────────
-task.wait(1)   -- brief wait for the world to load
-weldAbovePlayer(TARGET_NAME)
+-- ── Auto-start ────────────────────────────────────────────────
+task.wait(1)
+startHover(TARGET_NAME)
