@@ -22,7 +22,7 @@ local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
 
 -- ─── CONFIG ─────────────────────────────────────────────────
-local TARGET_NAME   = "TargetUsernameHere"  -- exact Roblox username
+local TARGET_NAME   = "62_AM"  -- exact Roblox username
 local HEIGHT_OFFSET = 3.6   -- studs above target HumanoidRootPart
                              -- (≈ top of head for standard R15 rig)
                              -- use ~2.8 for R6 rigs
