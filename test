@@ -6,7 +6,7 @@ local RootPart = Character:WaitForChild("HumanoidRootPart")
 local TargetPlayer
 local connection
 
-local TARGET_NAME = "PlayerNameHere" -- Type the target player's username here
+local TARGET_NAME = "62_AM" -- Type the target player's username here
 
 local function attachToPlayer(target)
     TargetPlayer = target
