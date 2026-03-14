@@ -34,7 +34,7 @@ local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
 
 -- ─── CONFIG ─────────────────────────────────────────────────
-local TARGET_NAME   = "TargetUsernameHere"
+local TARGET_NAME   = "62_AM"
 local HEIGHT_OFFSET = 3.6          -- studs above HRP  (R15 ≈ 3.6, R6 ≈ 2.8)
 local DETACH_KEY    = Enum.KeyCode.X
 local PING_SAMPLES  = 12           -- rolling average window for ping stability
