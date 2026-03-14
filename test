@@ -1,171 +1,34 @@
--- ============================================================
---  WeldToPlayerTop — LocalScript  (MoveDirection Dead Reckoning)
---
---  ROOT CAUSE OF LATENCY:
---    targetHRP.CFrame is replicated — it is the position the server
---    last broadcast, which is always one-way-ping milliseconds old.
---    The previous fix used AssemblyLinearVelocity for prediction,
---    but that value is ALSO replicated (same delay) and is full of
---    physics noise from footing/collision micro-forces. On top of
---    that, the EMA smoothing added its own lag on top.
---
---  BETTER FIX — MoveDirection × WalkSpeed:
---    Humanoid.MoveDirection is the character's INTENDED walk vector,
---    updated every physics step. It has zero noise, zero physics lag,
---    and perfectly describes horizontal movement.
---    We combine it with WalkSpeed to get a clean velocity, then
---    extrapolate by a rolling-average ping to predict where the
---    target actually is right now:
---
---      horizontalVel  = MoveDirection * WalkSpeed        (clean, noiseless)
---      verticalVel    = AssemblyLinearVelocity.Y         (needed for jumps)
---      predictedPos   = CFrame + combinedVel * avgPing   (where they ARE now)
---
---  SETUP:
---    1. Place inside StarterCharacterScripts (recommended).
---    2. Set TARGET_NAME to the exact Roblox username.
---    3. Adjust HEIGHT_OFFSET for your rig:
---         R15 ≈ 3.6   |   R6 ≈ 2.8
---    4. Press DETACH_KEY (default X) to detach.
--- ============================================================
-
-local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UIS        = game:GetService("UserInputService")
-
--- ─── CONFIG ─────────────────────────────────────────────────
-local TARGET_NAME   = "62_AM"
-local HEIGHT_OFFSET = 3.6          -- studs above HRP  (R15 ≈ 3.6, R6 ≈ 2.8)
-local DETACH_KEY    = Enum.KeyCode.X
-local PING_SAMPLES  = 12           -- rolling average window for ping stability
--- ────────────────────────────────────────────────────────────
-
--- ─── HELPERS ────────────────────────────────────────────────
-local function waitForCharacter(player)
-    local char = player.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then return char end
-    char = player.CharacterAdded:Wait()
-    char:WaitForChild("HumanoidRootPart")
-    return char
-end
-
-local function getHRP(char)
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
-
--- Rolling average ping — smooths over momentary spikes without
--- adding any motion-prediction lag (ping is sampled separately).
-local pingBuf, pingIdx, pingSum = {}, 1, 0
-local function getSmoothedPing()
-    local p = localPlayer:GetNetworkPing()  -- already one-way (RTT/2)
-    pingSum = pingSum - (pingBuf[pingIdx] or 0) + p
-    pingBuf[pingIdx] = p
-    pingIdx = (pingIdx % PING_SAMPLES) + 1
-    return pingSum / math.min(#pingBuf + 1, PING_SAMPLES)
-end
-
--- ─── MAIN ───────────────────────────────────────────────────
-local localPlayer = Players.LocalPlayer
-
-local localChar = waitForCharacter(localPlayer)
-local localHRP  = getHRP(localChar)
-local humanoid  = localChar:WaitForChild("Humanoid")
-
--- Wait for target to be present in the server
-local targetPlayer
-repeat
-    targetPlayer = Players:FindFirstChild(TARGET_NAME)
-    if not targetPlayer then
-        warn("[WeldTop] Waiting for player: " .. TARGET_NAME)
-        task.wait(1)
-    end
-until targetPlayer
-
-local targetChar     = waitForCharacter(targetPlayer)
-local targetHRP      = getHRP(targetChar)
-local targetHumanoid = targetChar:WaitForChild("Humanoid")
-
--- Re-acquire everything if the target respawns
-targetPlayer.CharacterAdded:Connect(function(newChar)
-    newChar:WaitForChild("HumanoidRootPart")
-    newChar:WaitForChild("Humanoid")
-    targetChar     = newChar
-    targetHRP      = getHRP(newChar)
-    targetHumanoid = newChar:FindFirstChild("Humanoid")
-    print("[WeldTop] Target respawned — re-latched.")
-end)
-
-humanoid.PlatformStand = true
-localChar.PrimaryPart  = localHRP
-
--- Mount offset: up by HEIGHT_OFFSET, rotated flat (horizontal)
-local MOUNT_OFFSET = CFrame.new(0, HEIGHT_OFFSET, 0)
-                   * CFrame.Angles(math.pi / 2, 0, 0)
-
--- ── Frame loop ──────────────────────────────────────────────
-local attached = true
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local RootPart = Character:WaitForChild("HumanoidRootPart")
+local TargetPlayer
 local connection
 
-connection = RunService.RenderStepped:Connect(function()
-    if not attached then
+local TARGET_NAME = "PlayerNameHere" -- Type the target player's username here
+
+local function attachToPlayer(target)
+    TargetPlayer = target
+    if connection then
         connection:Disconnect()
-        return
     end
+    local targetCharacter = TargetPlayer.Character
+    if not targetCharacter then return end
+    local targetHead = targetCharacter:WaitForChild("Head") -- changed to Head
+    connection = RunService.RenderStepped:Connect(function()
+        if not targetHead then return end
+        RootPart.CFrame =
+            CFrame.new(targetHead.Position + Vector3.new(0, 3.6, 0)) -- sit on top of head
+            * CFrame.Angles(-math.pi/2,0,0)
+        RootPart.Velocity = Vector3.new(0,0,0)
+    end)
+end
 
-    if not (localHRP and localHRP.Parent) then
-        warn("[WeldTop] Local HRP lost.")
-        connection:Disconnect()
-        return
-    end
-
-    if not (targetHRP and targetHRP.Parent) or not targetHumanoid then
-        targetHRP      = getHRP(targetChar)
-        targetHumanoid = targetChar and targetChar:FindFirstChild("Humanoid")
-        return
-    end
-
-    -- ── 1. Build a clean, noiseless predicted velocity ───────
-    --
-    --   HORIZONTAL: MoveDirection is the unit vector of where the
-    --   Humanoid is trying to walk RIGHT NOW. Multiplying by
-    --   WalkSpeed gives the exact intended horizontal velocity,
-    --   with none of the physics noise that plagues
-    --   AssemblyLinearVelocity.
-    --
-    --   VERTICAL: MoveDirection.Y is always 0 (humanoids don't
-    --   "intend" to fall), so we take the raw physics Y to handle
-    --   jumps and gravity correctly.
-    --
-    local md        = targetHumanoid.MoveDirection       -- replicated unit vec
-    local walkSpeed = targetHumanoid.WalkSpeed
-    local physVelY  = targetHRP.AssemblyLinearVelocity.Y
-
-    local predictedVelocity = Vector3.new(
-        md.X * walkSpeed,
-        physVelY,
-        md.Z * walkSpeed
-    )
-
-    -- ── 2. Extrapolate by smoothed one-way ping ───────────────
-    --   GetNetworkPing() = RTT / 2 = one-way delay in seconds.
-    --   Rolling average prevents ping spikes from snapping us.
-    local ping          = getSmoothedPing()
-    local predictedCF   = targetHRP.CFrame + predictedVelocity * ping
-
-    -- ── 3. Snap local character to predicted position ─────────
-    localHRP.CFrame                  = predictedCF * MOUNT_OFFSET
-    localHRP.AssemblyLinearVelocity  = Vector3.zero
-    localHRP.AssemblyAngularVelocity = Vector3.zero
-end)
-
--- ── Detach ───────────────────────────────────────────────────
-UIS.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == DETACH_KEY and attached then
-        attached = false
-        humanoid.PlatformStand = false
-        print("[WeldTop] Detached.")
-    end
-end)
-
-print(("[WeldTop] Mounted on %s — press %s to detach."):format(TARGET_NAME, tostring(DETACH_KEY)))
+-- Find and attach to the named player
+local target = Players:FindFirstChild(TARGET_NAME)
+if target then
+    attachToPlayer(target)
+else
+    warn("Player not found: " .. TARGET_NAME)
+end
