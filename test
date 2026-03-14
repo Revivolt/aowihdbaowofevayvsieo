@@ -1,794 +1,149 @@
---[[ test
-    ╔══════════════════════════════════════════════════════════════╗
-    ║         InjectionDetector v4 — LocalScript                  ║
-    ║  + Fixed code-view scrolling                                 ║
-    ║  + AI Deobfuscation via Anthropic API                        ║
-    ╚══════════════════════════════════════════════════════════════╝
-
-    SETUP:
-      • Paste your Anthropic API key below to enable deobfuscation.
-      • The deobfuscate button sends the captured source to Claude
-        and shows a cleaned, readable version. Toggle back anytime.
-      • HTTP calls use your executor's request() / syn.request().
-
-    PLACE IN: StarterPlayerScripts  OR  execute via executor.
+--[[
+╔══════════════════════════════════════════════════════════════╗
+║                   TOP-MOUNT WELD  —  LocalScript            ║
+║                                                              ║
+║  Stacks your character horizontally on top of a target.     ║
+║  Runs entirely on the client via RenderStepped so it is     ║
+║  never delayed by a server round-trip.                       ║
+║                                                              ║
+║  ► Place in:  StarterCharacterScripts  (LocalScript)        ║
+╚══════════════════════════════════════════════════════════════╝
 --]]
 
--- ─────────────────────────────────────────────────────────────────────────────
--- !! PASTE YOUR ANTHROPIC API KEY HERE FOR DEOBFUSCATION !!
--- ─────────────────────────────────────────────────────────────────────────────
-local ANTHROPIC_API_KEY = "YOUR_API_KEY_HERE"
--- Get one at: https://console.anthropic.com/
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
--- ─────────────────────────────────────────────────────────────────────────────
--- SERVICES
--- ─────────────────────────────────────────────────────────────────────────────
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local HttpService      = game:GetService("HttpService")
+------------------------------------------------------------------------
+-- CONFIGURATION
+------------------------------------------------------------------------
+local TARGET_NAME  = "62_AM"  -- ← Change to target's username
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+-- Vertical fine-tune: positive = higher, negative = lower (studs)
+local EXTRA_HEIGHT = 0
 
--- ─────────────────────────────────────────────────────────────────────────────
--- DEFAULT ROBLOX SCRIPT NAMES — always ignored
--- ─────────────────────────────────────────────────────────────────────────────
-local ROBLOX_DEFAULTS = {
-    Animate=true, Health=true, RbxCharacterSounds=true,
-    HumanoidDescription=true, BodyColors=true, CharacterMesh=true,
-    Shirt=true, Pants=true, ShirtGraphic=true, Sound=true,
-    R15AnimationWeightTracker=true, AvatarPartScaleType=true,
-}
+-- LAY_FLAT = true  → your character lies horizontal (face-up) on their head
+-- LAY_FLAT = false → your character stands upright on top of their head
+local LAY_FLAT = true
+------------------------------------------------------------------------
 
--- ─────────────────────────────────────────────────────────────────────────────
--- THEME
--- ─────────────────────────────────────────────────────────────────────────────
-local T = {
-    BG      = Color3.fromRGB(10,  11,  17),
-    PANEL   = Color3.fromRGB(16,  18,  28),
-    HEADER  = Color3.fromRGB(20,  23,  38),
-    ACCENT  = Color3.fromRGB(255, 130,  60),
-    ACCENT2 = Color3.fromRGB(255, 200,  80),
-    SUCCESS = Color3.fromRGB(80,  220, 140),
-    WARNING = Color3.fromRGB(255, 195,  80),
-    DANGER  = Color3.fromRGB(255,  75,  75),
-    AI      = Color3.fromRGB(130, 100, 255),
-    TEXT    = Color3.fromRGB(225, 228, 240),
-    SUB     = Color3.fromRGB(120, 130, 160),
-    BORDER  = Color3.fromRGB(40,   46,  70),
-    CODE_BG = Color3.fromRGB(8,    9,  14),
-    CODE_TX = Color3.fromRGB(200, 220, 255),
-    DEOB_TX = Color3.fromRGB(190, 255, 190),
-    ROW_A   = Color3.fromRGB(18,  21,  33),
-    ROW_B   = Color3.fromRGB(14,  16,  26),
-    ROW_SEL = Color3.fromRGB(45,  32,  14),
-}
+local lp   = Players.LocalPlayer
+local char = lp.Character or lp.CharacterAdded:Wait()
+local hum  = char:WaitForChild("Humanoid")
+local hrp  = char:WaitForChild("HumanoidRootPart")
 
--- ─────────────────────────────────────────────────────────────────────────────
--- STATE
--- ─────────────────────────────────────────────────────────────────────────────
-local captured    = {}
-local snapshot    = {}
-local selectedIdx = nil
-local conns       = {}
-local guiVisible  = true
-local armed       = false
-local viewingDeob = false
+------------------------------------------------------------------------
+-- Wait for the target player and their character
+------------------------------------------------------------------------
+local target
+repeat
+    task.wait(0.2)
+    target = Players:FindFirstChild(TARGET_NAME)
+until target
 
--- ─────────────────────────────────────────────────────────────────────────────
--- UTILITIES
--- ─────────────────────────────────────────────────────────────────────────────
-local function getPath(i)
-    local p, c = {}, i
-    while c and c ~= game do table.insert(p, 1, c.Name); c = c.Parent end
-    return table.concat(p, " > ")
-end
+print(("[TopMount] Found target: %s — waiting for character…"):format(TARGET_NAME))
 
-local function trySource(s)
-    local ok, r = pcall(function() return s.Source end)
-    if ok and type(r) == "string" and #r > 0 then return r end
-    if type(decompile) == "function" then
-        local ok2, d = pcall(decompile, s)
-        if ok2 and type(d) == "string" and #d > 0 then return "-- [DECOMPILED]\n" .. d end
-    end
-    return nil
-end
+local tChar = target.Character or target.CharacterAdded:Wait()
+local tHRP  = tChar:WaitForChild("HumanoidRootPart")
+local tHum  = tChar:WaitForChild("Humanoid")
 
-local function collectProps(s)
-    local out = {}
-    for _, k in ipairs({"Name","ClassName","Disabled","RunContext","LinkedSource","ScriptGuid"}) do
-        local ok, v = pcall(function() return s[k] end)
-        if ok then out[k] = tostring(v) end
-    end
-    return out
-end
+print("[TopMount] Target character loaded. Mounting…")
 
-local function snapAdd(inst)
-    if inst:IsA("LuaSourceContainer") then snapshot[inst] = true end
-    for _, d in ipairs(inst:GetDescendants()) do
-        if d:IsA("LuaSourceContainer") then snapshot[d] = true end
-    end
-end
-
-local function toClip(t)
-    if type(setclipboard) == "function" then pcall(setclipboard, t); return true end
-    if type(toclipboard)  == "function" then pcall(toclipboard,  t); return true end
-    return false
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- REPORT BUILDER
--- ─────────────────────────────────────────────────────────────────────────────
-local function buildReport(e, useDeob)
-    local L = {}
-    local function ln(s) table.insert(L, s or "") end
-    ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    ln("  INJECTION CAPTURE REPORT" .. (useDeob and "  [AI DEOBFUSCATED]" or ""))
-    ln("  Detected at : " .. e.time)
-    ln("  Method      : " .. e.method)
-    ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    ln(); ln("[ IDENTITY ]")
-    ln("  Name      : " .. tostring(e.name))
-    ln("  ClassName : " .. tostring(e.className))
-    ln("  Path      : " .. tostring(e.path))
-    ln(); ln("[ PROPERTIES ]")
-    for k, v in pairs(e.props) do
-        if k ~= "Name" and k ~= "ClassName" then
-            ln(string.format("  %-16s: %s", k, v))
-        end
-    end
-    ln()
-    local srcToShow = useDeob and (e.deobSource or e.source) or e.source
-    if srcToShow and #srcToShow > 0 then
-        ln("[ " .. (useDeob and "DEOBFUSCATED SOURCE" or "RAW SOURCE") .. " ]"); ln()
-        ln(srcToShow)
-    else
-        ln("[ SOURCE ]"); ln()
-        ln("-- Source not readable.")
-        ln("-- Run via executor with decompile() for full source.")
-    end
-    ln(); ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    return table.concat(L, "\n")
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- EXECUTOR HTTP (tries multiple executor globals in order)
--- ─────────────────────────────────────────────────────────────────────────────
-local function httpRequest(opts)
-    if type(syn) == "table" and type(syn.request) == "function" then
-        return syn.request(opts)
-    elseif type(http) == "table" and type(http.request) == "function" then
-        return http.request(opts)
-    elseif type(request) == "function" then
-        return request(opts)
-    elseif type(http_request) == "function" then
-        return http_request(opts)
-    end
-    return nil
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- DEOBFUSCATION via Anthropic API
--- ─────────────────────────────────────────────────────────────────────────────
-local function callDeobfuscate(sourceCode, callback)
-    if ANTHROPIC_API_KEY == "YOUR_API_KEY_HERE" or ANTHROPIC_API_KEY == "" then
-        callback(false, "No API key set.\nPaste your Anthropic API key at the top of the script.\nGet one at: https://console.anthropic.com/")
-        return
-    end
-    if not sourceCode or #sourceCode == 0 then
-        callback(false, "No source code available to deobfuscate.")
-        return
-    end
-
-    local prompt = "You are a Lua deobfuscator specializing in Roblox scripts.\n" ..
-        "The following script may be obfuscated. Your job:\n" ..
-        "1. Rename mangled variables/functions to meaningful names based on what they do\n" ..
-        "2. Decode any encoded strings (hex escapes, char tables, base64, etc.)\n" ..
-        "3. Remove junk code and dead branches\n" ..
-        "4. Unroll loops that are just obfuscation padding\n" ..
-        "5. Unfold VM-based obfuscation layers if present\n" ..
-        "6. Reformat with proper indentation\n" ..
-        "7. Add short comments explaining what each section does\n\n" ..
-        "Return ONLY the cleaned Lua code. No explanation, no markdown fences.\n\n" ..
-        "Script:\n" .. sourceCode:sub(1, 14000)
-
-    task.spawn(function()
-        local ok, res = pcall(function()
-            local body = HttpService:JSONEncode({
-                model      = "claude-sonnet-4-20250514",
-                max_tokens = 4096,
-                messages   = {{ role = "user", content = prompt }},
-            })
-            local response = httpRequest({
-                Url    = "https://api.anthropic.com/v1/messages",
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"]      = "application/json",
-                    ["x-api-key"]         = ANTHROPIC_API_KEY,
-                    ["anthropic-version"] = "2023-06-01",
-                },
-                Body = body,
-            })
-            if not response then
-                return nil, "No HTTP function found. Your executor may not support HTTP requests."
-            end
-            if response.StatusCode ~= 200 then
-                return nil, "API error " .. tostring(response.StatusCode) .. ": " .. (response.Body or "")
-            end
-            local data = HttpService:JSONDecode(response.Body)
-            if data and data.content and data.content[1] and data.content[1].text then
-                return data.content[1].text
-            end
-            return nil, "Unexpected API response."
-        end)
-
-        if ok and res then
-            callback(true, res)
-        else
-            callback(false, tostring(res))
-        end
-    end)
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- GUI HELPERS
--- ─────────────────────────────────────────────────────────────────────────────
-local function corner(p, r)
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 6); c.Parent = p
-end
-local function stroke(p, c, t)
-    local s = Instance.new("UIStroke"); s.Color = c or T.BORDER; s.Thickness = t or 1
-    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = p
-end
-local function pad(p, a)
-    local u = Instance.new("UIPadding")
-    u.PaddingTop = UDim.new(0,a); u.PaddingBottom = UDim.new(0,a)
-    u.PaddingLeft = UDim.new(0,a); u.PaddingRight = UDim.new(0,a)
-    u.Parent = p
-end
-local function lbl(p, txt, sz, col, ax)
-    local l = Instance.new("TextLabel"); l.BackgroundTransparency = 1; l.Text = txt
-    l.TextSize = sz or 13; l.TextColor3 = col or T.TEXT; l.Font = Enum.Font.Gotham
-    l.TextXAlignment = ax or Enum.TextXAlignment.Left; l.TextWrapped = true; l.Parent = p; return l
-end
-local function btn(p, txt, sz, bg, tc)
-    local b = Instance.new("TextButton"); b.BackgroundColor3 = bg or T.ACCENT
-    b.TextColor3 = tc or T.BG; b.Text = txt; b.TextSize = sz or 13
-    b.Font = Enum.Font.GothamBold; b.AutoButtonColor = false; b.BorderSizePixel = 0; b.Parent = p
-    corner(b, 5)
-    local orig = bg or T.ACCENT
-    b.MouseEnter:Connect(function()
-        b.BackgroundColor3 = Color3.new(math.min(orig.R+0.1,1), math.min(orig.G+0.1,1), math.min(orig.B+0.1,1))
-    end)
-    b.MouseLeave:Connect(function() b.BackgroundColor3 = orig end)
-    return b
-end
-local function hdrBlock(parent, color)
-    local f = Instance.new("Frame"); f.Size = UDim2.new(1,0,0,34); f.BackgroundColor3 = color or T.HEADER
-    f.BorderSizePixel = 0; f.Parent = parent; corner(f, 8)
-    local fill = Instance.new("Frame"); fill.Size = UDim2.new(1,0,0.5,0); fill.Position = UDim2.new(0,0,0.5,0)
-    fill.BackgroundColor3 = color or T.HEADER; fill.BorderSizePixel = 0; fill.Parent = f
-    return f
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- BUILD GUI
--- ─────────────────────────────────────────────────────────────────────────────
-pcall(function()
-    if PlayerGui:FindFirstChild("InjDetectGUI") then PlayerGui.InjDetectGUI:Destroy() end
-end)
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "InjDetectGUI"; gui.ResetOnSpawn = false
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; gui.DisplayOrder = 9999
-gui.Parent = PlayerGui
-
-local win = Instance.new("Frame")
-win.Name = "Win"; win.Size = UDim2.new(0, 720, 0, 540)
-win.Position = UDim2.new(0.5, -360, 0.5, -270)
-win.BackgroundColor3 = T.BG; win.BorderSizePixel = 0; win.Parent = gui
-corner(win, 10); stroke(win, T.BORDER, 1.5)
-
--- Title bar
-local tbar = Instance.new("Frame")
-tbar.Size = UDim2.new(1,0,0,42); tbar.BackgroundColor3 = T.HEADER
-tbar.BorderSizePixel = 0; tbar.Parent = win; corner(tbar, 10)
-
-local tbarFill = Instance.new("Frame")
-tbarFill.Size = UDim2.new(1,0,0.5,0); tbarFill.Position = UDim2.new(0,0,0.5,0)
-tbarFill.BackgroundColor3 = T.HEADER; tbarFill.BorderSizePixel = 0; tbarFill.Parent = tbar
-
-local aline = Instance.new("Frame")
-aline.Size = UDim2.new(1,0,0,2); aline.Position = UDim2.new(0,0,1,-2)
-aline.BackgroundColor3 = T.ACCENT; aline.BorderSizePixel = 0; aline.Parent = tbar
-local ag = Instance.new("UIGradient")
-ag.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, T.ACCENT),
-    ColorSequenceKeypoint.new(0.5, T.ACCENT2),
-    ColorSequenceKeypoint.new(1, T.ACCENT)
-}); ag.Parent = aline
-
-local icoL = lbl(tbar, "⚠", 18, T.ACCENT)
-icoL.Size = UDim2.new(0,28,1,0); icoL.Position = UDim2.new(0,10,0,0)
-icoL.TextXAlignment = Enum.TextXAlignment.Center
-
-local titleL = lbl(tbar, "Injection Detector", 15, T.TEXT)
-titleL.Font = Enum.Font.GothamBold; titleL.Size = UDim2.new(0,165,1,0); titleL.Position = UDim2.new(0,42,0,0)
-
-local subL = lbl(tbar, "v4 — Post-load Monitor", 11, T.SUB)
-subL.Size = UDim2.new(0,190,1,0); subL.Position = UDim2.new(0,210,0,0)
-
-local pill = Instance.new("Frame")
-pill.Size = UDim2.new(0,108,0,22); pill.Position = UDim2.new(1,-196,0.5,-11)
-pill.BackgroundColor3 = Color3.fromRGB(60,30,15); pill.Parent = tbar; corner(pill, 11)
-
-local pillDot = lbl(pill, "●", 9, T.WARNING)
-pillDot.Size = UDim2.new(0,14,1,0); pillDot.Position = UDim2.new(0,5,0,0)
-pillDot.TextXAlignment = Enum.TextXAlignment.Center
-
-local pillTxt = lbl(pill, "WAITING…", 9, T.WARNING)
-pillTxt.Size = UDim2.new(1,-20,1,0); pillTxt.Position = UDim2.new(0,19,0,0)
-pillTxt.Font = Enum.Font.GothamBold
-
-local minBtn   = btn(tbar, "─", 12, Color3.fromRGB(45,50,70), T.TEXT)
-minBtn.Size    = UDim2.new(0,26,0,20); minBtn.Position = UDim2.new(1,-58,0.5,-10)
-
-local closeBtn = btn(tbar, "✕", 12, Color3.fromRGB(160,40,40), T.TEXT)
-closeBtn.Size  = UDim2.new(0,26,0,20); closeBtn.Position = UDim2.new(1,-28,0.5,-10)
-
--- Body
-local body = Instance.new("Frame")
-body.Size = UDim2.new(1,0,1,-42); body.Position = UDim2.new(0,0,0,42)
-body.BackgroundTransparency = 1; body.Parent = win
-
--- ── Left panel ───────────────────────────────────────────────────────────────
-local lp = Instance.new("Frame")
-lp.Size = UDim2.new(0,220,1,-10); lp.Position = UDim2.new(0,6,0,5)
-lp.BackgroundColor3 = T.PANEL; lp.BorderSizePixel = 0; lp.Parent = body
-corner(lp, 8); stroke(lp, T.BORDER, 1)
-
-local lhdr = hdrBlock(lp)
-local lhdrTxt = lbl(lhdr, "🔍  Injections Caught", 12, T.ACCENT)
-lhdrTxt.Font = Enum.Font.GothamBold; lhdrTxt.Size = UDim2.new(1,-36,1,0); lhdrTxt.Position = UDim2.new(0,10,0,0)
-
-local cntBadge = Instance.new("Frame")
-cntBadge.Size = UDim2.new(0,26,0,16); cntBadge.Position = UDim2.new(1,-30,0.5,-8)
-cntBadge.BackgroundColor3 = T.DANGER; cntBadge.Parent = lhdr; corner(cntBadge, 8)
-
-local cntLbl = lbl(cntBadge, "0", 10, Color3.new(1,1,1))
-cntLbl.Size = UDim2.new(1,0,1,0); cntLbl.TextXAlignment = Enum.TextXAlignment.Center
-cntLbl.Font = Enum.Font.GothamBold
-
-local listScroll = Instance.new("ScrollingFrame")
-listScroll.Size = UDim2.new(1,-2,1,-38); listScroll.Position = UDim2.new(0,1,0,36)
-listScroll.BackgroundTransparency = 1; listScroll.BorderSizePixel = 0
-listScroll.ScrollBarThickness = 4; listScroll.ScrollBarImageColor3 = T.ACCENT
-listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-listScroll.CanvasSize = UDim2.new(0,0,0,0); listScroll.Parent = lp
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0,2); listLayout.Parent = listScroll
-pad(listScroll, 4)
-
--- ── Right panel ───────────────────────────────────────────────────────────────
-local rp = Instance.new("Frame")
-rp.Size = UDim2.new(1,-234,1,-10); rp.Position = UDim2.new(0,232,0,5)
-rp.BackgroundColor3 = T.PANEL; rp.BorderSizePixel = 0; rp.Parent = body
-corner(rp, 8); stroke(rp, T.BORDER, 1)
-
-local rhdr = hdrBlock(rp)
-
-local detailTitleL = lbl(rhdr, "📄  Select a detection", 12, T.ACCENT)
-detailTitleL.Font = Enum.Font.GothamBold; detailTitleL.Size = UDim2.new(0.42,0,1,0); detailTitleL.Position = UDim2.new(0,10,0,0)
-
-local copyBtn   = btn(rhdr, "⧉ Copy",        10, T.ACCENT,                    T.BG)
-copyBtn.Size    = UDim2.new(0,64,0,22); copyBtn.Position    = UDim2.new(1,-238,0.5,-11)
-
-local deobBtn   = btn(rhdr, "✦ Deobfuscate", 10, T.AI,                        T.TEXT)
-deobBtn.Size    = UDim2.new(0,106,0,22); deobBtn.Position   = UDim2.new(1,-166,0.5,-11)
-
-local toggleBtn = btn(rhdr, "◈ Deob",        10, Color3.fromRGB(40,45,65),    T.SUB)
-toggleBtn.Size  = UDim2.new(0,64,0,22); toggleBtn.Position  = UDim2.new(1,-94,0.5,-11)
-
-local clearBtn  = btn(rhdr, "🗑",             10, Color3.fromRGB(100,25,25),   T.TEXT)
-clearBtn.Size   = UDim2.new(0,26,0,22); clearBtn.Position   = UDim2.new(1,-58,0.5,-11)
-
--- ─────────────────────────────────────────────────────────────────────────────
--- CODE VIEW  — ScrollingFrame with manual CanvasSize sync
+------------------------------------------------------------------------
+-- Height calculation
+--   HipHeight  = distance from ground/feet to HumanoidRootPart
+--   head crown ≈ HRP + HipHeight + ~1 stud  (head sphere radius)
 --
--- WHY NOT AutomaticCanvasSize:
---   Roblox's AutomaticCanvasSize reads the UIListLayout/AbsoluteContentSize,
---   but a single TextLabel with AutomaticSize=Y doesn't update the content
---   size reliably when the text is very long or contains many newlines.
---   The fix: use a wrapper Frame (AutomaticSize=Y) → TextLabel inside it,
---   then manually sync CanvasSize via AbsoluteSize change signal.
--- ─────────────────────────────────────────────────────────────────────────────
-local codeScroll = Instance.new("ScrollingFrame")
-codeScroll.Name                 = "CodeScroll"
-codeScroll.Size                 = UDim2.new(1,-8,1,-44)
-codeScroll.Position             = UDim2.new(0,4,0,40)
-codeScroll.BackgroundColor3     = T.CODE_BG
-codeScroll.BorderSizePixel      = 0
-codeScroll.ScrollBarThickness   = 6
-codeScroll.ScrollBarImageColor3 = T.ACCENT
-codeScroll.ScrollingDirection   = Enum.ScrollingDirection.Y
-codeScroll.CanvasSize           = UDim2.new(0,0,0,300)
-codeScroll.AutomaticCanvasSize  = Enum.AutomaticSize.None   -- manual!
-codeScroll.ElasticBehavior      = Enum.ElasticBehavior.Never
-codeScroll.Parent               = rp
-corner(codeScroll, 6); stroke(codeScroll, T.BORDER, 1)
-
--- Wrapper frame grows with the text and drives CanvasSize
-local codeInner = Instance.new("Frame")
-codeInner.BackgroundTransparency = 1
-codeInner.Size                   = UDim2.new(1, 0, 0, 0)
-codeInner.AutomaticSize          = Enum.AutomaticSize.Y
-codeInner.Parent                 = codeScroll
-pad(codeInner, 10)
-
-local codeText = Instance.new("TextLabel")
-codeText.Size              = UDim2.new(1, 0, 0, 0)
-codeText.AutomaticSize     = Enum.AutomaticSize.Y
-codeText.BackgroundTransparency = 1
-codeText.Text              = "-- Waiting for game to load…\n-- Scripts injected after load will appear here."
-codeText.TextColor3        = T.SUB
-codeText.Font              = Enum.Font.RobotoMono
-codeText.TextSize          = 12
-codeText.TextXAlignment    = Enum.TextXAlignment.Left
-codeText.TextYAlignment    = Enum.TextYAlignment.Top
-codeText.TextWrapped       = true
-codeText.RichText          = false
-codeText.Parent            = codeInner
-
--- Whenever the inner frame resizes → update canvas height and scroll to top
-codeInner:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-    codeScroll.CanvasSize = UDim2.new(0, 0, 0, codeInner.AbsoluteSize.Y + 20)
-end)
-
--- Helper: set text, update canvas, reset scroll to top
-local function setCodeText(text, color)
-    codeText.Text       = text
-    codeText.TextColor3 = color or T.CODE_TX
-    task.defer(function()
-        if not (codeScroll and codeScroll.Parent) then return end
-        codeScroll.CanvasSize     = UDim2.new(0, 0, 0, codeInner.AbsoluteSize.Y + 20)
-        codeScroll.CanvasPosition = Vector2.new(0, 0)
-    end)
+--   stackDist is the vertical gap between the two HRPs so that our
+--   feet just clear the top of the target's head.
+------------------------------------------------------------------------
+local function calcStack()
+    local myHipH  = hum.HipHeight          -- my HRP sits this far above my feet
+    local tTopH   = tHum.HipHeight + 1     -- target's HRP to crown of their head
+    return tTopH + myHipH + EXTRA_HEIGHT
 end
 
--- ── Status bar ────────────────────────────────────────────────────────────────
-local sbar = Instance.new("Frame")
-sbar.Size = UDim2.new(1,0,0,22); sbar.Position = UDim2.new(0,0,1,-22)
-sbar.BackgroundColor3 = T.HEADER; sbar.BorderSizePixel = 0; sbar.ZIndex = 5; sbar.Parent = win
+local stackDist = calcStack()
 
-local sbarFill = Instance.new("Frame")
-sbarFill.Size = UDim2.new(1,0,0.5,0); sbarFill.BackgroundColor3 = T.HEADER
-sbarFill.BorderSizePixel = 0; sbarFill.ZIndex = 5; sbarFill.Parent = sbar
+------------------------------------------------------------------------
+-- Freeze the local character's physics
+--   ChangeState(Physics) → Humanoid stops issuing movement forces
+--   Anchored = true      → Roblox physics engine won't move the part
+--   Both are client-side only; the server still sees the character
+--   at its last replicated position.
+------------------------------------------------------------------------
+hum:ChangeState(Enum.HumanoidStateType.Physics)
+hrp.Anchored = true
 
-local sbarTxt = lbl(sbar, "  ⏳  Waiting for game to load…", 10, T.SUB)
-sbarTxt.Size = UDim2.new(1,0,1,0); sbarTxt.ZIndex = 6
-
--- ─────────────────────────────────────────────────────────────────────────────
--- DRAG
--- ─────────────────────────────────────────────────────────────────────────────
-do
-    local drag, ds, sp = false
-    tbar.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then
-            drag = true; ds = i.Position; sp = win.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
-            local d = i.Position - ds
-            win.Position = UDim2.new(sp.X.Scale, sp.X.Offset+d.X, sp.Y.Scale, sp.Y.Offset+d.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
-    end)
-end
-
-minBtn.MouseButton1Click:Connect(function()
-    guiVisible = not guiVisible
-    body.Visible = guiVisible; sbar.Visible = guiVisible
-    win.Size = guiVisible and UDim2.new(0,720,0,540) or UDim2.new(0,720,0,42)
-    minBtn.Text = guiVisible and "─" or "□"
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-    for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
-    gui:Destroy()
-end)
-
--- ─────────────────────────────────────────────────────────────────────────────
--- STATUS HELPER
--- ─────────────────────────────────────────────────────────────────────────────
-local function setStatus(txt, col, persist)
-    sbarTxt.Text = "  " .. txt; sbarTxt.TextColor3 = col or T.SUB
-    if not persist then
-        task.delay(5, function()
-            if sbarTxt and sbarTxt.Parent then
-                sbarTxt.Text = "  ✓  Armed — monitoring for injections…"
-                sbarTxt.TextColor3 = T.SUCCESS
-            end
-        end)
-    end
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- REFRESH DETAIL VIEW
--- ─────────────────────────────────────────────────────────────────────────────
-local function refreshView()
-    local e = selectedIdx and captured[selectedIdx]
-    if not e then return end
-
-    if viewingDeob then
-        if e.deobSource then
-            setCodeText(buildReport(e, true), T.DEOB_TX)
-        else
-            setCodeText("-- No deobfuscated version yet.\n-- Click  ✦ Deobfuscate  above to generate one.", T.WARNING)
-        end
-        toggleBtn.Text = "◈ Raw"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(20,50,25)
-        toggleBtn.TextColor3 = T.SUCCESS
-    else
-        setCodeText(buildReport(e, false), T.CODE_TX)
-        toggleBtn.Text = "◈ Deob"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(40,45,65)
-        toggleBtn.TextColor3 = T.SUB
-    end
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- BUTTON LOGIC
--- ─────────────────────────────────────────────────────────────────────────────
-copyBtn.MouseButton1Click:Connect(function()
-    if not (selectedIdx and captured[selectedIdx]) then
-        copyBtn.Text = "Pick one"
-        task.delay(1.5, function() if copyBtn.Parent then copyBtn.Text = "⧉ Copy" end end)
+------------------------------------------------------------------------
+-- RenderStepped connection
+--   RenderStepped fires every frame BEFORE the scene is rendered.
+--   It runs entirely on the client thread — no server latency.
+--   Setting CFrame here is the last word before the pixel hits screen.
+------------------------------------------------------------------------
+local conn
+conn = RunService.RenderStepped:Connect(function()
+    -- Safety: disconnect if either character has been destroyed / respawned
+    if not (tHRP and tHRP.Parent and hrp and hrp.Parent) then
+        conn:Disconnect()
+        hrp.Anchored  = false
+        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        warn("[TopMount] Target or self lost — dismounting.")
         return
     end
-    local e = captured[selectedIdx]
-    local ok = toClip(buildReport(e, viewingDeob and e.deobSource ~= nil))
-    copyBtn.Text = ok and "✓ Done!" or "✕ No CB"
-    copyBtn.BackgroundColor3 = ok and T.SUCCESS or T.WARNING
-    task.delay(2, function()
-        if copyBtn.Parent then copyBtn.Text = "⧉ Copy"; copyBtn.BackgroundColor3 = T.ACCENT end
-    end)
+
+    local tCF = tHRP.CFrame
+    local mountPos = tCF.Position + Vector3.new(0, stackDist, 0)
+
+    if LAY_FLAT then
+        ----------------------------------------------------------------
+        -- Horizontal (flat) orientation
+        --   CFrame.fromMatrix(pos, rightVec, upVec)
+        --
+        --   We borrow the target's RightVector as OUR right axis,
+        --   and the target's LookVector as OUR up axis.
+        --   Result: our body is parallel to the ground, head pointing
+        --   in the same direction the target is facing.
+        ----------------------------------------------------------------
+        hrp.CFrame = CFrame.fromMatrix(mountPos, tCF.RightVector, tCF.LookVector)
+    else
+        ----------------------------------------------------------------
+        -- Upright orientation
+        --   Stand directly above target, facing the same direction.
+        ----------------------------------------------------------------
+        hrp.CFrame = CFrame.new(mountPos, mountPos + tCF.LookVector)
+    end
 end)
 
-toggleBtn.MouseButton1Click:Connect(function()
-    if not (selectedIdx and captured[selectedIdx]) then return end
-    viewingDeob = not viewingDeob
-    refreshView()
+------------------------------------------------------------------------
+-- Recalculate stack height if the target's HipHeight ever changes
+-- (e.g. they resize) — keeps the mount precise at all times
+------------------------------------------------------------------------
+tHum:GetPropertyChangedSignal("HipHeight"):Connect(function()
+    stackDist = calcStack()
+end)
+hum:GetPropertyChangedSignal("HipHeight"):Connect(function()
+    stackDist = calcStack()
 end)
 
-deobBtn.MouseButton1Click:Connect(function()
-    if not (selectedIdx and captured[selectedIdx]) then
-        setStatus("⚠  Select a script first", T.WARNING); return
+------------------------------------------------------------------------
+-- Cleanup when THIS character is removed (respawn / death)
+------------------------------------------------------------------------
+char.AncestryChanged:Connect(function()
+    if not char.Parent then
+        conn:Disconnect()
     end
-    local e = captured[selectedIdx]
-    if not e.source or #e.source == 0 then
-        setStatus("⚠  No source available", T.WARNING); return
-    end
-
-    deobBtn.Text = "⟳ Working…"; deobBtn.BackgroundColor3 = T.WARNING
-    setCodeText("-- Sending to Claude AI…\n-- This takes a few seconds for large scripts.", T.WARNING)
-    setStatus("⟳  Deobfuscating via Claude API…", T.WARNING, true)
-
-    callDeobfuscate(e.source, function(success, result)
-        deobBtn.Text = "✦ Deobfuscate"; deobBtn.BackgroundColor3 = T.AI
-        if success then
-            e.deobSource = result
-            viewingDeob  = true
-            refreshView()
-            setStatus("✓  Deobfuscation complete — showing cleaned version", T.SUCCESS)
-        else
-            setCodeText("-- Deobfuscation failed:\n--\n-- " .. tostring(result):gsub("\n", "\n-- "), T.DANGER)
-            setStatus("✕  " .. tostring(result):sub(1, 100), T.DANGER)
-        end
-    end)
 end)
 
-clearBtn.MouseButton1Click:Connect(function()
-    captured = {}; selectedIdx = nil; viewingDeob = false; cntLbl.Text = "0"
-    for _, c in ipairs(listScroll:GetChildren()) do
-        if c:IsA("TextButton") then c:Destroy() end
+------------------------------------------------------------------------
+-- Also dismount cleanly if the TARGET player leaves the game
+------------------------------------------------------------------------
+Players.PlayerRemoving:Connect(function(p)
+    if p == target then
+        conn:Disconnect()
+        hrp.Anchored = false
+        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        warn("[TopMount] Target left the game — dismounting.")
     end
-    setCodeText("-- Cleared. Watching for new injections…", T.SUB)
-    detailTitleL.Text = "📄  Select a detection"
 end)
 
--- ─────────────────────────────────────────────────────────────────────────────
--- LIST ROW
--- ─────────────────────────────────────────────────────────────────────────────
-local function addRow(index, entry)
-    local isEven = (index % 2 == 0)
-    local row = Instance.new("TextButton")
-    row.Name = "R_"..index; row.Size = UDim2.new(1,0,0,56)
-    row.BackgroundColor3 = isEven and T.ROW_A or T.ROW_B
-    row.BorderSizePixel = 0; row.Text = ""; row.AutoButtonColor = false
-    row.Parent = listScroll; corner(row, 5)
-
-    local bar2 = Instance.new("Frame")
-    bar2.Size = UDim2.new(0,3,0.6,0); bar2.Position = UDim2.new(0,0,0.2,0)
-    bar2.BackgroundColor3 = T.DANGER; bar2.BorderSizePixel = 0; bar2.Parent = row; corner(bar2, 2)
-
-    local ib = Instance.new("Frame")
-    ib.Size = UDim2.new(0,18,0,14); ib.Position = UDim2.new(0,7,0,5)
-    ib.BackgroundColor3 = Color3.fromRGB(80,20,20); ib.Parent = row; corner(ib, 4)
-    local il = lbl(ib, tostring(index), 9, T.DANGER)
-    il.Size = UDim2.new(1,0,1,0); il.TextXAlignment = Enum.TextXAlignment.Center; il.Font = Enum.Font.GothamBold
-
-    local mb = Instance.new("Frame")
-    mb.Size = UDim2.new(0,0,0,14); mb.Position = UDim2.new(0,30,0,5)
-    mb.BackgroundColor3 = Color3.fromRGB(15,45,70); mb.AutomaticSize = Enum.AutomaticSize.X; mb.Parent = row; corner(mb, 4)
-    local ml = lbl(mb, " "..entry.method.." ", 9, Color3.fromRGB(100,200,255))
-    ml.Size = UDim2.new(0,0,1,0); ml.AutomaticSize = Enum.AutomaticSize.X; ml.Font = Enum.Font.GothamBold
-
-    local nl = lbl(row, entry.name, 13, T.TEXT)
-    nl.Size = UDim2.new(1,-14,0,18); nl.Position = UDim2.new(0,8,0,24)
-    nl.Font = Enum.Font.GothamBold; nl.TextTruncate = Enum.TextTruncate.AtEnd
-
-    local cl2 = lbl(row, entry.className, 10, T.SUB)
-    cl2.Size = UDim2.new(1,-80,0,14); cl2.Position = UDim2.new(0,8,0,42)
-
-    local tl = lbl(row, entry.time, 9, T.SUB)
-    tl.Size = UDim2.new(0,60,0,12); tl.Position = UDim2.new(1,-64,0,38)
-    tl.TextXAlignment = Enum.TextXAlignment.Right
-
-    local sd = lbl(row, entry.source and "⬤" or "○", 9, entry.source and T.SUCCESS or T.WARNING)
-    sd.Size = UDim2.new(0,10,0,10); sd.Position = UDim2.new(1,-13,0,5)
-
-    local normalBG = isEven and T.ROW_A or T.ROW_B
-    local function deselAll()
-        for _, ch in ipairs(listScroll:GetChildren()) do
-            if ch:IsA("TextButton") then
-                local n = tonumber(ch.Name:match("R_(%d+)"))
-                if n then ch.BackgroundColor3 = (n%2==0) and T.ROW_A or T.ROW_B end
-            end
-        end
-    end
-
-    row.MouseButton1Click:Connect(function()
-        deselAll(); row.BackgroundColor3 = T.ROW_SEL
-        selectedIdx = index; viewingDeob = false
-        detailTitleL.Text = "📄  " .. entry.name
-        refreshView()
-    end)
-    row.MouseEnter:Connect(function()
-        if selectedIdx ~= index then row.BackgroundColor3 = Color3.fromRGB(25,22,16) end
-    end)
-    row.MouseLeave:Connect(function()
-        if selectedIdx ~= index then row.BackgroundColor3 = normalBG end
-    end)
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- REGISTER A CAPTURE
--- ─────────────────────────────────────────────────────────────────────────────
-local function registerCapture(inst, method)
-    for _, e in ipairs(captured) do if e.instance == inst then return end end
-    local entry = {
-        instance   = inst,
-        name       = inst.Name,
-        className  = inst.ClassName,
-        path       = getPath(inst),
-        props      = collectProps(inst),
-        source     = trySource(inst),
-        deobSource = nil,
-        time       = os.date("%X"),
-        method     = method or "DataModel",
-    }
-    table.insert(captured, entry)
-    local idx = #captured
-    cntLbl.Text = tostring(idx)
-    addRow(idx, entry)
-    setStatus(string.format("⚠  Injection: %s  [%s]  @ %s", entry.name, entry.method, entry.time), T.DANGER)
-    warn(string.format("[InjDetect] Caught '%s' via %s", entry.name, entry.method))
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- FILTER
--- ─────────────────────────────────────────────────────────────────────────────
-local function shouldIgnore(inst)
-    if not (inst:IsA("LocalScript") or inst:IsA("ModuleScript") or inst:IsA("Script")) then return true end
-    if snapshot[inst] then return true end
-    if ROBLOX_DEFAULTS[inst.Name] then return true end
-    local cur = inst.Parent
-    while cur do
-        if cur == workspace then break end
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p.Character and cur == p.Character then return true end
-        end
-        cur = cur.Parent
-    end
-    return false
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- HOOK loadstring
--- ─────────────────────────────────────────────────────────────────────────────
-local function tryHookLoadstring()
-    if type(hookfunction) ~= "function" or type(loadstring) ~= "function" then return false end
-    local orig = loadstring
-    local ok = pcall(hookfunction, loadstring, function(src, chunkName)
-        if armed and type(src) == "string" and #src > 0 then
-            local sig = src:sub(1, 80)
-            local dup = false
-            for _, e in ipairs(captured) do
-                if e.source and e.source:sub(1,80) == sig then dup = true; break end
-            end
-            if not dup then
-                local entry = {
-                    instance = nil, name = chunkName or "(anonymous loadstring)",
-                    className = "loadstring", path = chunkName or "N/A",
-                    props = {Chunk = tostring(chunkName)}, source = src,
-                    deobSource = nil, time = os.date("%X"), method = "loadstring",
-                }
-                table.insert(captured, entry)
-                local idx = #captured
-                cntLbl.Text = tostring(idx)
-                addRow(idx, entry)
-                setStatus(string.format("⚠  loadstring: %s  @ %s", entry.name, entry.time), T.DANGER)
-            end
-        end
-        return orig(src, chunkName)
-    end)
-    return ok
-end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- CHARACTER snapshot
--- ─────────────────────────────────────────────────────────────────────────────
-local function onCharacter(char)
-    snapAdd(char)
-    local ic = char.DescendantAdded:Connect(function(d)
-        if not armed and d:IsA("LuaSourceContainer") then snapshot[d] = true end
-    end)
-    table.insert(conns, ic)
-end
-LocalPlayer.CharacterAdded:Connect(onCharacter)
-if LocalPlayer.Character then onCharacter(LocalPlayer.Character) end
-
--- ─────────────────────────────────────────────────────────────────────────────
--- MAIN INIT
--- ─────────────────────────────────────────────────────────────────────────────
-task.spawn(function()
-    if not game:IsLoaded() then game.Loaded:Wait() end
-    for _ = 1, 15 do RunService.Heartbeat:Wait() end
-
-    for _, d in ipairs(game:GetDescendants()) do
-        if d:IsA("LuaSourceContainer") then snapshot[d] = true end
-    end
-    local snapCount = 0; for _ in pairs(snapshot) do snapCount = snapCount + 1 end
-
-    local hooked = tryHookLoadstring()
-
-    local dc = game.DescendantAdded:Connect(function(inst)
-        if not armed then return end
-        task.defer(function()
-            if not shouldIgnore(inst) then pcall(registerCapture, inst, "DataModel") end
-        end)
-    end)
-    table.insert(conns, dc)
-
-    armed = true
-
-    pillDot.TextColor3 = T.SUCCESS; pillTxt.TextColor3 = T.SUCCESS
-    pillTxt.Text = "ARMED"; pill.BackgroundColor3 = Color3.fromRGB(20,55,30)
-
-    local hs = hooked and "loadstring hooked ✓" or "loadstring hook N/A"
-    setStatus(string.format("✓  Armed — %d scripts ignored  |  %s", snapCount, hs), T.SUCCESS, true)
-    setCodeText(string.format(
-        "-- Armed. %d pre-existing scripts ignored.\n-- Character scripts (Health, Animate…) filtered.\n-- loadstring hook: %s\n\n"..
-        "-- Waiting for injections…\n-- Detected scripts appear in the left panel.\n\n"..
-        "-- DEOBFUSCATION:\n-- 1. Select an injected script\n-- 2. Click  ✦ Deobfuscate\n"..
-        "-- 3. Toggle between raw and clean view with  ◈ Raw / ◈ Deob\n-- 4. API key required — see top of script.",
-        snapCount, hooked and "active" or "not available"
-    ), T.SUB)
-
-    print(string.format("[InjDetect v4] Armed. %d ignored. loadstring: %s", snapCount, tostring(hooked)))
-end)
+print("[TopMount] Mounted! Riding on top of " .. TARGET_NAME)
