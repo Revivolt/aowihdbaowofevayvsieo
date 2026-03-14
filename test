@@ -1,828 +1,635 @@
---[[
+--[[ test
     ╔══════════════════════════════════════════════════════════════╗
-    ║           ScriptCapture GUI — LocalScript Detector          ║
-    ║  Detects executed LocalScripts, captures their code/info,   ║
-    ║  displays it in a draggable GUI with a Copy button.         ║
+    ║            ScriptCapture — Injection Detector               ║
+    ║  Detects scripts injected AFTER the game finishes loading.  ║
+    ║  Ignores all scripts already present on the client.         ║
     ╚══════════════════════════════════════════════════════════════╝
 
-    HOW TO USE:
-      1. Paste this script into a LocalScript inside StarterPlayerScripts
-         (or execute it via an executor).
-      2. Any LocalScript that runs under LocalPlayer will be detected.
-      3. Click a captured script entry to view its details.
-      4. Use the [Copy] button to copy the full captured report.
+    HOW IT WORKS:
+      1. Waits for the game to fully load (ContentProvider + replication).
+      2. Takes a snapshot of every script instance already in the game tree.
+      3. From that point on, ONLY scripts that are NEW (not in the snapshot)
+         will be captured — i.e. scripts injected by a third-party executor
+         or remote injection after load time.
+      4. Captures name, class, full path, properties, source (if accessible),
+         and the exact timestamp of injection.
 
-    NOTE ON .Source:
-      • In Studio (Play Solo), .Source is readable with the right permissions.
-      • In a live game, Roblox restricts .Source for security reasons.
-        If you're using an executor that grants decompilation/source access,
-        the script will capture full source automatically.
-      • Without .Source access, the script captures all available metadata,
-        hierarchy, properties, and a reconstructed report.
+    PLACE THIS IN: StarterPlayerScripts  (or execute via an executor)
 --]]
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- SERVICES & CORE REFERENCES
+-- SERVICES
 -- ─────────────────────────────────────────────────────────────────────────────
-local Players         = game:GetService("Players")
-local RunService      = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local CoreGui         = game:GetService("CoreGui")
+local Players             = game:GetService("Players")
+local RunService          = game:GetService("RunService")
+local ContentProvider     = game:GetService("ContentProvider")
+local UserInputService    = game:GetService("UserInputService")
 
-local LocalPlayer     = Players.LocalPlayer
-local PlayerGui       = LocalPlayer:WaitForChild("PlayerGui")
-local PlayerScripts   = LocalPlayer:WaitForChild("PlayerScripts")
+local LocalPlayer         = Players.LocalPlayer
+local PlayerGui           = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- THEME
 -- ─────────────────────────────────────────────────────────────────────────────
-local THEME = {
-    BG          = Color3.fromRGB(13,  14,  20),
-    PANEL       = Color3.fromRGB(20,  22,  32),
-    HEADER      = Color3.fromRGB(25,  28,  42),
-    ACCENT      = Color3.fromRGB(99, 179, 255),
-    ACCENT2     = Color3.fromRGB(161, 104, 255),
+local T = {
+    BG          = Color3.fromRGB(10,  11,  17),
+    PANEL       = Color3.fromRGB(16,  18,  28),
+    HEADER      = Color3.fromRGB(20,  23,  38),
+    ACCENT      = Color3.fromRGB(255, 130,  60),   -- orange — "alert" feel
+    ACCENT2     = Color3.fromRGB(255, 200,  80),   -- yellow
     SUCCESS     = Color3.fromRGB(80,  220, 140),
     WARNING     = Color3.fromRGB(255, 195,  80),
-    DANGER      = Color3.fromRGB(255,  90,  90),
-    TEXT        = Color3.fromRGB(220, 225, 240),
-    SUBTEXT     = Color3.fromRGB(130, 140, 165),
-    BORDER      = Color3.fromRGB(45,  50,  75),
-    ENTRY_EVEN  = Color3.fromRGB(22,  24,  36),
-    ENTRY_ODD   = Color3.fromRGB(18,  20,  30),
-    CODE_BG     = Color3.fromRGB(10,  12,  18),
-    CODE_TEXT   = Color3.fromRGB(180, 210, 255),
+    DANGER      = Color3.fromRGB(255,  75,  75),
+    TEXT        = Color3.fromRGB(225, 228, 240),
+    SUBTEXT     = Color3.fromRGB(120, 130, 160),
+    BORDER      = Color3.fromRGB(40,  46,  70),
+    CODE_BG     = Color3.fromRGB(8,   9,   14),
+    CODE_TEXT   = Color3.fromRGB(200, 220, 255),
+    ROW_A       = Color3.fromRGB(18,  21,  33),
+    ROW_B       = Color3.fromRGB(14,  16,  26),
+    ROW_SEL     = Color3.fromRGB(45,  32,  14),
 }
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- STATE
 -- ─────────────────────────────────────────────────────────────────────────────
-local capturedScripts = {}   -- { [index] = { name, path, source, props, time } }
-local selectedIndex   = nil
-local logConnections  = {}   -- connections to clean up
-local guiVisible      = true
+local captured      = {}        -- array of capture entries
+local selectedIdx   = nil
+local connections   = {}
+local guiVisible    = true
+local isReady       = false     -- set true once snapshot is taken
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- UTILITY FUNCTIONS
+-- UTILITIES
 -- ─────────────────────────────────────────────────────────────────────────────
-
--- Safely get full hierarchy path of an instance
-local function getFullPath(inst)
-    local parts = {}
-    local cur = inst
-    while cur and cur ~= game do
-        table.insert(parts, 1, cur.Name)
-        cur = cur.Parent
+local function getPath(inst)
+    local p = {}
+    local c = inst
+    while c and c ~= game do
+        table.insert(p, 1, c.Name)
+        c = c.Parent
     end
-    return table.concat(parts, " > ")
+    return table.concat(p, " > ")
 end
 
--- Try to read .Source (works in Studio or with executor decompile access)
-local function tryGetSource(script)
-    local ok, src = pcall(function() return script.Source end)
-    if ok and type(src) == "string" and #src > 0 then
-        return src
-    end
-    -- Fallback: try decompile if executor exposes it
+local function trySource(s)
+    local ok, src = pcall(function() return s.Source end)
+    if ok and type(src) == "string" and #src > 0 then return src end
     if type(decompile) == "function" then
-        local ok2, decomp = pcall(decompile, script)
-        if ok2 and type(decomp) == "string" and #decomp > 0 then
-            return "-- [DECOMPILED]\n" .. decomp
+        local ok2, d = pcall(decompile, s)
+        if ok2 and type(d) == "string" and #d > 0 then
+            return "-- [DECOMPILED]\n" .. d
         end
     end
     return nil
 end
 
--- Collect all readable properties into a table
-local function collectProps(script)
-    local props = {}
-    local checks = {
-        "Name", "ClassName", "Disabled", "RunContext",
-        "LinkedSource", "ScriptGuid",
-    }
-    for _, key in ipairs(checks) do
-        local ok, val = pcall(function() return script[key] end)
-        if ok then
-            props[key] = tostring(val)
-        end
+local function collectProps(s)
+    local props, keys = {}, {"Name","ClassName","Disabled","RunContext","LinkedSource","ScriptGuid"}
+    for _, k in ipairs(keys) do
+        local ok, v = pcall(function() return s[k] end)
+        if ok then props[k] = tostring(v) end
     end
     return props
 end
 
--- Build the full text report for a captured entry
-local function buildReport(entry)
-    local lines = {}
-    table.insert(lines, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    table.insert(lines, "  SCRIPT CAPTURE REPORT")
-    table.insert(lines, "  Captured at: " .. entry.time)
-    table.insert(lines, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    table.insert(lines, "")
-    table.insert(lines, "[ IDENTITY ]")
-    table.insert(lines, "  Name      : " .. tostring(entry.name))
-    table.insert(lines, "  ClassName : " .. tostring(entry.className))
-    table.insert(lines, "  Path      : " .. tostring(entry.path))
-    table.insert(lines, "")
-    table.insert(lines, "[ PROPERTIES ]")
-    for k, v in pairs(entry.props) do
+local function buildReport(e)
+    local L = {}
+    local function ln(s) table.insert(L, s or "") end
+    ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    ln("  INJECTION CAPTURE REPORT")
+    ln("  Detected at: " .. e.time)
+    ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    ln()
+    ln("[ IDENTITY ]")
+    ln("  Name      : " .. tostring(e.name))
+    ln("  ClassName : " .. tostring(e.className))
+    ln("  Path      : " .. tostring(e.path))
+    ln()
+    ln("[ PROPERTIES ]")
+    for k, v in pairs(e.props) do
         if k ~= "Name" and k ~= "ClassName" then
-            table.insert(lines, string.format("  %-16s: %s", k, v))
+            ln(string.format("  %-16s: %s", k, v))
         end
     end
-    table.insert(lines, "")
-    if entry.source then
-        table.insert(lines, "[ SOURCE CODE ]")
-        table.insert(lines, "")
-        table.insert(lines, entry.source)
+    ln()
+    if e.source then
+        ln("[ INJECTED SOURCE CODE ]")
+        ln()
+        ln(e.source)
     else
-        table.insert(lines, "[ SOURCE CODE ]")
-        table.insert(lines, "")
-        table.insert(lines, "-- Source not accessible in this environment.")
-        table.insert(lines, "-- Run in Roblox Studio (Play Solo) or via an executor")
-        table.insert(lines, "-- that provides decompile() access to read full source.")
+        ln("[ INJECTED SOURCE CODE ]")
+        ln()
+        ln("-- Source not readable in this environment.")
+        ln("-- Use an executor with decompile() to capture source.")
     end
-    table.insert(lines, "")
-    table.insert(lines, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    return table.concat(lines, "\n")
+    ln()
+    ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    return table.concat(L, "\n")
 end
 
--- Set clipboard (works in Studio and most executors)
-local function copyToClipboard(text)
-    -- Try setclipboard (executor global)
-    if type(setclipboard) == "function" then
-        pcall(setclipboard, text)
-        return true
-    end
-    -- Try toclipboard (some executors)
-    if type(toclipboard) == "function" then
-        pcall(toclipboard, text)
-        return true
-    end
-    -- Studio fallback via Selection (won't work at runtime but harmless)
+local function toClipboard(text)
+    if type(setclipboard) == "function" then pcall(setclipboard, text); return true end
+    if type(toclipboard)  == "function" then pcall(toclipboard,  text); return true end
     return false
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- GUI BUILDER HELPERS
+-- GUI HELPERS
 -- ─────────────────────────────────────────────────────────────────────────────
-
-local function makeCorner(parent, radius)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius or 6)
-    c.Parent = parent
-    return c
+local function corner(p, r)  local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,r or 6); c.Parent=p; return c end
+local function stroke(p, c, t) local s=Instance.new("UIStroke"); s.Color=c or T.BORDER; s.Thickness=t or 1; s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=p; return s end
+local function pad(p, a)     local u=Instance.new("UIPadding"); u.PaddingTop=UDim.new(0,a); u.PaddingBottom=UDim.new(0,a); u.PaddingLeft=UDim.new(0,a); u.PaddingRight=UDim.new(0,a); u.Parent=p end
+local function lbl(p, txt, sz, col, ax)
+    local l=Instance.new("TextLabel"); l.BackgroundTransparency=1; l.Text=txt
+    l.TextSize=sz or 13; l.TextColor3=col or T.TEXT; l.Font=Enum.Font.Gotham
+    l.TextXAlignment=ax or Enum.TextXAlignment.Left; l.TextWrapped=true; l.Parent=p; return l
 end
-
-local function makeStroke(parent, color, thickness)
-    local s = Instance.new("UIStroke")
-    s.Color = color or THEME.BORDER
-    s.Thickness = thickness or 1
-    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    s.Parent = parent
-    return s
-end
-
-local function makePadding(parent, all, top, bottom, left, right)
-    local p = Instance.new("UIPadding")
-    if all then
-        p.PaddingTop    = UDim.new(0, all)
-        p.PaddingBottom = UDim.new(0, all)
-        p.PaddingLeft   = UDim.new(0, all)
-        p.PaddingRight  = UDim.new(0, all)
-    else
-        if top    then p.PaddingTop    = UDim.new(0, top)    end
-        if bottom then p.PaddingBottom = UDim.new(0, bottom) end
-        if left   then p.PaddingLeft   = UDim.new(0, left)   end
-        if right  then p.PaddingRight  = UDim.new(0, right)  end
-    end
-    p.Parent = parent
-    return p
-end
-
-local function makeLabel(parent, text, size, color, halign)
-    local l = Instance.new("TextLabel")
-    l.BackgroundTransparency = 1
-    l.Text = text
-    l.TextSize = size or 14
-    l.TextColor3 = color or THEME.TEXT
-    l.Font = Enum.Font.Gotham
-    l.TextXAlignment = halign or Enum.TextXAlignment.Left
-    l.TextWrapped = true
-    l.Parent = parent
-    return l
-end
-
-local function makeButton(parent, text, size, bgColor, textColor)
-    local btn = Instance.new("TextButton")
-    btn.BackgroundColor3 = bgColor or THEME.ACCENT
-    btn.TextColor3 = textColor or THEME.BG
-    btn.Text = text
-    btn.TextSize = size or 13
-    btn.Font = Enum.Font.GothamBold
-    btn.AutoButtonColor = false
-    btn.BorderSizePixel = 0
-    btn.Parent = parent
-    makeCorner(btn, 5)
-
-    -- hover effect
-    btn.MouseEnter:Connect(function()
-        btn.BackgroundColor3 = Color3.new(
-            math.min(bgColor and bgColor.R + 0.08 or 0.47, 1),
-            math.min(bgColor and bgColor.G + 0.08 or 0.75, 1),
-            math.min(bgColor and bgColor.B + 0.08 or 1.0,  1)
-        )
-    end)
-    btn.MouseLeave:Connect(function()
-        btn.BackgroundColor3 = bgColor or THEME.ACCENT
-    end)
-    return btn
+local function btn(p, txt, sz, bg, tc)
+    local b=Instance.new("TextButton"); b.BackgroundColor3=bg or T.ACCENT
+    b.TextColor3=tc or T.BG; b.Text=txt; b.TextSize=sz or 13
+    b.Font=Enum.Font.GothamBold; b.AutoButtonColor=false; b.BorderSizePixel=0; b.Parent=p
+    corner(b, 5)
+    local orig = bg or T.ACCENT
+    b.MouseEnter:Connect(function() b.BackgroundColor3=Color3.new(math.min(orig.R+0.1,1),math.min(orig.G+0.1,1),math.min(orig.B+0.1,1)) end)
+    b.MouseLeave:Connect(function() b.BackgroundColor3=orig end)
+    return b
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- BUILD THE MAIN GUI
+-- BUILD GUI
 -- ─────────────────────────────────────────────────────────────────────────────
-
--- Destroy any existing instance of this GUI
 pcall(function()
-    if PlayerGui:FindFirstChild("ScriptCaptureGUI") then
-        PlayerGui:FindFirstChild("ScriptCaptureGUI"):Destroy()
-    end
-    if CoreGui:FindFirstChild("ScriptCaptureGUI") then
-        CoreGui:FindFirstChild("ScriptCaptureGUI"):Destroy()
+    if PlayerGui:FindFirstChild("InjectionCaptureGUI") then
+        PlayerGui.InjectionCaptureGUI:Destroy()
     end
 end)
 
--- Try parenting to CoreGui for executor use; fall back to PlayerGui
-local guiParent = PlayerGui
-pcall(function()
-    -- Executors allow CoreGui access
-    local testFrame = Instance.new("Frame")
-    testFrame.Parent = CoreGui
-    testFrame:Destroy()
-    guiParent = CoreGui
-end)
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ScriptCaptureGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.DisplayOrder = 9999
-ScreenGui.Parent = guiParent
+local gui = Instance.new("ScreenGui")
+gui.Name            = "InjectionCaptureGUI"
+gui.ResetOnSpawn    = false
+gui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder    = 9999
+gui.Parent          = PlayerGui
 
 -- ── Main Window ──────────────────────────────────────────────────────────────
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 660, 0, 480)
-MainFrame.Position = UDim2.new(0.5, -330, 0.5, -240)
-MainFrame.BackgroundColor3 = THEME.BG
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
-makeCorner(MainFrame, 10)
-makeStroke(MainFrame, THEME.BORDER, 1.5)
-
--- gradient overlay on main frame
-local mainGrad = Instance.new("UIGradient")
-mainGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(18, 20, 30)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 13, 20)),
-})
-mainGrad.Rotation = 120
-mainGrad.Parent = MainFrame
+local win = Instance.new("Frame")
+win.Name              = "Win"
+win.Size              = UDim2.new(0, 680, 0, 500)
+win.Position          = UDim2.new(0.5, -340, 0.5, -250)
+win.BackgroundColor3  = T.BG
+win.BorderSizePixel   = 0
+win.Parent            = gui
+corner(win, 10)
+stroke(win, T.BORDER, 1.5)
 
 -- ── Title Bar ────────────────────────────────────────────────────────────────
-local TitleBar = Instance.new("Frame")
-TitleBar.Name = "TitleBar"
-TitleBar.Size = UDim2.new(1, 0, 0, 40)
-TitleBar.BackgroundColor3 = THEME.HEADER
-TitleBar.BorderSizePixel = 0
-TitleBar.Parent = MainFrame
-makeCorner(TitleBar, 10)
+local bar = Instance.new("Frame")
+bar.Size             = UDim2.new(1, 0, 0, 42)
+bar.BackgroundColor3 = T.HEADER
+bar.BorderSizePixel  = 0
+bar.Parent           = win
+corner(bar, 10)
 
--- Cover bottom corners of TitleBar
-local titleBarCover = Instance.new("Frame")
-titleBarCover.Size = UDim2.new(1, 0, 0.5, 0)
-titleBarCover.Position = UDim2.new(0, 0, 0.5, 0)
-titleBarCover.BackgroundColor3 = THEME.HEADER
-titleBarCover.BorderSizePixel = 0
-titleBarCover.Parent = TitleBar
+-- cover bottom-half corners
+local barFill = Instance.new("Frame")
+barFill.Size            = UDim2.new(1, 0, 0.5, 0)
+barFill.Position        = UDim2.new(0, 0, 0.5, 0)
+barFill.BackgroundColor3= T.HEADER
+barFill.BorderSizePixel = 0
+barFill.Parent          = bar
 
-local titleBarGrad = Instance.new("UIGradient")
-titleBarGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 35, 55)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 24, 40)),
-})
-titleBarGrad.Rotation = 90
-titleBarGrad.Parent = TitleBar
+-- accent gradient line
+local aline = Instance.new("Frame")
+aline.Size           = UDim2.new(1, 0, 0, 2)
+aline.Position       = UDim2.new(0, 0, 1, -2)
+aline.BackgroundColor3 = T.ACCENT
+aline.BorderSizePixel = 0
+aline.Parent         = bar
+do
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0,   T.ACCENT),
+        ColorSequenceKeypoint.new(0.5, T.ACCENT2),
+        ColorSequenceKeypoint.new(1,   T.ACCENT),
+    })
+    g.Parent = aline
+end
 
--- Accent line under title bar
-local AccentLine = Instance.new("Frame")
-AccentLine.Size = UDim2.new(1, 0, 0, 2)
-AccentLine.Position = UDim2.new(0, 0, 1, -2)
-AccentLine.BackgroundColor3 = THEME.ACCENT
-AccentLine.BorderSizePixel = 0
-AccentLine.Parent = TitleBar
+-- icon + title
+local ico = lbl(bar, "⚠", 18, T.ACCENT)
+ico.Size = UDim2.new(0, 28, 1, 0); ico.Position = UDim2.new(0, 10, 0, 0)
+ico.TextXAlignment = Enum.TextXAlignment.Center
 
-local accentGrad = Instance.new("UIGradient")
-accentGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, THEME.ACCENT),
-    ColorSequenceKeypoint.new(0.5, THEME.ACCENT2),
-    ColorSequenceKeypoint.new(1, THEME.ACCENT),
-})
-accentGrad.Parent = AccentLine
+local titleLbl = lbl(bar, "Injection Detector", 15, T.TEXT)
+titleLbl.Size = UDim2.new(0, 160, 1, 0); titleLbl.Position = UDim2.new(0, 42, 0, 0)
+titleLbl.Font = Enum.Font.GothamBold
 
--- Title icon + text
-local TitleIcon = makeLabel(TitleBar, "⬡", 18, THEME.ACCENT)
-TitleIcon.Size = UDim2.new(0, 30, 1, 0)
-TitleIcon.Position = UDim2.new(0, 10, 0, 0)
-TitleIcon.TextXAlignment = Enum.TextXAlignment.Center
+local subLbl = lbl(bar, "Post-load Script Monitor", 11, T.SUBTEXT)
+subLbl.Size = UDim2.new(0, 180, 1, 0); subLbl.Position = UDim2.new(0, 205, 0, 0)
 
-local TitleText = makeLabel(TitleBar, "Script Capture", 15, THEME.TEXT)
-TitleText.Size = UDim2.new(0.5, 0, 1, 0)
-TitleText.Position = UDim2.new(0, 44, 0, 0)
-TitleText.Font = Enum.Font.GothamBold
+-- ── Status pill ──────────────────────────────────────────────────────────────
+local pill = Instance.new("Frame")
+pill.Size            = UDim2.new(0, 100, 0, 22)
+pill.Position        = UDim2.new(1, -185, 0.5, -11)
+pill.BackgroundColor3 = Color3.fromRGB(60, 30, 15)
+pill.Parent          = bar
+corner(pill, 11)
 
-local TitleSub = makeLabel(TitleBar, "LocalScript Detector", 11, THEME.SUBTEXT)
-TitleSub.Size = UDim2.new(0.4, 0, 1, 0)
-TitleSub.Position = UDim2.new(0, 190, 0, 0)
+local pillDot = lbl(pill, "●", 9, T.WARNING)
+pillDot.Size = UDim2.new(0, 14, 1, 0); pillDot.Position = UDim2.new(0, 5, 0, 0)
+pillDot.TextXAlignment = Enum.TextXAlignment.Center
 
--- Status badge
-local StatusBadge = Instance.new("Frame")
-StatusBadge.Size = UDim2.new(0, 80, 0, 22)
-StatusBadge.Position = UDim2.new(1, -170, 0.5, -11)
-StatusBadge.BackgroundColor3 = Color3.fromRGB(30, 65, 40)
-StatusBadge.Parent = TitleBar
-makeCorner(StatusBadge, 11)
+local pillTxt = lbl(pill, "WAITING…", 9, T.WARNING)
+pillTxt.Size = UDim2.new(1, -20, 1, 0); pillTxt.Position = UDim2.new(0, 19, 0, 0)
+pillTxt.Font = Enum.Font.GothamBold
 
-local StatusDot = makeLabel(StatusBadge, "●", 10, THEME.SUCCESS)
-StatusDot.Size = UDim2.new(0, 16, 1, 0)
-StatusDot.Position = UDim2.new(0, 4, 0, 0)
-StatusDot.TextXAlignment = Enum.TextXAlignment.Center
+-- ── Window controls ──────────────────────────────────────────────────────────
+local minBtn   = btn(bar, "─", 12, Color3.fromRGB(45,50,70), T.TEXT)
+minBtn.Size    = UDim2.new(0, 26, 0, 20); minBtn.Position = UDim2.new(1,-58, 0.5,-10)
 
-local StatusText = makeLabel(StatusBadge, "ACTIVE", 10, THEME.SUCCESS)
-StatusText.Size = UDim2.new(1, -20, 1, 0)
-StatusText.Position = UDim2.new(0, 20, 0, 0)
-StatusText.Font = Enum.Font.GothamBold
-
--- Minimize / Close buttons
-local MinBtn = makeButton(TitleBar, "─", 12, Color3.fromRGB(50, 55, 75), THEME.TEXT)
-MinBtn.Size = UDim2.new(0, 28, 0, 22)
-MinBtn.Position = UDim2.new(1, -62, 0.5, -11)
-
-local CloseBtn = makeButton(TitleBar, "✕", 12, Color3.fromRGB(180, 50, 50), THEME.TEXT)
-CloseBtn.Size = UDim2.new(0, 28, 0, 22)
-CloseBtn.Position = UDim2.new(1, -30, 0.5, -11)
+local closeBtn = btn(bar, "✕", 12, Color3.fromRGB(160,40,40), T.TEXT)
+closeBtn.Size  = UDim2.new(0, 26, 0, 20); closeBtn.Position = UDim2.new(1,-28, 0.5,-10)
 
 -- ── Body ─────────────────────────────────────────────────────────────────────
-local Body = Instance.new("Frame")
-Body.Name = "Body"
-Body.Size = UDim2.new(1, 0, 1, -40)
-Body.Position = UDim2.new(0, 0, 0, 40)
-Body.BackgroundTransparency = 1
-Body.Parent = MainFrame
+local body = Instance.new("Frame")
+body.Size               = UDim2.new(1, 0, 1, -42)
+body.Position           = UDim2.new(0, 0, 0, 42)
+body.BackgroundTransparency = 1
+body.Parent             = win
 
--- ── Left Panel (Script List) ──────────────────────────────────────────────
-local LeftPanel = Instance.new("Frame")
-LeftPanel.Name = "LeftPanel"
-LeftPanel.Size = UDim2.new(0, 210, 1, -10)
-LeftPanel.Position = UDim2.new(0, 8, 0, 5)
-LeftPanel.BackgroundColor3 = THEME.PANEL
-LeftPanel.BorderSizePixel = 0
-LeftPanel.Parent = Body
-makeCorner(LeftPanel, 8)
-makeStroke(LeftPanel, THEME.BORDER, 1)
+-- ── Left: list panel ─────────────────────────────────────────────────────────
+local leftPanel = Instance.new("Frame")
+leftPanel.Size            = UDim2.new(0, 215, 1, -10)
+leftPanel.Position        = UDim2.new(0, 6,  0, 5)
+leftPanel.BackgroundColor3 = T.PANEL
+leftPanel.BorderSizePixel = 0
+leftPanel.Parent          = body
+corner(leftPanel, 8); stroke(leftPanel, T.BORDER, 1)
 
-local ListHeader = Instance.new("Frame")
-ListHeader.Size = UDim2.new(1, 0, 0, 34)
-ListHeader.BackgroundColor3 = THEME.HEADER
-ListHeader.BorderSizePixel = 0
-ListHeader.Parent = LeftPanel
-makeCorner(ListHeader, 8)
+local lhdr = Instance.new("Frame")
+lhdr.Size             = UDim2.new(1,0,0,34)
+lhdr.BackgroundColor3 = T.HEADER
+lhdr.BorderSizePixel  = 0
+lhdr.Parent           = leftPanel
+corner(lhdr, 8)
 
-local listHeaderCover = Instance.new("Frame")
-listHeaderCover.Size = UDim2.new(1, 0, 0.5, 0)
-listHeaderCover.Position = UDim2.new(0, 0, 0.5, 0)
-listHeaderCover.BackgroundColor3 = THEME.HEADER
-listHeaderCover.BorderSizePixel = 0
-listHeaderCover.Parent = ListHeader
+local lhdrFill = Instance.new("Frame")
+lhdrFill.Size = UDim2.new(1,0,0.5,0); lhdrFill.Position = UDim2.new(0,0,0.5,0)
+lhdrFill.BackgroundColor3 = T.HEADER; lhdrFill.BorderSizePixel = 0
+lhdrFill.Parent = lhdr
 
-local ListHeaderLabel = makeLabel(ListHeader, "📋  Captured Scripts", 12, THEME.ACCENT)
-ListHeaderLabel.Size = UDim2.new(1, -10, 1, 0)
-ListHeaderLabel.Position = UDim2.new(0, 10, 0, 0)
-ListHeaderLabel.Font = Enum.Font.GothamBold
+local lhdrTxt = lbl(lhdr, "🔍  Injected Scripts", 12, T.ACCENT)
+lhdrTxt.Size = UDim2.new(1,-36,1,0); lhdrTxt.Position = UDim2.new(0,10,0,0)
+lhdrTxt.Font = Enum.Font.GothamBold
 
-local CountBadge = Instance.new("Frame")
-CountBadge.Size = UDim2.new(0, 24, 0, 16)
-CountBadge.Position = UDim2.new(1, -30, 0.5, -8)
-CountBadge.BackgroundColor3 = THEME.ACCENT2
-CountBadge.Parent = ListHeader
-makeCorner(CountBadge, 8)
+local cntBadge = Instance.new("Frame")
+cntBadge.Size = UDim2.new(0,26,0,16); cntBadge.Position = UDim2.new(1,-30,0.5,-8)
+cntBadge.BackgroundColor3 = T.DANGER; cntBadge.Parent = lhdr
+corner(cntBadge, 8)
 
-local CountLabel = makeLabel(CountBadge, "0", 10, Color3.new(1,1,1))
-CountLabel.Size = UDim2.new(1, 0, 1, 0)
-CountLabel.TextXAlignment = Enum.TextXAlignment.Center
-CountLabel.Font = Enum.Font.GothamBold
+local cntLbl = lbl(cntBadge, "0", 10, Color3.new(1,1,1))
+cntLbl.Size = UDim2.new(1,0,1,0); cntLbl.TextXAlignment = Enum.TextXAlignment.Center
+cntLbl.Font = Enum.Font.GothamBold
 
--- Scrollable list
-local ListScroll = Instance.new("ScrollingFrame")
-ListScroll.Size = UDim2.new(1, -2, 1, -40)
-ListScroll.Position = UDim2.new(0, 1, 0, 36)
-ListScroll.BackgroundTransparency = 1
-ListScroll.BorderSizePixel = 0
-ListScroll.ScrollBarThickness = 4
-ListScroll.ScrollBarImageColor3 = THEME.ACCENT
-ListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-ListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ListScroll.Parent = LeftPanel
+local listScroll = Instance.new("ScrollingFrame")
+listScroll.Size                 = UDim2.new(1,-2,1,-38)
+listScroll.Position             = UDim2.new(0,1,0,36)
+listScroll.BackgroundTransparency = 1
+listScroll.BorderSizePixel      = 0
+listScroll.ScrollBarThickness   = 4
+listScroll.ScrollBarImageColor3 = T.ACCENT
+listScroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
+listScroll.CanvasSize           = UDim2.new(0,0,0,0)
+listScroll.Parent               = leftPanel
+local ll = Instance.new("UIListLayout"); ll.Padding = UDim.new(0,2); ll.Parent = listScroll
+pad(listScroll, 4)
 
-local ListLayout = Instance.new("UIListLayout")
-ListLayout.Padding = UDim.new(0, 2)
-ListLayout.Parent = ListScroll
-makePadding(ListScroll, nil, 4, 4, 4, 4)
+-- ── Right: detail panel ───────────────────────────────────────────────────────
+local rightPanel = Instance.new("Frame")
+rightPanel.Size            = UDim2.new(1,-229,1,-10)
+rightPanel.Position        = UDim2.new(0,227,0,5)
+rightPanel.BackgroundColor3 = T.PANEL
+rightPanel.BorderSizePixel = 0
+rightPanel.Parent          = body
+corner(rightPanel, 8); stroke(rightPanel, T.BORDER, 1)
 
--- ── Right Panel (Details) ─────────────────────────────────────────────────
-local RightPanel = Instance.new("Frame")
-RightPanel.Name = "RightPanel"
-RightPanel.Size = UDim2.new(1, -226, 1, -10)
-RightPanel.Position = UDim2.new(0, 222, 0, 5)
-RightPanel.BackgroundColor3 = THEME.PANEL
-RightPanel.BorderSizePixel = 0
-RightPanel.Parent = Body
-makeCorner(RightPanel, 8)
-makeStroke(RightPanel, THEME.BORDER, 1)
+local rhdr = Instance.new("Frame")
+rhdr.Size             = UDim2.new(1,0,0,34)
+rhdr.BackgroundColor3 = T.HEADER
+rhdr.BorderSizePixel  = 0
+rhdr.Parent           = rightPanel
+corner(rhdr, 8)
 
-local DetailHeader = Instance.new("Frame")
-DetailHeader.Size = UDim2.new(1, 0, 0, 34)
-DetailHeader.BackgroundColor3 = THEME.HEADER
-DetailHeader.BorderSizePixel = 0
-DetailHeader.Parent = RightPanel
-makeCorner(DetailHeader, 8)
+local rhdrFill = Instance.new("Frame")
+rhdrFill.Size = UDim2.new(1,0,0.5,0); rhdrFill.Position = UDim2.new(0,0,0.5,0)
+rhdrFill.BackgroundColor3 = T.HEADER; rhdrFill.BorderSizePixel = 0
+rhdrFill.Parent = rhdr
 
-local detailHeaderCover = Instance.new("Frame")
-detailHeaderCover.Size = UDim2.new(1, 0, 0.5, 0)
-detailHeaderCover.Position = UDim2.new(0, 0, 0.5, 0)
-detailHeaderCover.BackgroundColor3 = THEME.HEADER
-detailHeaderCover.BorderSizePixel = 0
-detailHeaderCover.Parent = DetailHeader
+local detailTitle = lbl(rhdr, "📄  Select a script", 12, T.ACCENT)
+detailTitle.Size = UDim2.new(0.6,0,1,0); detailTitle.Position = UDim2.new(0,10,0,0)
+detailTitle.Font = Enum.Font.GothamBold
 
-local DetailTitle = makeLabel(DetailHeader, "📄  Script Details", 12, THEME.ACCENT)
-DetailTitle.Size = UDim2.new(0.6, 0, 1, 0)
-DetailTitle.Position = UDim2.new(0, 10, 0, 0)
-DetailTitle.Font = Enum.Font.GothamBold
+local copyBtn = btn(rhdr, "⧉  Copy Report", 11, T.ACCENT, T.BG)
+copyBtn.Size = UDim2.new(0,112,0,22); copyBtn.Position = UDim2.new(1,-120,0.5,-11)
 
--- Copy button (top right of detail header)
-local CopyBtn = makeButton(DetailHeader, "⧉  Copy Report", 11, THEME.ACCENT, THEME.BG)
-CopyBtn.Size = UDim2.new(0, 110, 0, 22)
-CopyBtn.Position = UDim2.new(1, -120, 0.5, -11)
+local clearBtn = btn(rightPanel, "🗑  Clear All", 10, Color3.fromRGB(100,25,25), T.TEXT)
+clearBtn.Size = UDim2.new(0,90,0,20); clearBtn.Position = UDim2.new(1,-96,0,8)
 
--- Code/Detail scroll area
-local DetailScroll = Instance.new("ScrollingFrame")
-DetailScroll.Size = UDim2.new(1, -8, 1, -44)
-DetailScroll.Position = UDim2.new(0, 4, 0, 40)
-DetailScroll.BackgroundColor3 = THEME.CODE_BG
-DetailScroll.BorderSizePixel = 0
-DetailScroll.ScrollBarThickness = 4
-DetailScroll.ScrollBarImageColor3 = THEME.ACCENT
-DetailScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-DetailScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-DetailScroll.Parent = RightPanel
-makeCorner(DetailScroll, 6)
-makeStroke(DetailScroll, THEME.BORDER, 1)
+local detailScroll = Instance.new("ScrollingFrame")
+detailScroll.Size                 = UDim2.new(1,-8,1,-44)
+detailScroll.Position             = UDim2.new(0,4,0,40)
+detailScroll.BackgroundColor3     = T.CODE_BG
+detailScroll.BorderSizePixel      = 0
+detailScroll.ScrollBarThickness   = 4
+detailScroll.ScrollBarImageColor3 = T.ACCENT
+detailScroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
+detailScroll.CanvasSize           = UDim2.new(0,0,0,0)
+detailScroll.Parent               = rightPanel
+corner(detailScroll, 6); stroke(detailScroll, T.BORDER, 1)
 
-local DetailText = Instance.new("TextLabel")
-DetailText.Size = UDim2.new(1, -16, 0, 0)
-DetailText.Position = UDim2.new(0, 8, 0, 8)
-DetailText.BackgroundTransparency = 1
-DetailText.Text = "-- No script selected.\n-- Scripts detected under LocalPlayer\n-- will appear in the left panel."
-DetailText.TextColor3 = THEME.SUBTEXT
-DetailText.Font = Enum.Font.RobotoMono
-DetailText.TextSize = 12
-DetailText.TextXAlignment = Enum.TextXAlignment.Left
-DetailText.TextYAlignment = Enum.TextYAlignment.Top
-DetailText.TextWrapped = true
-DetailText.AutomaticSize = Enum.AutomaticSize.Y
-DetailText.Parent = DetailScroll
+local detailTxt = Instance.new("TextLabel")
+detailTxt.Size               = UDim2.new(1,-16,0,0)
+detailTxt.Position           = UDim2.new(0,8,0,8)
+detailTxt.BackgroundTransparency = 1
+detailTxt.Text               = "-- Waiting for game to finish loading...\n-- Once ready, any script injected by a\n-- third-party tool will appear here."
+detailTxt.TextColor3         = T.SUBTEXT
+detailTxt.Font               = Enum.Font.RobotoMono
+detailTxt.TextSize           = 12
+detailTxt.TextXAlignment     = Enum.TextXAlignment.Left
+detailTxt.TextYAlignment     = Enum.TextYAlignment.Top
+detailTxt.TextWrapped        = true
+detailTxt.AutomaticSize      = Enum.AutomaticSize.Y
+detailTxt.Parent             = detailScroll
 
--- Bottom status bar
-local StatusBar = Instance.new("Frame")
-StatusBar.Size = UDim2.new(1, 0, 0, 22)
-StatusBar.Position = UDim2.new(0, 0, 1, -22)
-StatusBar.BackgroundColor3 = THEME.HEADER
-StatusBar.BorderSizePixel = 0
-StatusBar.ZIndex = 5
-StatusBar.Parent = MainFrame
-makeCorner(StatusBar, 0)
+-- ── Status bar ────────────────────────────────────────────────────────────────
+local sbar = Instance.new("Frame")
+sbar.Size             = UDim2.new(1,0,0,22)
+sbar.Position         = UDim2.new(0,0,1,-22)
+sbar.BackgroundColor3 = T.HEADER
+sbar.BorderSizePixel  = 0
+sbar.ZIndex           = 5
+sbar.Parent           = win
 
-local barCoverTop = Instance.new("Frame")
-barCoverTop.Size = UDim2.new(1, 0, 0.5, 0)
-barCoverTop.BackgroundColor3 = THEME.HEADER
-barCoverTop.BorderSizePixel = 0
-barCoverTop.ZIndex = 5
-barCoverTop.Parent = StatusBar
+local sbarTop = Instance.new("Frame")
+sbarTop.Size = UDim2.new(1,0,0.5,0); sbarTop.BackgroundColor3 = T.HEADER
+sbarTop.BorderSizePixel = 0; sbarTop.ZIndex = 5; sbarTop.Parent = sbar
 
-local StatusBarText = makeLabel(StatusBar, "  ⬡  ScriptCapture v1.0  |  Monitoring LocalPlayer ...", 10, THEME.SUBTEXT)
-StatusBarText.Size = UDim2.new(1, 0, 1, 0)
-StatusBarText.ZIndex = 6
+local sbarTxt = lbl(sbar, "  ⏳  Waiting for game to load…", 10, T.SUBTEXT)
+sbarTxt.Size = UDim2.new(1,0,1,0); sbarTxt.ZIndex = 6
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- DRAG LOGIC
+-- DRAG
 -- ─────────────────────────────────────────────────────────────────────────────
 do
-    local dragging = false
-    local dragStart, startPos
-
-    TitleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = MainFrame.Position
+    local drag, ds, sp = false, nil, nil
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            drag=true; ds=i.Position; sp=win.Position
         end
     end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            MainFrame.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
+    UserInputService.InputChanged:Connect(function(i)
+        if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local d = i.Position - ds
+            win.Position = UDim2.new(sp.X.Scale, sp.X.Offset+d.X, sp.Y.Scale, sp.Y.Offset+d.Y)
         end
     end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag=false end
     end)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- MINIMIZE / CLOSE
+-- WINDOW CONTROLS
 -- ─────────────────────────────────────────────────────────────────────────────
-MinBtn.MouseButton1Click:Connect(function()
+minBtn.MouseButton1Click:Connect(function()
     guiVisible = not guiVisible
-    Body.Visible = guiVisible
-    StatusBar.Visible = guiVisible
-    MainFrame.Size = guiVisible
-        and UDim2.new(0, 660, 0, 480)
-        or  UDim2.new(0, 660, 0, 40)
-    MinBtn.Text = guiVisible and "─" or "□"
+    body.Visible = guiVisible
+    sbar.Visible = guiVisible
+    win.Size     = guiVisible and UDim2.new(0,680,0,500) or UDim2.new(0,680,0,42)
+    minBtn.Text  = guiVisible and "─" or "□"
 end)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-    -- clean up connections
-    for _, conn in ipairs(logConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
+closeBtn.MouseButton1Click:Connect(function()
+    for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+    gui:Destroy()
 end)
-
--- ─────────────────────────────────────────────────────────────────────────────
--- LIST ENTRY UI
--- ─────────────────────────────────────────────────────────────────────────────
-local function createListEntry(index, entry)
-    local isEven = (index % 2 == 0)
-
-    local row = Instance.new("TextButton")
-    row.Name = "Entry_" .. index
-    row.Size = UDim2.new(1, 0, 0, 48)
-    row.BackgroundColor3 = isEven and THEME.ENTRY_EVEN or THEME.ENTRY_ODD
-    row.BorderSizePixel = 0
-    row.Text = ""
-    row.AutoButtonColor = false
-    row.Parent = ListScroll
-    makeCorner(row, 5)
-
-    -- Left accent bar
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(0, 3, 0.7, 0)
-    bar.Position = UDim2.new(0, 0, 0.15, 0)
-    bar.BackgroundColor3 = THEME.ACCENT
-    bar.BorderSizePixel = 0
-    bar.Parent = row
-    makeCorner(bar, 2)
-
-    -- Index number
-    local numLabel = makeLabel(row, tostring(index), 10, THEME.ACCENT2)
-    numLabel.Size = UDim2.new(0, 22, 0, 14)
-    numLabel.Position = UDim2.new(0, 8, 0, 4)
-    numLabel.Font = Enum.Font.GothamBold
-    numLabel.TextXAlignment = Enum.TextXAlignment.Center
-
-    -- Script name
-    local nameLabel = makeLabel(row, entry.name, 13, THEME.TEXT)
-    nameLabel.Size = UDim2.new(1, -14, 0, 18)
-    nameLabel.Position = UDim2.new(0, 10, 0, 18)
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-
-    -- Class badge
-    local classBadge = Instance.new("Frame")
-    classBadge.Size = UDim2.new(0, 0, 0, 14)
-    classBadge.Position = UDim2.new(0, 10, 0, 4)
-    classBadge.BackgroundColor3 = Color3.fromRGB(30, 50, 80)
-    classBadge.AutomaticSize = Enum.AutomaticSize.X
-    classBadge.Parent = row
-    makeCorner(classBadge, 4)
-
-    local classLabel = makeLabel(classBadge, " " .. entry.className .. " ", 9, THEME.ACCENT)
-    classLabel.Size = UDim2.new(0, 0, 1, 0)
-    classLabel.AutomaticSize = Enum.AutomaticSize.X
-    classLabel.Font = Enum.Font.GothamBold
-
-    -- Source indicator dot
-    local srcDot = makeLabel(row, entry.source and "⬤" or "○", 9,
-        entry.source and THEME.SUCCESS or THEME.WARNING)
-    srcDot.Size = UDim2.new(0, 12, 0, 12)
-    srcDot.Position = UDim2.new(1, -16, 0, 4)
-
-    -- Select logic
-    local normalBG = isEven and THEME.ENTRY_EVEN or THEME.ENTRY_ODD
-    local function setSelected(sel)
-        if sel then
-            row.BackgroundColor3 = Color3.fromRGB(30, 45, 75)
-            bar.BackgroundColor3 = THEME.ACCENT2
-        else
-            row.BackgroundColor3 = normalBG
-            bar.BackgroundColor3 = THEME.ACCENT
-        end
-    end
-
-    row.MouseButton1Click:Connect(function()
-        -- Deselect previous
-        for _, child in ipairs(ListScroll:GetChildren()) do
-            if child:IsA("TextButton") then
-                local idx = tonumber(child.Name:match("Entry_(%d+)"))
-                if idx then
-                    local even = (idx % 2 == 0)
-                    child.BackgroundColor3 = even and THEME.ENTRY_EVEN or THEME.ENTRY_ODD
-                    local b = child:FindFirstChildOfClass("Frame")
-                    if b then b.BackgroundColor3 = THEME.ACCENT end
-                end
-            end
-        end
-        setSelected(true)
-        selectedIndex = index
-        -- Populate right panel
-        local data = capturedScripts[index]
-        if data then
-            DetailText.Text = buildReport(data)
-            DetailText.TextColor3 = THEME.CODE_TEXT
-            DetailTitle.Text = "📄  " .. data.name
-        end
-    end)
-
-    row.MouseEnter:Connect(function()
-        if selectedIndex ~= index then
-            row.BackgroundColor3 = Color3.fromRGB(28, 32, 52)
-        end
-    end)
-    row.MouseLeave:Connect(function()
-        if selectedIndex ~= index then
-            row.BackgroundColor3 = normalBG
-        end
-    end)
-
-    return row
-end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- COPY BUTTON
 -- ─────────────────────────────────────────────────────────────────────────────
-CopyBtn.MouseButton1Click:Connect(function()
-    if selectedIndex and capturedScripts[selectedIndex] then
-        local report = buildReport(capturedScripts[selectedIndex])
-        local success = copyToClipboard(report)
-        local origText = CopyBtn.Text
-        local origBG   = CopyBtn.BackgroundColor3
-        if success then
-            CopyBtn.Text = "✓  Copied!"
-            CopyBtn.BackgroundColor3 = THEME.SUCCESS
-        else
-            CopyBtn.Text = "✕  No Clipboard"
-            CopyBtn.BackgroundColor3 = THEME.WARNING
-        end
-        task.delay(1.8, function()
-            if CopyBtn and CopyBtn.Parent then
-                CopyBtn.Text = origText
-                CopyBtn.BackgroundColor3 = origBG
-            end
-        end)
-    else
-        CopyBtn.Text = "  Select a script"
-        CopyBtn.BackgroundColor3 = THEME.WARNING
+copyBtn.MouseButton1Click:Connect(function()
+    if not (selectedIdx and captured[selectedIdx]) then
+        copyBtn.Text = "  Select a script"; copyBtn.BackgroundColor3 = T.WARNING
         task.delay(1.5, function()
-            if CopyBtn and CopyBtn.Parent then
-                CopyBtn.Text = "⧉  Copy Report"
-                CopyBtn.BackgroundColor3 = THEME.ACCENT
+            if copyBtn.Parent then
+                copyBtn.Text = "⧉  Copy Report"; copyBtn.BackgroundColor3 = T.ACCENT
             end
         end)
+        return
     end
+    local ok = toClipboard(buildReport(captured[selectedIdx]))
+    copyBtn.Text = ok and "✓  Copied!" or "✕  No Clipboard"
+    copyBtn.BackgroundColor3 = ok and T.SUCCESS or T.WARNING
+    task.delay(2, function()
+        if copyBtn.Parent then
+            copyBtn.Text = "⧉  Copy Report"; copyBtn.BackgroundColor3 = T.ACCENT
+        end
+    end)
 end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- CAPTURE A SCRIPT
+-- CLEAR ALL
 -- ─────────────────────────────────────────────────────────────────────────────
-local function captureScript(script)
-    -- Skip the GUI itself and non-script instances
-    if not (script:IsA("LocalScript") or script:IsA("ModuleScript") or script:IsA("Script")) then
+clearBtn.MouseButton1Click:Connect(function()
+    captured = {}; selectedIdx = nil; cntLbl.Text = "0"
+    for _, c in ipairs(listScroll:GetChildren()) do
+        if c:IsA("TextButton") then c:Destroy() end
+    end
+    detailTxt.Text       = "-- Cleared. Monitoring for new injections…"
+    detailTxt.TextColor3 = T.SUBTEXT
+    detailTitle.Text     = "📄  Select a script"
+end)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- LIST ROW
+-- ─────────────────────────────────────────────────────────────────────────────
+local function addRow(index, entry)
+    local isEven = (index % 2 == 0)
+    local row = Instance.new("TextButton")
+    row.Name              = "R_" .. index
+    row.Size              = UDim2.new(1,0,0,52)
+    row.BackgroundColor3  = isEven and T.ROW_A or T.ROW_B
+    row.BorderSizePixel   = 0
+    row.Text              = ""
+    row.AutoButtonColor   = false
+    row.Parent            = listScroll
+    corner(row, 5)
+
+    -- left danger bar
+    local bar2 = Instance.new("Frame")
+    bar2.Size = UDim2.new(0,3,0.65,0); bar2.Position = UDim2.new(0,0,0.175,0)
+    bar2.BackgroundColor3 = T.DANGER; bar2.BorderSizePixel = 0; bar2.Parent = row
+    corner(bar2, 2)
+
+    -- index badge
+    local ibadge = Instance.new("Frame")
+    ibadge.Size = UDim2.new(0,18,0,14); ibadge.Position = UDim2.new(0,7,0,5)
+    ibadge.BackgroundColor3 = Color3.fromRGB(80,20,20); ibadge.Parent = row
+    corner(ibadge, 4)
+    local inumL = lbl(ibadge, tostring(index), 9, T.DANGER)
+    inumL.Size = UDim2.new(1,0,1,0); inumL.TextXAlignment = Enum.TextXAlignment.Center
+    inumL.Font = Enum.Font.GothamBold
+
+    -- class badge
+    local cbadge = Instance.new("Frame")
+    cbadge.Size = UDim2.new(0,0,0,14); cbadge.Position = UDim2.new(0,30,0,5)
+    cbadge.BackgroundColor3 = Color3.fromRGB(60,40,10); cbadge.AutomaticSize = Enum.AutomaticSize.X
+    cbadge.Parent = row; corner(cbadge, 4)
+    local clbl = lbl(cbadge, " "..entry.className.." ", 9, T.ACCENT2)
+    clbl.Size = UDim2.new(0,0,1,0); clbl.AutomaticSize = Enum.AutomaticSize.X
+    clbl.Font = Enum.Font.GothamBold
+
+    -- name
+    local nlbl = lbl(row, entry.name, 13, T.TEXT)
+    nlbl.Size = UDim2.new(1,-14,0,18); nlbl.Position = UDim2.new(0,8,0,22)
+    nlbl.Font = Enum.Font.GothamBold; nlbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+    -- time stamp
+    local tlbl = lbl(row, entry.time, 9, T.SUBTEXT)
+    tlbl.Size = UDim2.new(0,60,0,12); tlbl.Position = UDim2.new(1,-64,0,36)
+    tlbl.TextXAlignment = Enum.TextXAlignment.Right
+
+    -- src dot
+    local sdot = lbl(row, entry.source and "⬤" or "○", 9, entry.source and T.SUCCESS or T.WARNING)
+    sdot.Size = UDim2.new(0,10,0,10); sdot.Position = UDim2.new(1,-14,0,5)
+
+    -- selection
+    local normalBG = isEven and T.ROW_A or T.ROW_B
+    local function deselAll()
+        for _, ch in ipairs(listScroll:GetChildren()) do
+            if ch:IsA("TextButton") then
+                local n = tonumber(ch.Name:match("R_(%d+)"))
+                if n then ch.BackgroundColor3 = (n%2==0) and T.ROW_A or T.ROW_B end
+            end
+        end
+    end
+
+    row.MouseButton1Click:Connect(function()
+        deselAll()
+        row.BackgroundColor3 = T.ROW_SEL
+        selectedIdx = index
+        local e = captured[index]
+        if e then
+            detailTitle.Text     = "📄  " .. e.name
+            detailTxt.Text       = buildReport(e)
+            detailTxt.TextColor3 = T.CODE_TEXT
+        end
+    end)
+    row.MouseEnter:Connect(function()
+        if selectedIdx ~= index then row.BackgroundColor3 = Color3.fromRGB(25,22,16) end
+    end)
+    row.MouseLeave:Connect(function()
+        if selectedIdx ~= index then row.BackgroundColor3 = normalBG end
+    end)
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CAPTURE (only called AFTER snapshot is taken)
+-- ─────────────────────────────────────────────────────────────────────────────
+local function captureInjected(inst)
+    if not (inst:IsA("LocalScript") or inst:IsA("ModuleScript") or inst:IsA("Script")) then
         return
     end
-    -- Avoid duplicate captures
-    for _, entry in ipairs(capturedScripts) do
-        if entry.instance == script then return end
+    -- Deduplicate
+    for _, e in ipairs(captured) do
+        if e.instance == inst then return end
     end
 
     local entry = {
-        instance  = script,
-        name      = script.Name,
-        className = script.ClassName,
-        path      = getFullPath(script),
-        props     = collectProps(script),
-        source    = tryGetSource(script),
-        time      = os.date("%H:%M:%S"),
+        instance  = inst,
+        name      = inst.Name,
+        className = inst.ClassName,
+        path      = getPath(inst),
+        props     = collectProps(inst),
+        source    = trySource(inst),
+        time      = os.date("%X"),
     }
+    table.insert(captured, entry)
+    local idx = #captured
 
-    table.insert(capturedScripts, entry)
-    local idx = #capturedScripts
-
-    -- Update count badge
-    CountLabel.Text = tostring(idx)
-
-    -- Create list entry
-    createListEntry(idx, entry)
+    cntLbl.Text = tostring(idx)
+    addRow(idx, entry)
 
     -- Flash status bar
-    StatusBarText.Text = string.format(
-        "  ⬡  Captured: %s  |  Total: %d  |  %s",
-        entry.name, idx, entry.time
-    )
-    StatusBarText.TextColor3 = THEME.SUCCESS
-    task.delay(3, function()
-        if StatusBarText and StatusBarText.Parent then
-            StatusBarText.Text = "  ⬡  ScriptCapture v1.0  |  Monitoring LocalPlayer ..."
-            StatusBarText.TextColor3 = THEME.SUBTEXT
+    sbarTxt.Text       = string.format("  ⚠  Injection detected: %s  |  Total: %d  |  %s", entry.name, idx, entry.time)
+    sbarTxt.TextColor3 = T.DANGER
+    task.delay(4, function()
+        if sbarTxt and sbarTxt.Parent then
+            sbarTxt.Text       = "  ✓  Monitoring for injections…"
+            sbarTxt.TextColor3 = T.SUCCESS
         end
     end)
+
+    print(string.format("[InjectionDetector] Caught: %s (%s) @ %s", entry.name, entry.className, entry.path))
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- RECURSIVE SCANNER — scan existing and watch for new scripts
+-- SNAPSHOT + ACTIVATION
 -- ─────────────────────────────────────────────────────────────────────────────
-local function watchInstance(inst)
-    -- Capture existing descendants
-    for _, desc in ipairs(inst:GetDescendants()) do
-        pcall(captureScript, desc)
+--
+-- We wait for the game to fully load, then snapshot EVERY script currently
+-- in the DataModel into a weak-reference set. After that, DescendantAdded
+-- on `game` is the only thing that can add to `captured`.
+--
+task.spawn(function()
+    -- 1. Wait for basic replication to finish
+    if not game:IsLoaded() then
+        game.Loaded:Wait()
     end
-    -- Watch for new descendants
-    local conn = inst.DescendantAdded:Connect(function(desc)
-        task.defer(function()   -- defer so script has time to start
-            pcall(captureScript, desc)
+
+    -- 2. Extra frame buffer so late-loading scripts settle
+    for _ = 1, 10 do RunService.Heartbeat:Wait() end
+
+    -- 3. Build snapshot of all existing scripts
+    local snapshot = {}    -- [instance] = true
+    for _, desc in ipairs(game:GetDescendants()) do
+        if desc:IsA("LuaSourceContainer") then
+            snapshot[desc] = true
+        end
+    end
+    local snapCount = 0
+    for _ in pairs(snapshot) do snapCount = snapCount + 1 end
+
+    -- 4. Mark ready + update UI
+    isReady = true
+
+    pillTxt.Text             = "ARMED"
+    pillDot.TextColor3       = T.SUCCESS
+    pillTxt.TextColor3       = T.SUCCESS
+    pill.BackgroundColor3    = Color3.fromRGB(20, 55, 30)
+
+    sbarTxt.Text       = string.format("  ✓  Monitoring active — %d existing scripts ignored", snapCount)
+    sbarTxt.TextColor3 = T.SUCCESS
+
+    detailTxt.Text       = string.format(
+        "-- Ready.\n-- %d pre-existing scripts have been snapshoted and ignored.\n"..
+        "-- Any new script injected from this point will appear in the list.",
+        snapCount
+    )
+    detailTxt.TextColor3 = T.SUBTEXT
+
+    -- 5. Watch the ENTIRE game tree for new script descendants
+    --    Only fire if the instance is NOT in our snapshot.
+    local conn = game.DescendantAdded:Connect(function(inst)
+        if not isReady then return end
+        if snapshot[inst] then return end   -- was already there at load time
+        -- Small defer so the script has a parent and path set
+        task.defer(function()
+            pcall(captureInjected, inst)
         end)
     end)
-    table.insert(logConnections, conn)
-end
+    table.insert(connections, conn)
 
--- Watch all the common places scripts live under LocalPlayer
-local watchTargets = {
-    PlayerScripts,
-    LocalPlayer:WaitForChild("Backpack"),
-}
-pcall(function()
-    table.insert(watchTargets, LocalPlayer:WaitForChild("Character", 0))
+    print(string.format("[InjectionDetector] Armed. %d existing scripts ignored. Watching for injections…", snapCount))
 end)
-
-for _, target in ipairs(watchTargets) do
-    watchTargets[#watchTargets + 1] = nil   -- prevent double-add
-    pcall(watchInstance, target)
-end
-
--- Also watch the top-level PlayerScripts continuously
-watchInstance(PlayerScripts)
-
--- Watch for character spawns (scripts inside character models)
-local charConn = LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.5) -- give scripts time to load in
-    pcall(watchInstance, char)
-end)
-table.insert(logConnections, charConn)
-
--- Watch PlayerGui for UI scripts
-pcall(function()
-    watchInstance(PlayerGui)
-end)
-
--- ─────────────────────────────────────────────────────────────────────────────
--- ALSO DETECT THIS SCRIPT ITSELF
--- ─────────────────────────────────────────────────────────────────────────────
-task.defer(function()
-    local thisScript = script
-    if thisScript then
-        pcall(captureScript, thisScript)
-    end
-end)
-
--- ─────────────────────────────────────────────────────────────────────────────
--- DONE
--- ─────────────────────────────────────────────────────────────────────────────
-print("[ScriptCapture] GUI loaded. Monitoring LocalPlayer for executed scripts.")
