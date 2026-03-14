@@ -11,7 +11,7 @@ local localPlayer = Players.LocalPlayer
 
 -- ── CONFIG ────────────────────────────────────────────────────
 local TARGET_NAME   = "62_AM"  -- ← target's exact username
-local HEIGHT_OFFSET = 5                        -- studs above their HumanoidRootPart
+local HEIGHT_OFFSET = 1                        -- studs above their HumanoidRootPart
 -- ─────────────────────────────────────────────────────────────
 
 local heartbeatConn: RBXScriptConnection? = nil
