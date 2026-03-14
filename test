@@ -1,454 +1,320 @@
---[[ test
+--[[
     ╔══════════════════════════════════════════════════════════════╗
-    ║            ScriptCapture — Injection Detector               ║
-    ║  Detects scripts injected AFTER the game finishes loading.  ║
-    ║  Ignores all scripts already present on the client.         ║
+    ║           InjectionDetector v3 — LocalScript                ║
     ╚══════════════════════════════════════════════════════════════╝
 
-    HOW IT WORKS:
-      1. Waits for the game to fully load (ContentProvider + replication).
-      2. Takes a snapshot of every script instance already in the game tree.
-      3. From that point on, ONLY scripts that are NEW (not in the snapshot)
-         will be captured — i.e. scripts injected by a third-party executor
-         or remote injection after load time.
-      4. Captures name, class, full path, properties, source (if accessible),
-         and the exact timestamp of injection.
-
-    PLACE THIS IN: StarterPlayerScripts  (or execute via an executor)
+    FIXES vs previous version:
+      • Health / Animate / other character scripts are now correctly
+        ignored — the character snapshot is taken on each spawn BEFORE
+        any new-descendant events are processed.
+      • Executor-injected scripts that never touch the DataModel are
+        now caught via hooks on loadstring / require / ScriptContext
+        if the executor exposes hookfunction / hookmetamethod.
+      • Watches CoreGui, workspace, and all extra executor drop zones.
+      • "Known Roblox default" name filter as a last-resort safety net.
 --]]
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- SERVICES
+-- SERVICES & REFS
 -- ─────────────────────────────────────────────────────────────────────────────
-local Players             = game:GetService("Players")
-local RunService          = game:GetService("RunService")
-local ContentProvider     = game:GetService("ContentProvider")
-local UserInputService    = game:GetService("UserInputService")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ScriptContext    = game:GetService("ScriptContext")
 
-local LocalPlayer         = Players.LocalPlayer
-local PlayerGui           = LocalPlayer:WaitForChild("PlayerGui")
+local LocalPlayer  = Players.LocalPlayer
+local PlayerGui    = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ROBLOX DEFAULT SCRIPT NAMES TO ALWAYS IGNORE
+-- (character model scripts that Roblox inserts at runtime)
+-- ─────────────────────────────────────────────────────────────────────────────
+local ROBLOX_DEFAULTS = {
+    ["Animate"]                = true,
+    ["Health"]                 = true,
+    ["RbxCharacterSounds"]     = true,
+    ["HumanoidDescription"]    = true,
+    ["BodyColors"]             = true,
+    ["CharacterMesh"]          = true,
+    ["Shirt"]                  = true,
+    ["Pants"]                  = true,
+    ["ShirtGraphic"]           = true,
+    ["Sound"]                  = true,
+    ["R15AnimationWeightTracker"] = true,
+    ["AvatarPartScaleType"]    = true,
+}
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- THEME
 -- ─────────────────────────────────────────────────────────────────────────────
 local T = {
-    BG          = Color3.fromRGB(10,  11,  17),
-    PANEL       = Color3.fromRGB(16,  18,  28),
-    HEADER      = Color3.fromRGB(20,  23,  38),
-    ACCENT      = Color3.fromRGB(255, 130,  60),   -- orange — "alert" feel
-    ACCENT2     = Color3.fromRGB(255, 200,  80),   -- yellow
-    SUCCESS     = Color3.fromRGB(80,  220, 140),
-    WARNING     = Color3.fromRGB(255, 195,  80),
-    DANGER      = Color3.fromRGB(255,  75,  75),
-    TEXT        = Color3.fromRGB(225, 228, 240),
-    SUBTEXT     = Color3.fromRGB(120, 130, 160),
-    BORDER      = Color3.fromRGB(40,  46,  70),
-    CODE_BG     = Color3.fromRGB(8,   9,   14),
-    CODE_TEXT   = Color3.fromRGB(200, 220, 255),
-    ROW_A       = Color3.fromRGB(18,  21,  33),
-    ROW_B       = Color3.fromRGB(14,  16,  26),
-    ROW_SEL     = Color3.fromRGB(45,  32,  14),
+    BG      = Color3.fromRGB(10, 11, 17),
+    PANEL   = Color3.fromRGB(16, 18, 28),
+    HEADER  = Color3.fromRGB(20, 23, 38),
+    ACCENT  = Color3.fromRGB(255, 130, 60),
+    ACCENT2 = Color3.fromRGB(255, 200, 80),
+    SUCCESS = Color3.fromRGB(80, 220, 140),
+    WARNING = Color3.fromRGB(255, 195, 80),
+    DANGER  = Color3.fromRGB(255, 75, 75),
+    TEXT    = Color3.fromRGB(225, 228, 240),
+    SUB     = Color3.fromRGB(120, 130, 160),
+    BORDER  = Color3.fromRGB(40, 46, 70),
+    CODE_BG = Color3.fromRGB(8, 9, 14),
+    CODE_TX = Color3.fromRGB(200, 220, 255),
+    ROW_A   = Color3.fromRGB(18, 21, 33),
+    ROW_B   = Color3.fromRGB(14, 16, 26),
+    ROW_SEL = Color3.fromRGB(45, 32, 14),
 }
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- STATE
 -- ─────────────────────────────────────────────────────────────────────────────
-local captured      = {}        -- array of capture entries
-local selectedIdx   = nil
-local connections   = {}
-local guiVisible    = true
-local isReady       = false     -- set true once snapshot is taken
+local captured    = {}
+local snapshot    = {}   -- [instance] = true
+local selectedIdx = nil
+local conns       = {}
+local guiVisible  = true
+local armed       = false
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- UTILITIES
+-- UTILS
 -- ─────────────────────────────────────────────────────────────────────────────
-local function getPath(inst)
-    local p = {}
-    local c = inst
-    while c and c ~= game do
-        table.insert(p, 1, c.Name)
-        c = c.Parent
-    end
+local function getPath(i)
+    local p, c = {}, i
+    while c and c ~= game do table.insert(p, 1, c.Name); c = c.Parent end
     return table.concat(p, " > ")
 end
 
 local function trySource(s)
-    local ok, src = pcall(function() return s.Source end)
-    if ok and type(src) == "string" and #src > 0 then return src end
+    local ok, r = pcall(function() return s.Source end)
+    if ok and type(r) == "string" and #r > 0 then return r end
     if type(decompile) == "function" then
         local ok2, d = pcall(decompile, s)
-        if ok2 and type(d) == "string" and #d > 0 then
-            return "-- [DECOMPILED]\n" .. d
-        end
+        if ok2 and type(d) == "string" and #d > 0 then return "-- [DECOMPILED]\n"..d end
     end
     return nil
 end
 
 local function collectProps(s)
-    local props, keys = {}, {"Name","ClassName","Disabled","RunContext","LinkedSource","ScriptGuid"}
-    for _, k in ipairs(keys) do
+    local out = {}
+    for _, k in ipairs({"Name","ClassName","Disabled","RunContext","LinkedSource","ScriptGuid"}) do
         local ok, v = pcall(function() return s[k] end)
-        if ok then props[k] = tostring(v) end
+        if ok then out[k] = tostring(v) end
     end
-    return props
+    return out
 end
 
+local function snapAdd(inst)
+    -- Recursively add inst + all its LuaSourceContainer descendants to snapshot
+    if inst:IsA("LuaSourceContainer") then snapshot[inst] = true end
+    for _, d in ipairs(inst:GetDescendants()) do
+        if d:IsA("LuaSourceContainer") then snapshot[d] = true end
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- REPORT BUILDER
+-- ─────────────────────────────────────────────────────────────────────────────
 local function buildReport(e)
     local L = {}
     local function ln(s) table.insert(L, s or "") end
     ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     ln("  INJECTION CAPTURE REPORT")
-    ln("  Detected at: " .. e.time)
+    ln("  Detected at : " .. e.time)
+    ln("  Method      : " .. e.method)
     ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    ln()
-    ln("[ IDENTITY ]")
+    ln(); ln("[ IDENTITY ]")
     ln("  Name      : " .. tostring(e.name))
     ln("  ClassName : " .. tostring(e.className))
     ln("  Path      : " .. tostring(e.path))
-    ln()
-    ln("[ PROPERTIES ]")
+    ln(); ln("[ PROPERTIES ]")
     for k, v in pairs(e.props) do
         if k ~= "Name" and k ~= "ClassName" then
             ln(string.format("  %-16s: %s", k, v))
         end
     end
     ln()
-    if e.source then
-        ln("[ INJECTED SOURCE CODE ]")
-        ln()
+    if e.source and #e.source > 0 then
+        ln("[ SOURCE / BYTECODE ]"); ln()
         ln(e.source)
     else
-        ln("[ INJECTED SOURCE CODE ]")
-        ln()
-        ln("-- Source not readable in this environment.")
-        ln("-- Use an executor with decompile() to capture source.")
+        ln("[ SOURCE / BYTECODE ]"); ln()
+        ln("-- Source not readable.")
+        ln("-- Executor with decompile() required for full source.")
     end
-    ln()
-    ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    ln(); ln("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     return table.concat(L, "\n")
 end
 
-local function toClipboard(text)
-    if type(setclipboard) == "function" then pcall(setclipboard, text); return true end
-    if type(toclipboard)  == "function" then pcall(toclipboard,  text); return true end
+local function toClip(t)
+    if type(setclipboard) == "function" then pcall(setclipboard, t); return true end
+    if type(toclipboard)  == "function" then pcall(toclipboard,  t); return true end
     return false
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- GUI HELPERS
 -- ─────────────────────────────────────────────────────────────────────────────
-local function corner(p, r)  local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,r or 6); c.Parent=p; return c end
-local function stroke(p, c, t) local s=Instance.new("UIStroke"); s.Color=c or T.BORDER; s.Thickness=t or 1; s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=p; return s end
-local function pad(p, a)     local u=Instance.new("UIPadding"); u.PaddingTop=UDim.new(0,a); u.PaddingBottom=UDim.new(0,a); u.PaddingLeft=UDim.new(0,a); u.PaddingRight=UDim.new(0,a); u.Parent=p end
+local function corner(p, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 6); c.Parent = p end
+local function stroke(p, c, t) local s = Instance.new("UIStroke"); s.Color = c or T.BORDER; s.Thickness = t or 1; s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = p end
+local function pad(p, a) local u = Instance.new("UIPadding"); u.PaddingTop = UDim.new(0,a); u.PaddingBottom = UDim.new(0,a); u.PaddingLeft = UDim.new(0,a); u.PaddingRight = UDim.new(0,a); u.Parent = p end
 local function lbl(p, txt, sz, col, ax)
-    local l=Instance.new("TextLabel"); l.BackgroundTransparency=1; l.Text=txt
-    l.TextSize=sz or 13; l.TextColor3=col or T.TEXT; l.Font=Enum.Font.Gotham
-    l.TextXAlignment=ax or Enum.TextXAlignment.Left; l.TextWrapped=true; l.Parent=p; return l
+    local l = Instance.new("TextLabel"); l.BackgroundTransparency = 1; l.Text = txt
+    l.TextSize = sz or 13; l.TextColor3 = col or T.TEXT; l.Font = Enum.Font.Gotham
+    l.TextXAlignment = ax or Enum.TextXAlignment.Left; l.TextWrapped = true; l.Parent = p; return l
 end
 local function btn(p, txt, sz, bg, tc)
-    local b=Instance.new("TextButton"); b.BackgroundColor3=bg or T.ACCENT
-    b.TextColor3=tc or T.BG; b.Text=txt; b.TextSize=sz or 13
-    b.Font=Enum.Font.GothamBold; b.AutoButtonColor=false; b.BorderSizePixel=0; b.Parent=p
+    local b = Instance.new("TextButton"); b.BackgroundColor3 = bg or T.ACCENT
+    b.TextColor3 = tc or T.BG; b.Text = txt; b.TextSize = sz or 13
+    b.Font = Enum.Font.GothamBold; b.AutoButtonColor = false; b.BorderSizePixel = 0; b.Parent = p
     corner(b, 5)
     local orig = bg or T.ACCENT
-    b.MouseEnter:Connect(function() b.BackgroundColor3=Color3.new(math.min(orig.R+0.1,1),math.min(orig.G+0.1,1),math.min(orig.B+0.1,1)) end)
-    b.MouseLeave:Connect(function() b.BackgroundColor3=orig end)
+    b.MouseEnter:Connect(function() b.BackgroundColor3 = Color3.new(math.min(orig.R+0.1,1), math.min(orig.G+0.1,1), math.min(orig.B+0.1,1)) end)
+    b.MouseLeave:Connect(function() b.BackgroundColor3 = orig end)
     return b
+end
+local function hdrBlock(parent, color)
+    -- A header frame with covered bottom corners
+    local f = Instance.new("Frame"); f.Size = UDim2.new(1,0,0,34); f.BackgroundColor3 = color or T.HEADER; f.BorderSizePixel = 0; f.Parent = parent; corner(f, 8)
+    local fill = Instance.new("Frame"); fill.Size = UDim2.new(1,0,0.5,0); fill.Position = UDim2.new(0,0,0.5,0); fill.BackgroundColor3 = color or T.HEADER; fill.BorderSizePixel = 0; fill.Parent = f
+    return f
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- BUILD GUI
 -- ─────────────────────────────────────────────────────────────────────────────
 pcall(function()
-    if PlayerGui:FindFirstChild("InjectionCaptureGUI") then
-        PlayerGui.InjectionCaptureGUI:Destroy()
-    end
+    if PlayerGui:FindFirstChild("InjDetectGUI") then PlayerGui.InjDetectGUI:Destroy() end
 end)
 
 local gui = Instance.new("ScreenGui")
-gui.Name            = "InjectionCaptureGUI"
-gui.ResetOnSpawn    = false
-gui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-gui.DisplayOrder    = 9999
-gui.Parent          = PlayerGui
+gui.Name = "InjDetectGUI"; gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; gui.DisplayOrder = 9999
+gui.Parent = PlayerGui
 
--- ── Main Window ──────────────────────────────────────────────────────────────
+-- Window
 local win = Instance.new("Frame")
-win.Name              = "Win"
-win.Size              = UDim2.new(0, 680, 0, 500)
-win.Position          = UDim2.new(0.5, -340, 0.5, -250)
-win.BackgroundColor3  = T.BG
-win.BorderSizePixel   = 0
-win.Parent            = gui
-corner(win, 10)
-stroke(win, T.BORDER, 1.5)
+win.Name = "Win"; win.Size = UDim2.new(0,700,0,510)
+win.Position = UDim2.new(0.5,-350,0.5,-255)
+win.BackgroundColor3 = T.BG; win.BorderSizePixel = 0; win.Parent = gui
+corner(win, 10); stroke(win, T.BORDER, 1.5)
 
--- ── Title Bar ────────────────────────────────────────────────────────────────
-local bar = Instance.new("Frame")
-bar.Size             = UDim2.new(1, 0, 0, 42)
-bar.BackgroundColor3 = T.HEADER
-bar.BorderSizePixel  = 0
-bar.Parent           = win
-corner(bar, 10)
+-- Title bar
+local tbar = Instance.new("Frame")
+tbar.Size = UDim2.new(1,0,0,42); tbar.BackgroundColor3 = T.HEADER; tbar.BorderSizePixel = 0; tbar.Parent = win; corner(tbar, 10)
+local tbarFill = Instance.new("Frame"); tbarFill.Size = UDim2.new(1,0,0.5,0); tbarFill.Position = UDim2.new(0,0,0.5,0); tbarFill.BackgroundColor3 = T.HEADER; tbarFill.BorderSizePixel = 0; tbarFill.Parent = tbar
 
--- cover bottom-half corners
-local barFill = Instance.new("Frame")
-barFill.Size            = UDim2.new(1, 0, 0.5, 0)
-barFill.Position        = UDim2.new(0, 0, 0.5, 0)
-barFill.BackgroundColor3= T.HEADER
-barFill.BorderSizePixel = 0
-barFill.Parent          = bar
+-- accent line
+local aline = Instance.new("Frame"); aline.Size = UDim2.new(1,0,0,2); aline.Position = UDim2.new(0,0,1,-2); aline.BackgroundColor3 = T.ACCENT; aline.BorderSizePixel = 0; aline.Parent = tbar
+local ag = Instance.new("UIGradient"); ag.Color = ColorSequence.new({ColorSequenceKeypoint.new(0,T.ACCENT), ColorSequenceKeypoint.new(0.5,T.ACCENT2), ColorSequenceKeypoint.new(1,T.ACCENT)}); ag.Parent = aline
 
--- accent gradient line
-local aline = Instance.new("Frame")
-aline.Size           = UDim2.new(1, 0, 0, 2)
-aline.Position       = UDim2.new(0, 0, 1, -2)
-aline.BackgroundColor3 = T.ACCENT
-aline.BorderSizePixel = 0
-aline.Parent         = bar
-do
-    local g = Instance.new("UIGradient")
-    g.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0,   T.ACCENT),
-        ColorSequenceKeypoint.new(0.5, T.ACCENT2),
-        ColorSequenceKeypoint.new(1,   T.ACCENT),
-    })
-    g.Parent = aline
-end
+lbl(tbar, "⚠", 18, T.ACCENT).Size = UDim2.new(0,28,1,0); -- icon positioned via next line
+local icoL = tbar:FindFirstChildOfClass("TextLabel"); icoL.Position = UDim2.new(0,10,0,0); icoL.TextXAlignment = Enum.TextXAlignment.Center
 
--- icon + title
-local ico = lbl(bar, "⚠", 18, T.ACCENT)
-ico.Size = UDim2.new(0, 28, 1, 0); ico.Position = UDim2.new(0, 10, 0, 0)
-ico.TextXAlignment = Enum.TextXAlignment.Center
+local titleL = lbl(tbar, "Injection Detector", 15, T.TEXT); titleL.Font = Enum.Font.GothamBold; titleL.Size = UDim2.new(0,165,1,0); titleL.Position = UDim2.new(0,42,0,0)
+lbl(tbar, "v3 — Post-load Script Monitor", 11, T.SUB).Size = UDim2.new(0,200,1,0)
+local subL = tbar:GetChildren()[#tbar:GetChildren()]; subL.Position = UDim2.new(0,210,0,0)
 
-local titleLbl = lbl(bar, "Injection Detector", 15, T.TEXT)
-titleLbl.Size = UDim2.new(0, 160, 1, 0); titleLbl.Position = UDim2.new(0, 42, 0, 0)
-titleLbl.Font = Enum.Font.GothamBold
+-- status pill
+local pill = Instance.new("Frame"); pill.Size = UDim2.new(0,108,0,22); pill.Position = UDim2.new(1,-196,0.5,-11); pill.BackgroundColor3 = Color3.fromRGB(60,30,15); pill.Parent = tbar; corner(pill,11)
+local pillDot = lbl(pill,"●",9,T.WARNING); pillDot.Size = UDim2.new(0,14,1,0); pillDot.Position = UDim2.new(0,5,0,0); pillDot.TextXAlignment = Enum.TextXAlignment.Center
+local pillTxt = lbl(pill,"WAITING…",9,T.WARNING); pillTxt.Size = UDim2.new(1,-20,1,0); pillTxt.Position = UDim2.new(0,19,0,0); pillTxt.Font = Enum.Font.GothamBold
 
-local subLbl = lbl(bar, "Post-load Script Monitor", 11, T.SUBTEXT)
-subLbl.Size = UDim2.new(0, 180, 1, 0); subLbl.Position = UDim2.new(0, 205, 0, 0)
+-- window controls
+local minBtn   = btn(tbar,"─",12,Color3.fromRGB(45,50,70),T.TEXT); minBtn.Size = UDim2.new(0,26,0,20); minBtn.Position = UDim2.new(1,-58,0.5,-10)
+local closeBtn = btn(tbar,"✕",12,Color3.fromRGB(160,40,40),T.TEXT); closeBtn.Size = UDim2.new(0,26,0,20); closeBtn.Position = UDim2.new(1,-28,0.5,-10)
 
--- ── Status pill ──────────────────────────────────────────────────────────────
-local pill = Instance.new("Frame")
-pill.Size            = UDim2.new(0, 100, 0, 22)
-pill.Position        = UDim2.new(1, -185, 0.5, -11)
-pill.BackgroundColor3 = Color3.fromRGB(60, 30, 15)
-pill.Parent          = bar
-corner(pill, 11)
+-- body
+local body = Instance.new("Frame"); body.Size = UDim2.new(1,0,1,-42); body.Position = UDim2.new(0,0,0,42); body.BackgroundTransparency = 1; body.Parent = win
 
-local pillDot = lbl(pill, "●", 9, T.WARNING)
-pillDot.Size = UDim2.new(0, 14, 1, 0); pillDot.Position = UDim2.new(0, 5, 0, 0)
-pillDot.TextXAlignment = Enum.TextXAlignment.Center
+-- LEFT PANEL
+local lp = Instance.new("Frame"); lp.Size = UDim2.new(0,220,1,-10); lp.Position = UDim2.new(0,6,0,5); lp.BackgroundColor3 = T.PANEL; lp.BorderSizePixel = 0; lp.Parent = body; corner(lp,8); stroke(lp,T.BORDER,1)
 
-local pillTxt = lbl(pill, "WAITING…", 9, T.WARNING)
-pillTxt.Size = UDim2.new(1, -20, 1, 0); pillTxt.Position = UDim2.new(0, 19, 0, 0)
-pillTxt.Font = Enum.Font.GothamBold
+local lhdr = hdrBlock(lp)
+local lhdrTxt = lbl(lhdr,"🔍  Injections Caught",12,T.ACCENT); lhdrTxt.Font = Enum.Font.GothamBold; lhdrTxt.Size = UDim2.new(1,-36,1,0); lhdrTxt.Position = UDim2.new(0,10,0,0)
+local cntBadge = Instance.new("Frame"); cntBadge.Size = UDim2.new(0,26,0,16); cntBadge.Position = UDim2.new(1,-30,0.5,-8); cntBadge.BackgroundColor3 = T.DANGER; cntBadge.Parent = lhdr; corner(cntBadge,8)
+local cntLbl = lbl(cntBadge,"0",10,Color3.new(1,1,1)); cntLbl.Size = UDim2.new(1,0,1,0); cntLbl.TextXAlignment = Enum.TextXAlignment.Center; cntLbl.Font = Enum.Font.GothamBold
 
--- ── Window controls ──────────────────────────────────────────────────────────
-local minBtn   = btn(bar, "─", 12, Color3.fromRGB(45,50,70), T.TEXT)
-minBtn.Size    = UDim2.new(0, 26, 0, 20); minBtn.Position = UDim2.new(1,-58, 0.5,-10)
-
-local closeBtn = btn(bar, "✕", 12, Color3.fromRGB(160,40,40), T.TEXT)
-closeBtn.Size  = UDim2.new(0, 26, 0, 20); closeBtn.Position = UDim2.new(1,-28, 0.5,-10)
-
--- ── Body ─────────────────────────────────────────────────────────────────────
-local body = Instance.new("Frame")
-body.Size               = UDim2.new(1, 0, 1, -42)
-body.Position           = UDim2.new(0, 0, 0, 42)
-body.BackgroundTransparency = 1
-body.Parent             = win
-
--- ── Left: list panel ─────────────────────────────────────────────────────────
-local leftPanel = Instance.new("Frame")
-leftPanel.Size            = UDim2.new(0, 215, 1, -10)
-leftPanel.Position        = UDim2.new(0, 6,  0, 5)
-leftPanel.BackgroundColor3 = T.PANEL
-leftPanel.BorderSizePixel = 0
-leftPanel.Parent          = body
-corner(leftPanel, 8); stroke(leftPanel, T.BORDER, 1)
-
-local lhdr = Instance.new("Frame")
-lhdr.Size             = UDim2.new(1,0,0,34)
-lhdr.BackgroundColor3 = T.HEADER
-lhdr.BorderSizePixel  = 0
-lhdr.Parent           = leftPanel
-corner(lhdr, 8)
-
-local lhdrFill = Instance.new("Frame")
-lhdrFill.Size = UDim2.new(1,0,0.5,0); lhdrFill.Position = UDim2.new(0,0,0.5,0)
-lhdrFill.BackgroundColor3 = T.HEADER; lhdrFill.BorderSizePixel = 0
-lhdrFill.Parent = lhdr
-
-local lhdrTxt = lbl(lhdr, "🔍  Injected Scripts", 12, T.ACCENT)
-lhdrTxt.Size = UDim2.new(1,-36,1,0); lhdrTxt.Position = UDim2.new(0,10,0,0)
-lhdrTxt.Font = Enum.Font.GothamBold
-
-local cntBadge = Instance.new("Frame")
-cntBadge.Size = UDim2.new(0,26,0,16); cntBadge.Position = UDim2.new(1,-30,0.5,-8)
-cntBadge.BackgroundColor3 = T.DANGER; cntBadge.Parent = lhdr
-corner(cntBadge, 8)
-
-local cntLbl = lbl(cntBadge, "0", 10, Color3.new(1,1,1))
-cntLbl.Size = UDim2.new(1,0,1,0); cntLbl.TextXAlignment = Enum.TextXAlignment.Center
-cntLbl.Font = Enum.Font.GothamBold
-
-local listScroll = Instance.new("ScrollingFrame")
-listScroll.Size                 = UDim2.new(1,-2,1,-38)
-listScroll.Position             = UDim2.new(0,1,0,36)
-listScroll.BackgroundTransparency = 1
-listScroll.BorderSizePixel      = 0
-listScroll.ScrollBarThickness   = 4
-listScroll.ScrollBarImageColor3 = T.ACCENT
-listScroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
-listScroll.CanvasSize           = UDim2.new(0,0,0,0)
-listScroll.Parent               = leftPanel
-local ll = Instance.new("UIListLayout"); ll.Padding = UDim.new(0,2); ll.Parent = listScroll
+local listScroll = Instance.new("ScrollingFrame"); listScroll.Size = UDim2.new(1,-2,1,-38); listScroll.Position = UDim2.new(0,1,0,36); listScroll.BackgroundTransparency = 1; listScroll.BorderSizePixel = 0; listScroll.ScrollBarThickness = 4; listScroll.ScrollBarImageColor3 = T.ACCENT; listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; listScroll.CanvasSize = UDim2.new(0,0,0,0); listScroll.Parent = lp
+Instance.new("UIListLayout").Parent = listScroll; listScroll:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0,2)
 pad(listScroll, 4)
 
--- ── Right: detail panel ───────────────────────────────────────────────────────
-local rightPanel = Instance.new("Frame")
-rightPanel.Size            = UDim2.new(1,-229,1,-10)
-rightPanel.Position        = UDim2.new(0,227,0,5)
-rightPanel.BackgroundColor3 = T.PANEL
-rightPanel.BorderSizePixel = 0
-rightPanel.Parent          = body
-corner(rightPanel, 8); stroke(rightPanel, T.BORDER, 1)
+-- RIGHT PANEL
+local rp = Instance.new("Frame"); rp.Size = UDim2.new(1,-234,1,-10); rp.Position = UDim2.new(0,232,0,5); rp.BackgroundColor3 = T.PANEL; rp.BorderSizePixel = 0; rp.Parent = body; corner(rp,8); stroke(rp,T.BORDER,1)
 
-local rhdr = Instance.new("Frame")
-rhdr.Size             = UDim2.new(1,0,0,34)
-rhdr.BackgroundColor3 = T.HEADER
-rhdr.BorderSizePixel  = 0
-rhdr.Parent           = rightPanel
-corner(rhdr, 8)
+local rhdr = hdrBlock(rp)
+local detailTitleL = lbl(rhdr,"📄  Select a detection",12,T.ACCENT); detailTitleL.Font = Enum.Font.GothamBold; detailTitleL.Size = UDim2.new(0.55,0,1,0); detailTitleL.Position = UDim2.new(0,10,0,0)
+local copyBtn  = btn(rhdr,"⧉  Copy",11,T.ACCENT,T.BG);   copyBtn.Size  = UDim2.new(0,76,0,22); copyBtn.Position  = UDim2.new(1,-168,0.5,-11)
+local clearBtn = btn(rhdr,"🗑  Clear",10,Color3.fromRGB(100,25,25),T.TEXT); clearBtn.Size = UDim2.new(0,76,0,22); clearBtn.Position = UDim2.new(1,-86,0.5,-11)
 
-local rhdrFill = Instance.new("Frame")
-rhdrFill.Size = UDim2.new(1,0,0.5,0); rhdrFill.Position = UDim2.new(0,0,0.5,0)
-rhdrFill.BackgroundColor3 = T.HEADER; rhdrFill.BorderSizePixel = 0
-rhdrFill.Parent = rhdr
+local ds = Instance.new("ScrollingFrame"); ds.Size = UDim2.new(1,-8,1,-44); ds.Position = UDim2.new(0,4,0,40); ds.BackgroundColor3 = T.CODE_BG; ds.BorderSizePixel = 0; ds.ScrollBarThickness = 4; ds.ScrollBarImageColor3 = T.ACCENT; ds.AutomaticCanvasSize = Enum.AutomaticSize.Y; ds.CanvasSize = UDim2.new(0,0,0,0); ds.Parent = rp; corner(ds,6); stroke(ds,T.BORDER,1)
+local dText = Instance.new("TextLabel"); dText.Size = UDim2.new(1,-16,0,0); dText.Position = UDim2.new(0,8,0,8); dText.BackgroundTransparency = 1; dText.Text = "-- Waiting for game to load…\n-- Pre-existing and character scripts will be ignored.\n-- Scripts injected after load will appear here."; dText.TextColor3 = T.SUB; dText.Font = Enum.Font.RobotoMono; dText.TextSize = 12; dText.TextXAlignment = Enum.TextXAlignment.Left; dText.TextYAlignment = Enum.TextYAlignment.Top; dText.TextWrapped = true; dText.AutomaticSize = Enum.AutomaticSize.Y; dText.Parent = ds
 
-local detailTitle = lbl(rhdr, "📄  Select a script", 12, T.ACCENT)
-detailTitle.Size = UDim2.new(0.6,0,1,0); detailTitle.Position = UDim2.new(0,10,0,0)
-detailTitle.Font = Enum.Font.GothamBold
-
-local copyBtn = btn(rhdr, "⧉  Copy Report", 11, T.ACCENT, T.BG)
-copyBtn.Size = UDim2.new(0,112,0,22); copyBtn.Position = UDim2.new(1,-120,0.5,-11)
-
-local clearBtn = btn(rightPanel, "🗑  Clear All", 10, Color3.fromRGB(100,25,25), T.TEXT)
-clearBtn.Size = UDim2.new(0,90,0,20); clearBtn.Position = UDim2.new(1,-96,0,8)
-
-local detailScroll = Instance.new("ScrollingFrame")
-detailScroll.Size                 = UDim2.new(1,-8,1,-44)
-detailScroll.Position             = UDim2.new(0,4,0,40)
-detailScroll.BackgroundColor3     = T.CODE_BG
-detailScroll.BorderSizePixel      = 0
-detailScroll.ScrollBarThickness   = 4
-detailScroll.ScrollBarImageColor3 = T.ACCENT
-detailScroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
-detailScroll.CanvasSize           = UDim2.new(0,0,0,0)
-detailScroll.Parent               = rightPanel
-corner(detailScroll, 6); stroke(detailScroll, T.BORDER, 1)
-
-local detailTxt = Instance.new("TextLabel")
-detailTxt.Size               = UDim2.new(1,-16,0,0)
-detailTxt.Position           = UDim2.new(0,8,0,8)
-detailTxt.BackgroundTransparency = 1
-detailTxt.Text               = "-- Waiting for game to finish loading...\n-- Once ready, any script injected by a\n-- third-party tool will appear here."
-detailTxt.TextColor3         = T.SUBTEXT
-detailTxt.Font               = Enum.Font.RobotoMono
-detailTxt.TextSize           = 12
-detailTxt.TextXAlignment     = Enum.TextXAlignment.Left
-detailTxt.TextYAlignment     = Enum.TextYAlignment.Top
-detailTxt.TextWrapped        = true
-detailTxt.AutomaticSize      = Enum.AutomaticSize.Y
-detailTxt.Parent             = detailScroll
-
--- ── Status bar ────────────────────────────────────────────────────────────────
-local sbar = Instance.new("Frame")
-sbar.Size             = UDim2.new(1,0,0,22)
-sbar.Position         = UDim2.new(0,0,1,-22)
-sbar.BackgroundColor3 = T.HEADER
-sbar.BorderSizePixel  = 0
-sbar.ZIndex           = 5
-sbar.Parent           = win
-
-local sbarTop = Instance.new("Frame")
-sbarTop.Size = UDim2.new(1,0,0.5,0); sbarTop.BackgroundColor3 = T.HEADER
-sbarTop.BorderSizePixel = 0; sbarTop.ZIndex = 5; sbarTop.Parent = sbar
-
-local sbarTxt = lbl(sbar, "  ⏳  Waiting for game to load…", 10, T.SUBTEXT)
-sbarTxt.Size = UDim2.new(1,0,1,0); sbarTxt.ZIndex = 6
+-- Status bar
+local sbar = Instance.new("Frame"); sbar.Size = UDim2.new(1,0,0,22); sbar.Position = UDim2.new(0,0,1,-22); sbar.BackgroundColor3 = T.HEADER; sbar.BorderSizePixel = 0; sbar.ZIndex = 5; sbar.Parent = win
+Instance.new("Frame", sbar).Size = UDim2.new(1,0,0.5,0); sbar:GetChildren()[1].BackgroundColor3 = T.HEADER; sbar:GetChildren()[1].BorderSizePixel = 0; sbar:GetChildren()[1].ZIndex = 5
+local sbarTxt = lbl(sbar,"  ⏳  Waiting for game to load…",10,T.SUB); sbarTxt.Size = UDim2.new(1,0,1,0); sbarTxt.ZIndex = 6
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- DRAG
 -- ─────────────────────────────────────────────────────────────────────────────
 do
-    local drag, ds, sp = false, nil, nil
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then
-            drag=true; ds=i.Position; sp=win.Position
-        end
+    local dragging, ds2, sp = false
+    tbar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging=true; ds2=i.Position; sp=win.Position end
     end)
     UserInputService.InputChanged:Connect(function(i)
-        if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
-            local d = i.Position - ds
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local d = i.Position - ds2
             win.Position = UDim2.new(sp.X.Scale, sp.X.Offset+d.X, sp.Y.Scale, sp.Y.Offset+d.Y)
         end
     end)
     UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag=false end
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging=false end
     end)
 end
 
--- ─────────────────────────────────────────────────────────────────────────────
--- WINDOW CONTROLS
--- ─────────────────────────────────────────────────────────────────────────────
 minBtn.MouseButton1Click:Connect(function()
-    guiVisible = not guiVisible
-    body.Visible = guiVisible
-    sbar.Visible = guiVisible
-    win.Size     = guiVisible and UDim2.new(0,680,0,500) or UDim2.new(0,680,0,42)
-    minBtn.Text  = guiVisible and "─" or "□"
+    guiVisible = not guiVisible; body.Visible = guiVisible; sbar.Visible = guiVisible
+    win.Size = guiVisible and UDim2.new(0,700,0,510) or UDim2.new(0,700,0,42)
+    minBtn.Text = guiVisible and "─" or "□"
 end)
-
 closeBtn.MouseButton1Click:Connect(function()
-    for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+    for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     gui:Destroy()
 end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- COPY BUTTON
+-- STATUS HELPERS
+-- ─────────────────────────────────────────────────────────────────────────────
+local function setStatus(txt, col, persist)
+    sbarTxt.Text = "  " .. txt; sbarTxt.TextColor3 = col or T.SUB
+    if not persist then
+        task.delay(5, function()
+            if sbarTxt and sbarTxt.Parent then
+                sbarTxt.Text = "  ✓  Armed — monitoring for injections…"
+                sbarTxt.TextColor3 = T.SUCCESS
+            end
+        end)
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- COPY / CLEAR
 -- ─────────────────────────────────────────────────────────────────────────────
 copyBtn.MouseButton1Click:Connect(function()
     if not (selectedIdx and captured[selectedIdx]) then
-        copyBtn.Text = "  Select a script"; copyBtn.BackgroundColor3 = T.WARNING
-        task.delay(1.5, function()
-            if copyBtn.Parent then
-                copyBtn.Text = "⧉  Copy Report"; copyBtn.BackgroundColor3 = T.ACCENT
-            end
-        end)
-        return
+        copyBtn.Text = "Select one"; task.delay(1.5, function() if copyBtn.Parent then copyBtn.Text="⧉  Copy" end end); return
     end
-    local ok = toClipboard(buildReport(captured[selectedIdx]))
-    copyBtn.Text = ok and "✓  Copied!" or "✕  No Clipboard"
-    copyBtn.BackgroundColor3 = ok and T.SUCCESS or T.WARNING
-    task.delay(2, function()
-        if copyBtn.Parent then
-            copyBtn.Text = "⧉  Copy Report"; copyBtn.BackgroundColor3 = T.ACCENT
-        end
-    end)
+    local ok = toClip(buildReport(captured[selectedIdx]))
+    copyBtn.Text = ok and "✓ Copied!" or "✕ No CB"; copyBtn.BackgroundColor3 = ok and T.SUCCESS or T.WARNING
+    task.delay(2, function() if copyBtn.Parent then copyBtn.Text="⧉  Copy"; copyBtn.BackgroundColor3=T.ACCENT end end)
 end)
 
--- ─────────────────────────────────────────────────────────────────────────────
--- CLEAR ALL
--- ─────────────────────────────────────────────────────────────────────────────
 clearBtn.MouseButton1Click:Connect(function()
-    captured = {}; selectedIdx = nil; cntLbl.Text = "0"
-    for _, c in ipairs(listScroll:GetChildren()) do
-        if c:IsA("TextButton") then c:Destroy() end
-    end
-    detailTxt.Text       = "-- Cleared. Monitoring for new injections…"
-    detailTxt.TextColor3 = T.SUBTEXT
-    detailTitle.Text     = "📄  Select a script"
+    captured={}; selectedIdx=nil; cntLbl.Text="0"
+    for _, c in ipairs(listScroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+    dText.Text="-- Cleared. Watching for new injections…"; dText.TextColor3=T.SUB; detailTitleL.Text="📄  Select a detection"
 end)
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -457,54 +323,30 @@ end)
 local function addRow(index, entry)
     local isEven = (index % 2 == 0)
     local row = Instance.new("TextButton")
-    row.Name              = "R_" .. index
-    row.Size              = UDim2.new(1,0,0,52)
-    row.BackgroundColor3  = isEven and T.ROW_A or T.ROW_B
-    row.BorderSizePixel   = 0
-    row.Text              = ""
-    row.AutoButtonColor   = false
-    row.Parent            = listScroll
-    corner(row, 5)
+    row.Name = "R_"..index; row.Size = UDim2.new(1,0,0,56); row.BackgroundColor3 = isEven and T.ROW_A or T.ROW_B; row.BorderSizePixel = 0; row.Text = ""; row.AutoButtonColor = false; row.Parent = listScroll; corner(row,5)
 
-    -- left danger bar
-    local bar2 = Instance.new("Frame")
-    bar2.Size = UDim2.new(0,3,0.65,0); bar2.Position = UDim2.new(0,0,0.175,0)
-    bar2.BackgroundColor3 = T.DANGER; bar2.BorderSizePixel = 0; bar2.Parent = row
-    corner(bar2, 2)
+    local bar2 = Instance.new("Frame"); bar2.Size = UDim2.new(0,3,0.6,0); bar2.Position = UDim2.new(0,0,0.2,0); bar2.BackgroundColor3 = T.DANGER; bar2.BorderSizePixel = 0; bar2.Parent = row; corner(bar2,2)
 
     -- index badge
-    local ibadge = Instance.new("Frame")
-    ibadge.Size = UDim2.new(0,18,0,14); ibadge.Position = UDim2.new(0,7,0,5)
-    ibadge.BackgroundColor3 = Color3.fromRGB(80,20,20); ibadge.Parent = row
-    corner(ibadge, 4)
-    local inumL = lbl(ibadge, tostring(index), 9, T.DANGER)
-    inumL.Size = UDim2.new(1,0,1,0); inumL.TextXAlignment = Enum.TextXAlignment.Center
-    inumL.Font = Enum.Font.GothamBold
+    local ib = Instance.new("Frame"); ib.Size = UDim2.new(0,18,0,14); ib.Position = UDim2.new(0,7,0,5); ib.BackgroundColor3 = Color3.fromRGB(80,20,20); ib.Parent = row; corner(ib,4)
+    local il = lbl(ib, tostring(index), 9, T.DANGER); il.Size = UDim2.new(1,0,1,0); il.TextXAlignment = Enum.TextXAlignment.Center; il.Font = Enum.Font.GothamBold
 
-    -- class badge
-    local cbadge = Instance.new("Frame")
-    cbadge.Size = UDim2.new(0,0,0,14); cbadge.Position = UDim2.new(0,30,0,5)
-    cbadge.BackgroundColor3 = Color3.fromRGB(60,40,10); cbadge.AutomaticSize = Enum.AutomaticSize.X
-    cbadge.Parent = row; corner(cbadge, 4)
-    local clbl = lbl(cbadge, " "..entry.className.." ", 9, T.ACCENT2)
-    clbl.Size = UDim2.new(0,0,1,0); clbl.AutomaticSize = Enum.AutomaticSize.X
-    clbl.Font = Enum.Font.GothamBold
+    -- method badge
+    local mb = Instance.new("Frame"); mb.Size = UDim2.new(0,0,0,14); mb.Position = UDim2.new(0,30,0,5); mb.BackgroundColor3 = Color3.fromRGB(15,45,70); mb.AutomaticSize = Enum.AutomaticSize.X; mb.Parent = row; corner(mb,4)
+    local ml = lbl(mb," "..entry.method.." ",9,Color3.fromRGB(100,200,255)); ml.Size = UDim2.new(0,0,1,0); ml.AutomaticSize = Enum.AutomaticSize.X; ml.Font = Enum.Font.GothamBold
 
     -- name
-    local nlbl = lbl(row, entry.name, 13, T.TEXT)
-    nlbl.Size = UDim2.new(1,-14,0,18); nlbl.Position = UDim2.new(0,8,0,22)
-    nlbl.Font = Enum.Font.GothamBold; nlbl.TextTruncate = Enum.TextTruncate.AtEnd
+    local nl = lbl(row, entry.name, 13, T.TEXT); nl.Size = UDim2.new(1,-14,0,18); nl.Position = UDim2.new(0,8,0,24); nl.Font = Enum.Font.GothamBold; nl.TextTruncate = Enum.TextTruncate.AtEnd
 
-    -- time stamp
-    local tlbl = lbl(row, entry.time, 9, T.SUBTEXT)
-    tlbl.Size = UDim2.new(0,60,0,12); tlbl.Position = UDim2.new(1,-64,0,36)
-    tlbl.TextXAlignment = Enum.TextXAlignment.Right
+    -- class
+    local cl2 = lbl(row, entry.className, 10, T.SUB); cl2.Size = UDim2.new(1,-80,0,14); cl2.Position = UDim2.new(0,8,0,42)
 
-    -- src dot
-    local sdot = lbl(row, entry.source and "⬤" or "○", 9, entry.source and T.SUCCESS or T.WARNING)
-    sdot.Size = UDim2.new(0,10,0,10); sdot.Position = UDim2.new(1,-14,0,5)
+    -- timestamp
+    local tl = lbl(row, entry.time, 9, T.SUB); tl.Size = UDim2.new(0,60,0,12); tl.Position = UDim2.new(1,-64,0,38); tl.TextXAlignment = Enum.TextXAlignment.Right
 
-    -- selection
+    -- source dot
+    local sd = lbl(row, entry.source and "⬤" or "○", 9, entry.source and T.SUCCESS or T.WARNING); sd.Size = UDim2.new(0,10,0,10); sd.Position = UDim2.new(1,-13,0,5)
+
     local normalBG = isEven and T.ROW_A or T.ROW_B
     local function deselAll()
         for _, ch in ipairs(listScroll:GetChildren()) do
@@ -514,37 +356,21 @@ local function addRow(index, entry)
             end
         end
     end
-
     row.MouseButton1Click:Connect(function()
-        deselAll()
-        row.BackgroundColor3 = T.ROW_SEL
-        selectedIdx = index
+        deselAll(); row.BackgroundColor3 = T.ROW_SEL; selectedIdx = index
         local e = captured[index]
-        if e then
-            detailTitle.Text     = "📄  " .. e.name
-            detailTxt.Text       = buildReport(e)
-            detailTxt.TextColor3 = T.CODE_TEXT
-        end
+        if e then detailTitleL.Text = "📄  "..e.name; dText.Text = buildReport(e); dText.TextColor3 = T.CODE_TX end
     end)
-    row.MouseEnter:Connect(function()
-        if selectedIdx ~= index then row.BackgroundColor3 = Color3.fromRGB(25,22,16) end
-    end)
-    row.MouseLeave:Connect(function()
-        if selectedIdx ~= index then row.BackgroundColor3 = normalBG end
-    end)
+    row.MouseEnter:Connect(function() if selectedIdx ~= index then row.BackgroundColor3 = Color3.fromRGB(25,22,16) end end)
+    row.MouseLeave:Connect(function() if selectedIdx ~= index then row.BackgroundColor3 = normalBG end end)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- CAPTURE (only called AFTER snapshot is taken)
+-- REGISTER A CAPTURE
 -- ─────────────────────────────────────────────────────────────────────────────
-local function captureInjected(inst)
-    if not (inst:IsA("LocalScript") or inst:IsA("ModuleScript") or inst:IsA("Script")) then
-        return
-    end
+local function registerCapture(inst, method)
     -- Deduplicate
-    for _, e in ipairs(captured) do
-        if e.instance == inst then return end
-    end
+    for _, e in ipairs(captured) do if e.instance == inst then return end end
 
     local entry = {
         instance  = inst,
@@ -554,82 +380,152 @@ local function captureInjected(inst)
         props     = collectProps(inst),
         source    = trySource(inst),
         time      = os.date("%X"),
+        method    = method or "DataModel",
     }
     table.insert(captured, entry)
     local idx = #captured
 
     cntLbl.Text = tostring(idx)
     addRow(idx, entry)
-
-    -- Flash status bar
-    sbarTxt.Text       = string.format("  ⚠  Injection detected: %s  |  Total: %d  |  %s", entry.name, idx, entry.time)
-    sbarTxt.TextColor3 = T.DANGER
-    task.delay(4, function()
-        if sbarTxt and sbarTxt.Parent then
-            sbarTxt.Text       = "  ✓  Monitoring for injections…"
-            sbarTxt.TextColor3 = T.SUCCESS
-        end
-    end)
-
-    print(string.format("[InjectionDetector] Caught: %s (%s) @ %s", entry.name, entry.className, entry.path))
+    setStatus(string.format("⚠  Injection: %s  [%s]  @ %s", entry.name, entry.method, entry.time), T.DANGER)
+    warn(string.format("[InjDetect] Caught '%s' via %s @ %s", entry.name, entry.method, entry.path))
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- SNAPSHOT + ACTIVATION
+-- FILTER: should we ignore this instance?
 -- ─────────────────────────────────────────────────────────────────────────────
---
--- We wait for the game to fully load, then snapshot EVERY script currently
--- in the DataModel into a weak-reference set. After that, DescendantAdded
--- on `game` is the only thing that can add to `captured`.
---
-task.spawn(function()
-    -- 1. Wait for basic replication to finish
-    if not game:IsLoaded() then
-        game.Loaded:Wait()
+local function shouldIgnore(inst)
+    -- Must be a script type
+    if not (inst:IsA("LocalScript") or inst:IsA("ModuleScript") or inst:IsA("Script")) then
+        return true
     end
-
-    -- 2. Extra frame buffer so late-loading scripts settle
-    for _ = 1, 10 do RunService.Heartbeat:Wait() end
-
-    -- 3. Build snapshot of all existing scripts
-    local snapshot = {}    -- [instance] = true
-    for _, desc in ipairs(game:GetDescendants()) do
-        if desc:IsA("LuaSourceContainer") then
-            snapshot[desc] = true
+    -- In snapshot (existed at load time or was a character script)
+    if snapshot[inst] then return true end
+    -- Known Roblox default name
+    if ROBLOX_DEFAULTS[inst.Name] then return true end
+    -- Inside a character model (extra safety net)
+    local cur = inst.Parent
+    while cur do
+        if cur == workspace then break end
+        -- If any ancestor is a player's character model
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character and cur == p.Character then return true end
         end
+        cur = cur.Parent
+    end
+    return false
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- HOOK: loadstring
+-- Many executors run scripts through loadstring(). We wrap it to intercept.
+-- ─────────────────────────────────────────────────────────────────────────────
+local function tryHookLoadstring()
+    if type(hookfunction) ~= "function" then return false end
+    if type(loadstring) ~= "function"   then return false end
+
+    local orig = loadstring
+    local ok = pcall(hookfunction, loadstring, function(src, chunkName)
+        if armed and type(src) == "string" and #src > 0 then
+            -- Build a synthetic entry (no real instance)
+            local entry = {
+                instance  = nil,
+                name      = chunkName or "(anonymous loadstring)",
+                className = "loadstring",
+                path      = chunkName or "N/A",
+                props     = { Source = "(runtime string)", Chunk = tostring(chunkName) },
+                source    = src,
+                time      = os.date("%X"),
+                method    = "loadstring",
+            }
+            -- dedup by first 80 chars of source
+            local sig = src:sub(1, 80)
+            for _, e in ipairs(captured) do
+                if e.source and e.source:sub(1,80) == sig then return orig(src, chunkName) end
+            end
+            table.insert(captured, entry)
+            local idx = #captured
+            cntLbl.Text = tostring(idx)
+            addRow(idx, entry)
+            setStatus(string.format("⚠  loadstring injection: %s  @ %s", entry.name, entry.time), T.DANGER)
+        end
+        return orig(src, chunkName)
+    end)
+    return ok
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- WATCH: DataModel DescendantAdded
+-- Catches scripts that ARE parented into the tree (some executors do this)
+-- ─────────────────────────────────────────────────────────────────────────────
+local function watchDataModel()
+    local conn = game.DescendantAdded:Connect(function(inst)
+        if not armed then return end
+        task.defer(function()
+            if not shouldIgnore(inst) then
+                pcall(registerCapture, inst, "DataModel")
+            end
+        end)
+    end)
+    table.insert(conns, conn)
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CHARACTER — snapshot scripts on each spawn so Health/Animate are ignored
+-- ─────────────────────────────────────────────────────────────────────────────
+local function onCharacter(char)
+    -- Snapshot the character tree IMMEDIATELY (before DescendantAdded fires)
+    snapAdd(char)
+    -- Also watch for future char descendants and snapshot them before eval
+    -- (equipment, tool scripts, etc. that Roblox adds automatically)
+    local innerConn
+    innerConn = char.DescendantAdded:Connect(function(d)
+        -- If this fires BEFORE armed, just add to snapshot
+        if not armed then
+            if d:IsA("LuaSourceContainer") then snapshot[d] = true end
+        end
+    end)
+    table.insert(conns, innerConn)
+end
+
+LocalPlayer.CharacterAdded:Connect(onCharacter)
+if LocalPlayer.Character then onCharacter(LocalPlayer.Character) end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MAIN INIT — wait for load, snapshot, arm
+-- ─────────────────────────────────────────────────────────────────────────────
+task.spawn(function()
+    -- Wait for full load
+    if not game:IsLoaded() then game.Loaded:Wait() end
+    for _ = 1, 15 do RunService.Heartbeat:Wait() end   -- extra buffer
+
+    -- Snapshot everything currently in the tree
+    for _, d in ipairs(game:GetDescendants()) do
+        if d:IsA("LuaSourceContainer") then snapshot[d] = true end
     end
     local snapCount = 0
     for _ in pairs(snapshot) do snapCount = snapCount + 1 end
 
-    -- 4. Mark ready + update UI
-    isReady = true
+    -- Try to hook loadstring
+    local hooked = tryHookLoadstring()
 
-    pillTxt.Text             = "ARMED"
-    pillDot.TextColor3       = T.SUCCESS
-    pillTxt.TextColor3       = T.SUCCESS
-    pill.BackgroundColor3    = Color3.fromRGB(20, 55, 30)
+    -- Start DataModel watcher
+    watchDataModel()
 
-    sbarTxt.Text       = string.format("  ✓  Monitoring active — %d existing scripts ignored", snapCount)
-    sbarTxt.TextColor3 = T.SUCCESS
+    -- Mark armed
+    armed = true
 
-    detailTxt.Text       = string.format(
-        "-- Ready.\n-- %d pre-existing scripts have been snapshoted and ignored.\n"..
-        "-- Any new script injected from this point will appear in the list.",
-        snapCount
+    -- Update UI
+    pillDot.TextColor3 = T.SUCCESS; pillTxt.TextColor3 = T.SUCCESS
+    pillTxt.Text = "ARMED"; pill.BackgroundColor3 = Color3.fromRGB(20,55,30)
+
+    local hookStatus = hooked and "  |  loadstring hooked ✓" or "  |  loadstring hook N/A"
+    setStatus(string.format("✓  Armed — %d scripts ignored%s", snapCount, hookStatus), T.SUCCESS, true)
+    dText.Text = string.format(
+        "-- Armed.\n-- %d pre-existing scripts snapshotted and ignored.\n-- Character scripts (Health, Animate, etc.) are also filtered.\n-- loadstring hook: %s\n\n-- Waiting for injections…",
+        snapCount, hooked and "active" or "not available (run via executor for this)"
     )
-    detailTxt.TextColor3 = T.SUBTEXT
+    dText.TextColor3 = T.SUB
 
-    -- 5. Watch the ENTIRE game tree for new script descendants
-    --    Only fire if the instance is NOT in our snapshot.
-    local conn = game.DescendantAdded:Connect(function(inst)
-        if not isReady then return end
-        if snapshot[inst] then return end   -- was already there at load time
-        -- Small defer so the script has a parent and path set
-        task.defer(function()
-            pcall(captureInjected, inst)
-        end)
-    end)
-    table.insert(connections, conn)
-
-    print(string.format("[InjectionDetector] Armed. %d existing scripts ignored. Watching for injections…", snapCount))
+    print(string.format("[InjDetect] Armed. %d ignored. loadstring hook: %s", snapCount, tostring(hooked)))
 end)
