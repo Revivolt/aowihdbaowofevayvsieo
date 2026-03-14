@@ -1,20 +1,30 @@
+-- test
+
 -- ============================================================
---  WeldToPlayerTop — LocalScript
---  Mounts the local character flat (horizontal) on top of a
---  target player's head with frame-perfect precision.
+--  WeldToPlayerTop — LocalScript  (with Dead Reckoning)
 --
---  HOW IT WORKS (latency):
---    RenderStepped fires client-side BEFORE each frame is drawn.
---    The CFrame is forced every single frame, so even if the
---    target's position lags behind the server, your character
---    is always glued to whatever the CLIENT sees — no drift.
+--  WHY THE OLD VERSION LAGGED:
+--    targetHRP.CFrame is a *replicated* value — it is the position
+--    the server broadcast, which arrived ping/2 milliseconds ago.
+--    Reading it directly means you are always behind.
+--
+--  THE FIX — Dead Reckoning:
+--    Every frame we read the target's replicated velocity and
+--    extrapolate their CFrame forward by the network ping:
+--
+--      predictedCF = targetHRP.CFrame
+--                  + targetHRP.AssemblyLinearVelocity * ping
+--
+--    This cancels out the replication delay so your character
+--    sits exactly where the target IS, not where they WERE.
+--    Velocity is smoothed over a rolling window to prevent jitter
+--    on sudden direction changes.
 --
 --  SETUP:
---    1. Put this script inside StarterCharacterScripts (recommended)
---       or StarterPlayerScripts.
---    2. Change TARGET_NAME to the exact username of the target.
---    3. Adjust HEIGHT_OFFSET if the alignment looks off for
---       different character rigs (R6 vs R15).
+--    1. Place inside StarterCharacterScripts (recommended).
+--    2. Set TARGET_NAME to the exact Roblox username.
+--    3. Adjust HEIGHT_OFFSET for your rig:
+--         R15 ≈ 3.6   |   R6 ≈ 2.8
 -- ============================================================
 
 local Players    = game:GetService("Players")
@@ -22,19 +32,20 @@ local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
 
 -- ─── CONFIG ─────────────────────────────────────────────────
-local TARGET_NAME   = "62_AM"  -- exact Roblox username
-local HEIGHT_OFFSET = 3.6   -- studs above target HumanoidRootPart
-                             -- (≈ top of head for standard R15 rig)
-                             -- use ~2.8 for R6 rigs
-local DETACH_KEY    = Enum.KeyCode.X  -- press X to detach / stop
+local TARGET_NAME     = "TargetUsernameHere"
+local HEIGHT_OFFSET   = 3.6      -- studs above target HumanoidRootPart
+local DETACH_KEY      = Enum.KeyCode.X
+
+-- Dead-reckoning tuning
+local VELOCITY_SMOOTH = 0.25     -- lower = smoother but slightly more lag
+                                 -- higher = snappier but jitterier
+                                 -- 0.2–0.35 is the sweet spot
 -- ────────────────────────────────────────────────────────────
 
 -- ─── HELPERS ────────────────────────────────────────────────
 local function waitForCharacter(player)
     local char = player.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        return char
-    end
+    if char and char:FindFirstChild("HumanoidRootPart") then return char end
     char = player.CharacterAdded:Wait()
     char:WaitForChild("HumanoidRootPart")
     return char
@@ -47,12 +58,10 @@ end
 -- ─── MAIN ───────────────────────────────────────────────────
 local localPlayer = Players.LocalPlayer
 
--- Wait for local character
-local localChar   = waitForCharacter(localPlayer)
-local localHRP    = getHRP(localChar)
-local humanoid    = localChar:WaitForChild("Humanoid")
+local localChar = waitForCharacter(localPlayer)
+local localHRP  = getHRP(localChar)
+local humanoid  = localChar:WaitForChild("Humanoid")
 
--- Find target player (retry loop in case they haven't loaded yet)
 local targetPlayer
 repeat
     targetPlayer = Players:FindFirstChild(TARGET_NAME)
@@ -65,7 +74,6 @@ until targetPlayer
 local targetChar = waitForCharacter(targetPlayer)
 local targetHRP  = getHRP(targetChar)
 
--- ── Re-acquire if target respawns mid-session ────────────────
 targetPlayer.CharacterAdded:Connect(function(newChar)
     newChar:WaitForChild("HumanoidRootPart")
     targetChar = newChar
@@ -73,26 +81,29 @@ targetPlayer.CharacterAdded:Connect(function(newChar)
     print("[WeldTop] Target respawned — re-latched.")
 end)
 
--- ── Disable humanoid controls so physics can't fight us ─────
-humanoid.PlatformStand = true      -- prevents walk/jump interference
-localChar.PrimaryPart  = localHRP  -- ensure :SetPrimaryPartCFrame works
+humanoid.PlatformStand = true
+localChar.PrimaryPart  = localHRP
 
--- ── The actual offset CFrame applied each frame ─────────────
--- * Translate up by HEIGHT_OFFSET
--- * Rotate 90° around local X → character lies flat face-down on top
-local MOUNT_OFFSET = CFrame.new(0, HEIGHT_OFFSET, 0) * CFrame.Angles(math.pi / 2, 0, 0)
+-- ── Mount offset ────────────────────────────────────────────
+-- Translate up + rotate flat (horizontal) on top of the target
+local MOUNT_OFFSET = CFrame.new(0, HEIGHT_OFFSET, 0)
+                   * CFrame.Angles(math.pi / 2, 0, 0)
+
+-- ── Dead-reckoning state ─────────────────────────────────────
+-- We keep a smoothed velocity so that a single frame of noisy
+-- network data doesn't snap us to a wrong position.
+local smoothedVelocity = Vector3.zero
 
 -- ── Frame loop ──────────────────────────────────────────────
 local attached = true
 local connection
 
-connection = RunService.RenderStepped:Connect(function()
+connection = RunService.RenderStepped:Connect(function(dt)
     if not attached then
         connection:Disconnect()
         return
     end
 
-    -- Guard: check both HRPs are still valid
     if not (localHRP and localHRP.Parent) then
         warn("[WeldTop] Local HRP lost — disconnecting.")
         connection:Disconnect()
@@ -100,24 +111,40 @@ connection = RunService.RenderStepped:Connect(function()
     end
 
     if not (targetHRP and targetHRP.Parent) then
-        -- Target may be mid-respawn; grab latest reference
         targetHRP = getHRP(targetChar)
         return
     end
 
-    -- Force CFrame every frame (before rendering = zero perceived lag)
-    localHRP.CFrame               = targetHRP.CFrame * MOUNT_OFFSET
-    localHRP.AssemblyLinearVelocity  = Vector3.zero   -- kill residual velocity
-    localHRP.AssemblyAngularVelocity = Vector3.zero   -- kill residual spin
+    -- ── 1. Smooth the target's replicated velocity ───────────
+    --   Exponential moving average keeps it stable across frames.
+    local rawVelocity = targetHRP.AssemblyLinearVelocity
+    local alpha       = 1 - math.exp(-VELOCITY_SMOOTH * dt * 60)  -- frame-rate independent
+    smoothedVelocity  = smoothedVelocity:Lerp(rawVelocity, alpha)
+
+    -- ── 2. Get one-way network ping (seconds) ────────────────
+    --   GetNetworkPing() returns round-trip / 2, which is the
+    --   one-way delay — exactly how far the target's position
+    --   has drifted since it was last broadcast.
+    local ping = localPlayer:GetNetworkPing()
+
+    -- ── 3. Extrapolate target's true current position ────────
+    --   CFrame + Vector3 shifts the position component only,
+    --   preserving the orientation.
+    local predictedTargetCF = targetHRP.CFrame + smoothedVelocity * ping
+
+    -- ── 4. Apply mount offset and snap local character ───────
+    localHRP.CFrame                  = predictedTargetCF * MOUNT_OFFSET
+    localHRP.AssemblyLinearVelocity  = Vector3.zero
+    localHRP.AssemblyAngularVelocity = Vector3.zero
 end)
 
--- ── Detach on keypress ───────────────────────────────────────
+-- ── Detach ───────────────────────────────────────────────────
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode == DETACH_KEY and attached then
         attached = false
         humanoid.PlatformStand = false
-        print("[WeldTop] Detached from " .. TARGET_NAME)
+        print("[WeldTop] Detached.")
     end
 end)
 
