@@ -1,4 +1,4 @@
--- test
+-- test2
 
 -- ============================================================
 --  WeldToPlayerTop — LocalScript  (with Dead Reckoning)
@@ -32,7 +32,7 @@ local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
 
 -- ─── CONFIG ─────────────────────────────────────────────────
-local TARGET_NAME     = "TargetUsernameHere"
+local TARGET_NAME     = "62_AM"
 local HEIGHT_OFFSET   = 3.6      -- studs above target HumanoidRootPart
 local DETACH_KEY      = Enum.KeyCode.X
 
