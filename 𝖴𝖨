@@ -63,6 +63,14 @@ tab:button({
     end,
 })
 
+tab:button({
+    Name = "Weld Abuse",
+    Description = "",
+    Callback = function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/rangell8/Rexys-Welding-Hub/refs/heads/main/script"))()
+    end,
+})
+
 local tab = gui:tab{
     Icon = "rbxassetid://82680787978049",
     Name = "R15 FE"
