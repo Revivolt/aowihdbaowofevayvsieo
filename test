@@ -1,34 +1,56 @@
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local RootPart = Character:WaitForChild("HumanoidRootPart")
-local TargetPlayer
-local connection
+local Humanoid = Character:WaitForChild("Humanoid")
+
+local attachConnection
+local originalCFrame
+local attachedPlayer
 
 local TARGET_NAME = "62_AM" -- Type the target player's username here
 
-local function attachToPlayer(target)
-    TargetPlayer = target
-    if connection then
-        connection:Disconnect()
+function AttachToPlayer(playerName)
+    local targetPlayer = Players:FindFirstChild(playerName)
+    if not targetPlayer then return end
+    if not targetPlayer.Character then return end
+    local targetHead = targetPlayer.Character:FindFirstChild("Head")
+    if not targetHead then return end
+
+    attachedPlayer = targetPlayer
+    originalCFrame = RootPart.CFrame
+
+    if attachConnection then
+        attachConnection:Disconnect()
     end
-    local targetCharacter = TargetPlayer.Character
-    if not targetCharacter then return end
-    local targetHead = targetCharacter:WaitForChild("Head") -- changed to Head
-    connection = RunService.RenderStepped:Connect(function()
+
+    attachConnection = RunService.RenderStepped:Connect(function(dt)
+        if not attachedPlayer then return end
+        if not attachedPlayer.Character then return end
+        local targetHead = attachedPlayer.Character:FindFirstChild("Head")
         if not targetHead then return end
-        RootPart.CFrame =
-            CFrame.new(targetHead.Position + Vector3.new(0, 3.6, 0)) -- sit on top of head
-            * CFrame.Angles(-math.pi/2,0,0)
-        RootPart.Velocity = Vector3.new(0,0,0)
+
+        -- Predict next position using velocity to eliminate latency
+        local predictedPosition = targetHead.Position + (targetHead.Velocity * dt)
+
+        RootPart.CFrame = CFrame.new(predictedPosition + Vector3.new(0, 3.6, 0))
+            * CFrame.Angles(-math.pi/2, 0, 0)
+
+        -- Stop physics
+        RootPart.Velocity = Vector3.new(0, 0, 0)
+        RootPart.RotVelocity = Vector3.new(0, 0, 0)
     end)
 end
 
--- Find and attach to the named player
-local target = Players:FindFirstChild(TARGET_NAME)
-if target then
-    attachToPlayer(target)
-else
-    warn("Player not found: " .. TARGET_NAME)
+function Detach()
+    if attachConnection then
+        attachConnection:Disconnect()
+        attachConnection = nil
+    end
+    if originalCFrame then
+        RootPart.CFrame = originalCFrame
+    end
 end
+
+AttachToPlayer(TARGET_NAME)
