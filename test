@@ -1,68 +1,748 @@
--- VibrateScript (LocalScript)
--- Place in StarterCharacterScripts
--- Vibrates your character SO fast it becomes a blur/unrecognizable
--- 100% client-side — other players see you standing completely still
+-- ============================================================
+--   simple welding abuse hub by Rexy and Artlino
+-- ============================================================
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+-- Anti-fall / safety system
+local floor = math.floor
+local random = math.random
+local tremove = table.remove
+local schar = string.char
+
+local seed = 0
+local stepA = 2
+local charMap = {}
+local encTable = {}
+
+local tempList = {}
+for i = 1, 256 do tempList[i] = i end
+repeat
+    local idx = random(1, #tempList)
+    local val = tremove(tempList, idx)
+    encTable[val] = schar(val - 1)
+until #tempList == 0
+
+local ibuf = {}
+
+local function nextByte()
+    if #ibuf == 0 then
+        seed = (seed * 14911595048824) % 35184372088832
+        repeat stepA = (stepA * 188) % 257 until stepA ~= 1
+        local E = stepA % 32
+        local M = (floor(seed / 2 ^ (13 - (stepA - E) / 32)) % 4294967296) / 2 ^ E
+        local C = floor((M % 1) * 4294967296) + floor(M)
+        local J = C % 65536
+        local F = (C - J) / 65536
+        local U = J % 256
+        local v = (J - U) / 256
+        local e = F % 256
+        local R = (F - e) / 256
+        ibuf = { U, v, e, R }
+    end
+    return table.remove(ibuf)
+end
+
+local cache = {}
+local encMeta = setmetatable({}, { __index = cache, __metatable = nil })
+
+local function encrypt(str, key)
+    if not cache[key] then
+        ibuf = {}
+        seed = key % 35184372088832
+        stepA = key % 257
+        local len = string.len(str)
+        cache[key] = ""
+        local U = 128
+        for i = 1, len do
+            U = ((string.byte(str, i) + nextByte()) + U) % 256
+            cache[key] = cache[key] .. encTable[U + 1]
+        end
+    end
+    return key
+end
+
+-- ============================================================
+--   Core services
+-- ============================================================
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HRP         = Character:WaitForChild("HumanoidRootPart")
+local RootPart    = Character:WaitForChild("HumanoidRootPart")
+local Humanoid    = Character:WaitForChild("Humanoid")
 
--- ============================================================
---  CONFIG
--- ============================================================
-local TOGGLE_KEY   = Enum.KeyCode.Q   -- Hold to vibrate
-local INTENSITY    = 9999                -- How far each shake goes (studs). 8 = full blur
-local SPEED_MULT   = 9999                -- 1 = every frame. Lower = slower (not recommended)
--- ============================================================
+local safeZoneCenter = Vector3.new(0, 100, 0)
+local minY           = 5
+local killY          = -20
+local maxY           = 500
+local speedThreshold = 100
+local lastSafePos    = RootPart.Position
+local antiMoveLock   = false
 
-local vibrating    = false
-local originCF     = nil
-local flip         = 1
-
--- Respawn support
-LocalPlayer.CharacterAdded:Connect(function(c)
-    Character  = c
-    HRP        = c:WaitForChild("HumanoidRootPart")
-    vibrating  = false
-    originCF   = nil
-    flip       = 1
-end)
-
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == TOGGLE_KEY then
-        vibrating = true
-        originCF  = HRP.CFrame  -- lock the origin the moment you press
+-- Track last safe position
+RunService.Heartbeat:Connect(function()
+    local pos = RootPart.Position
+    if pos.Y > minY and pos.Y < maxY then
+        lastSafePos = pos
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == TOGGLE_KEY then
-        vibrating = false
-        -- Snap back to where you started so you don't drift
-        if originCF then
-            HRP.CFrame = originCF
+-- Anti-fall / speed kill protection
+RunService.Heartbeat:Connect(function()
+    if antiMoveLock then return end
+    antiMoveLock = true
+
+    local pos  = RootPart.Position
+    local vel  = RootPart.AssemblyLinearVelocity.Magnitude
+    local velY = RootPart.AssemblyLinearVelocity.Y
+
+    local function reset(target)
+        RootPart.CFrame                   = CFrame.new(target)
+        RootPart.AssemblyLinearVelocity   = Vector3.new(0, 0, 0)
+        Humanoid.Health                   = Humanoid.MaxHealth
+    end
+
+    if vel > speedThreshold or math.abs(velY) > 90 then
+        reset(safeZoneCenter)
+    elseif pos.Y > maxY then
+        reset(safeZoneCenter)
+    elseif pos.Y < minY and pos.Y > killY then
+        reset(safeZoneCenter)
+    elseif pos.Y < killY then
+        RootPart.CFrame                 = CFrame.new(lastSafePos.X, math.max(100, lastSafePos.Y), lastSafePos.Z)
+        RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        Humanoid.Health                 = Humanoid.MaxHealth
+    end
+
+    antiMoveLock = false
+end)
+
+-- Re-grab refs on respawn
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character  = newChar
+    RootPart   = Character:WaitForChild("HumanoidRootPart")
+    Humanoid   = Character:WaitForChild("Humanoid")
+    wait(0.5)
+    safeZoneCenter = RootPart.Position
+end)
+
+-- ============================================================
+--   Rayfield UI
+-- ============================================================
+local Rayfield = (loadstring(game:HttpGet("https://sirius.menu/rayfield")))()
+
+local Window = Rayfield:CreateWindow({
+    Name                  = "simple welding abuse hub by Rexy and Artlino",
+    Icon                  = 0,
+    LoadingTitle          = "Rayfield Interface Suite",
+    LoadingSubtitle       = "by Sirius",
+    ShowText              = "Rayfield",
+    Theme                 = "Default",
+    ToggleUIKeybind       = "K",
+    DisableRayfieldPrompts  = false,
+    DisableBuildWarnings    = false,
+    ConfigurationSaving   = {
+        Enabled    = true,
+        FolderName = nil,
+        FileName   = "Big Hub",
+    },
+    Discord = {
+        Enabled       = false,
+        Invite        = "noinvitelink",
+        RememberJoins = true,
+    },
+    KeySystem = false,
+})
+
+-- ============================================================
+--   Tab 1 – Welding / Abuse
+-- ============================================================
+local MainTab = Window:CreateTab("Tab Example", 4483362458)
+
+local weldPlayers   = game:GetService("Players")
+local weldRun       = game:GetService("RunService")
+local weldLocal     = weldPlayers.LocalPlayer
+local selectedTarget = nil
+
+MainTab:CreateInput({
+    Name                    = "Select Target",
+    PlaceholderText         = "Username / Display",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(input)
+        input = (tostring(input or "")):lower()
+        selectedTarget = nil
+        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+            local name    = plr.Name:lower()
+            local display = (plr.DisplayName or plr.Name):lower()
+            if name == input or display == input
+            or name:sub(1, #input) == input or display:sub(1, #input) == input then
+                selectedTarget = plr
+                break
+            end
         end
+        if selectedTarget then
+            Rayfield:Notify({
+                Title    = "Target Selected",
+                Content  = selectedTarget.Name,
+                Duration = 3,
+            })
+        end
+    end,
+})
+
+-- Generic weld toggle factory
+local function createWeldToggle(name, offset, killTarget)
+    local conn, savedCFrame = nil, nil
+    MainTab:CreateToggle({
+        Name         = name,
+        CurrentValue = false,
+        Callback = function(enabled)
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not enabled then
+                if conn then conn:Disconnect() end
+                conn = nil
+                if savedCFrame then
+                    myRoot.CFrame                 = savedCFrame
+                    myRoot.Velocity               = Vector3.zero
+                    myRoot.RotVelocity            = Vector3.zero
+                    savedCFrame = nil
+                end
+                return
+            end
+
+            savedCFrame = myRoot.CFrame
+            conn = weldRun.Heartbeat:Connect(function()
+                if not enabled then return end
+                myRoot.CFrame       = CFrame.new(tgtRoot.Position + offset) * CFrame.Angles(-math.pi / 2, 0, 0)
+                myRoot.Velocity     = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
+                myRoot.RotVelocity  = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                if killTarget then
+                    task.wait(0.5)
+                    local hum = myChar:FindFirstChildOfClass("Humanoid")
+                    if hum then hum.Health = 0 end
+                end
+            end)
+        end,
+    })
+end
+
+createWeldToggle("Fling Player",   Vector3.new(0,  0,    0), false)
+createWeldToggle("Fling 2.0",      Vector3.new(0, -2.5,  0), false)
+createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
+createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
+createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
+
+-- Anti Jump
+do
+    local conn2, savedCF2 = nil, nil
+    MainTab:CreateToggle({
+        Name         = "Anti Jump",
+        CurrentValue = false,
+        Callback = function(enabled)
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not enabled then
+                if conn2 then conn2:Disconnect() end
+                conn2 = nil
+                if savedCF2 then
+                    myRoot.CFrame      = savedCF2
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
+                    savedCF2 = nil
+                end
+                return
+            end
+
+            savedCF2 = myRoot.CFrame
+            conn2 = weldRun.Heartbeat:Connect(function()
+                if not enabled then return end
+                myRoot.Velocity    = Vector3.zero
+                myRoot.RotVelocity = Vector3.zero
+                myRoot.CFrame      = CFrame.new(tgtRoot.Position + Vector3.new(0, 3.5, 0))
+                                     * CFrame.Angles(-math.pi / 2, 0, 0)
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end,
+    })
+end
+
+-- Glue / TP helpers (instance A)
+local glueRunA = game:GetService("RunService")
+local glueLocalA = game:GetService("Players").LocalPlayer
+local glueA = {}
+
+function glueA.glue(target, attach)
+    local myChar = glueLocalA.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+    sethiddenproperty(myRoot, "PhysicsRepRootPart",
+        attach and target.Character.HumanoidRootPart or myRoot)
+end
+
+function glueA.tp(target, offset)
+    offset = offset or CFrame.new()
+    local myChar = glueLocalA.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if myRoot and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+        myRoot.CFrame   = target.Character.HumanoidRootPart.CFrame * offset
+        myRoot.Velocity = Vector3.zero
     end
-end)
+end
 
-RunService.RenderStepped:Connect(function()
-    if not vibrating then return end
-    if not HRP or not HRP.Parent then return end
+-- Glue / TP helpers (instance B)
+local glueRunB   = game:GetService("RunService")
+local glueLocalB = game:GetService("Players").LocalPlayer
+local glueB = {}
 
-    -- Flip the offset direction every single frame (max frequency possible)
-    flip = flip * -1
+function glueB.glue(target, attach)
+    local myChar = glueLocalB.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+    sethiddenproperty(myRoot, "PhysicsRepRootPart",
+        attach and target.Character.HumanoidRootPart or myRoot)
+end
 
-    local randX = (math.random() - 0.5) * 2 * INTENSITY
-    local randY = (math.random() - 0.5) * 2 * INTENSITY
-    local randZ = (math.random() - 0.5) * 2 * INTENSITY
+function glueB.tp(target, offset)
+    offset = offset or CFrame.new()
+    local myChar = glueLocalB.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if myRoot and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+        myRoot.CFrame   = target.Character.HumanoidRootPart.CFrame * offset
+        myRoot.Velocity = Vector3.zero
+    end
+end
 
-    -- Apply a random offset from origin every frame — creates the blur effect
-    HRP.CFrame = originCF * CFrame.new(randX * flip, randY * flip, randZ * flip)
-end)
+-- Movement toggles (Infinite Jump, Speed Boosts, Movement Breaker)
+local movConn    = nil
+local movEnabled = false
 
-print("[VibrateScript] Loaded! Hold", TOGGLE_KEY.Name, "to vibrate into a blur.")
+local function createMoveToggle(name, tpOffset)
+    MainTab:CreateToggle({
+        Name         = name,
+        CurrentValue = false,
+        Callback = function(enabled)
+            movEnabled = enabled
+            if movConn then movConn:Disconnect() movConn = nil end
+            if not selectedTarget then return end
+            if not movEnabled then
+                glueB.glue(selectedTarget, false)
+                return
+            end
+            movConn = glueRunB.Heartbeat:Connect(function()
+                if not movEnabled then return end
+                glueB.tp(selectedTarget, tpOffset)
+                glueB.glue(selectedTarget, true)
+            end)
+        end,
+    })
+end
+
+createMoveToggle("Infinite Jump",        CFrame.new(0,  -5.75, 0))
+createMoveToggle("Speed Boost (slow)",   CFrame.new(0,   0.7,  1))
+createMoveToggle("Speed Boost (medium)", CFrame.new(0,   0.7,  0.5))
+createMoveToggle("Speed Boost (fast)",   CFrame.new(0,   0.7,  0.35))
+createMoveToggle("Movement Breaker",     CFrame.new(0,   0.7, -0.8))
+
+-- Rocket Target
+do
+    local rocketConn, rocketSavedCF = nil, nil
+    MainTab:CreateToggle({
+        Name         = "Rocket Target",
+        CurrentValue = false,
+        Callback = function(enabled)
+            if not selectedTarget or not selectedTarget.Character then return end
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+
+            if not enabled then
+                if rocketConn then rocketConn:Disconnect() end
+                rocketConn = nil
+                if rocketSavedCF then
+                    myRoot.CFrame                 = rocketSavedCF
+                    myRoot.Velocity               = Vector3.zero
+                    myRoot.RotVelocity            = Vector3.zero
+                    rocketSavedCF = nil
+                end
+                return
+            end
+
+            rocketSavedCF = myRoot.CFrame
+            rocketConn = weldRun.Heartbeat:Connect(function()
+                if not enabled then return end
+                if not tgtRoot.Parent then return end
+                local aim = tgtRoot.Position + Vector3.new(0, -3, 0)
+                myRoot.CFrame      = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
+                myRoot.Velocity    = Vector3.new(0, 50, 0)
+                myRoot.RotVelocity = Vector3.zero
+                if sethiddenproperty then
+                    pcall(function() sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot) end)
+                end
+                task.delay(0.2, function()
+                    if rocketConn then rocketConn:Disconnect() end
+                    rocketConn = nil
+                    enabled = false
+                    if rocketSavedCF then
+                        myRoot.CFrame      = rocketSavedCF
+                        myRoot.Velocity    = Vector3.zero
+                        myRoot.RotVelocity = Vector3.zero
+                        rocketSavedCF = nil
+                    end
+                    pcall(function() MainTab:SetToggle("Rocket Target", false) end)
+                end)
+            end)
+        end,
+    })
+end
+
+-- GODSPEED Rocket Target
+do
+    local gsConn, gsSavedCF = nil, nil
+    MainTab:CreateToggle({
+        Name         = "GODSPEED Rocket Target",
+        CurrentValue = false,
+        Callback = function(enabled)
+            if not selectedTarget or not selectedTarget.Character then return end
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+
+            if not enabled then
+                if gsConn then gsConn:Disconnect() end
+                gsConn = nil
+                if gsSavedCF then
+                    myRoot.CFrame      = gsSavedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
+                    gsSavedCF = nil
+                end
+                return
+            end
+
+            gsSavedCF = myRoot.CFrame
+            gsConn = weldRun.Heartbeat:Connect(function()
+                if not enabled then return end
+                if not tgtRoot.Parent then return end
+                local aim = tgtRoot.Position + Vector3.new(0, -3, 0)
+                myRoot.CFrame      = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
+                myRoot.Velocity    = Vector3.new(0, 5000, 0)
+                myRoot.RotVelocity = Vector3.zero
+                if sethiddenproperty then
+                    pcall(function() sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot) end)
+                end
+                task.delay(0.2, function()
+                    if gsConn then gsConn:Disconnect() end
+                    gsConn = nil
+                    enabled = false
+                    if gsSavedCF then
+                        myRoot.CFrame      = gsSavedCF
+                        myRoot.Velocity    = Vector3.zero
+                        myRoot.RotVelocity = Vector3.zero
+                        gsSavedCF = nil
+                    end
+                    pcall(function() MainTab:SetToggle("Rocket Target", false) end)
+                end)
+            end)
+        end,
+    })
+end
+
+-- ============================================================
+--   Tab 2 – Games
+-- ============================================================
+local GamesTab   = Window:CreateTab("Games", 4483362458)
+local gamesPlayers  = game:GetService("Players")
+local gamesRun      = game:GetService("RunService")
+local gamesLocal    = gamesPlayers.LocalPlayer
+local gameTarget    = nil
+local guessWord     = ""
+local guessConn     = nil
+local guessConn2    = nil
+
+GamesTab:CreateInput({
+    Name                    = "Set Target",
+    PlaceholderText         = "Username / Display",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(input)
+        input = (tostring(input or "")):lower()
+        gameTarget = nil
+        for _, plr in ipairs(gamesPlayers:GetPlayers()) do
+            local name    = plr.Name:lower()
+            local display = (plr.DisplayName or plr.Name):lower()
+            if name:sub(1, #input) == input or display:sub(1, #input) == input then
+                gameTarget = plr
+                break
+            end
+        end
+        if gameTarget then
+            Rayfield:Notify({
+                Title    = "Game Target Selected",
+                Content  = gameTarget.Name,
+                Duration = 3,
+            })
+        end
+    end,
+})
+
+GamesTab:CreateInput({
+    Name                    = "Word To Guess",
+    PlaceholderText         = "Word they must say",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(input)
+        guessWord = (tostring(input or "")):lower()
+    end,
+})
+
+GamesTab:CreateButton({
+    Name = "Guess To Jump",
+    Callback = function()
+        if not gameTarget then return end
+        local myChar  = gamesLocal.Character or gamesLocal.CharacterAdded:Wait()
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtChar = gameTarget.Character or gameTarget.CharacterAdded:Wait()
+        local tgtRoot = tgtChar:WaitForChild("HumanoidRootPart")
+
+        if guessConn  then guessConn:Disconnect()  end
+        if guessConn2 then guessConn2:Disconnect() end
+
+        guessConn = gamesRun.Heartbeat:Connect(function()
+            if not myRoot or not tgtRoot then return end
+            myRoot.Velocity    = Vector3.zero
+            myRoot.RotVelocity = Vector3.zero
+            myRoot.CFrame      = CFrame.new(tgtRoot.Position + Vector3.new(0, 3.5, 0))
+                                  * CFrame.Angles(-math.pi / 2, 0, 0)
+            sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+        end)
+    end,
+})
+
+-- ============================================================
+--   Tab 3 – NaN Flinging
+-- ============================================================
+local NaNTab      = Window:CreateTab("NaN flinging", 4483362458)
+local nanPlayers  = game:GetService("Players")
+local nanRun      = game:GetService("RunService")
+local nanLocal    = nanPlayers.LocalPlayer
+local nanTarget   = ""
+local nanConn     = nil
+local nanCounter  = 0
+
+NaNTab:CreateInput({
+    Name                    = "Select Target",
+    PlaceholderText         = "Username / DisplayName",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(input)
+        nanTarget = tostring(input or "")
+    end,
+})
+
+NaNTab:CreateButton({
+    Name = "NaN Fling",
+    Callback = function()
+        if nanTarget == "" then return end
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+        if nanConn then nanConn:Disconnect() nanConn = nil end
+
+        local target
+        for _, plr in ipairs(nanPlayers:GetPlayers()) do
+            if plr ~= nanLocal
+            and (plr.Name:lower():find(nanTarget:lower())
+                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                target = plr
+                break
+            end
+        end
+        if not target or not target.Character then return end
+
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
+
+        local savedCF       = myRoot.CFrame
+        local savedVel      = myRoot.Velocity
+        local savedPlatform = myHum.PlatformStand
+        local nan           = 0 / 0
+        local nanVec        = Vector3.new(nan, nan, nan)
+
+        myHum.PlatformStand = true
+        local startTime = tick()
+
+        nanConn = nanRun.Heartbeat:Connect(function()
+            if nanCounter ~= localID then return end
+            if tick() - startTime >= 1.5 then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    myHum.PlatformStand               = savedPlatform
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.CFrame                     = savedCF
+                    myRoot.Velocity                   = savedVel
+                    myRoot.RotVelocity                = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+            myRoot.CFrame                  = tgtRoot.CFrame
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(nanVec) end)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+        end)
+    end,
+})
+
+-- ============================================================
+--   Tab 4 – Other Stuff
+-- ============================================================
+local OtherTab = Window:CreateTab("Other Stuff", 4483362458)
+
+OtherTab:CreateButton({
+    Name = "Anti Fling",
+    Callback = function()
+        local svcPlayers    = game:GetService("Players")
+        local svcRun        = game:GetService("RunService")
+        local svcStarterGui = game:GetService("StarterGui")
+        local svcSound      = game:GetService("SoundService")
+
+        local self       = svcPlayers.LocalPlayer
+        local SPEED_THRESHOLD = 67
+        local TIME_WINDOW     = 0.5
+
+        local normalProps  = PhysicalProperties.new(0.7, 0.3, 0.5)
+        local zeroProps    = PhysicalProperties.new(0, 0, 0)
+        local isActive     = true
+        local flingTimers  = {}
+        local blacklist    = {}
+
+        local alertSound = Instance.new("Sound", svcSound)
+        alertSound.SoundId = "rbxassetid://9086208751"
+        alertSound.Volume  = 1
+
+        local function notify(msg)
+            svcStarterGui:SetCore("SendNotification", {
+                Title    = "Rexy's Anti Fling",
+                Text     = msg,
+                Duration = 4,
+            })
+            alertSound:Play()
+            print("[REX] " .. msg)
+        end
+
+        local function setCollision(character, state)
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide              = state
+                    part.CustomPhysicalProperties = state and normalProps or zeroProps
+                    if not state then
+                        part.AssemblyLinearVelocity  = Vector3.zero
+                        part.AssemblyAngularVelocity = Vector3.zero
+                    end
+                end
+            end
+        end
+
+        local function findPlayer(query)
+            query = (tostring(query or "")):lower()
+            for _, plr in ipairs(svcPlayers:GetPlayers()) do
+                local name    = plr.Name:lower()
+                local display = (plr.DisplayName or plr.Name):lower()
+                if name == query or display == query
+                or name:sub(1, #query) == query or display:sub(1, #query) == query then
+                    return plr
+                end
+            end
+        end
+
+        svcRun.RenderStepped:Connect(function(dt)
+            if not isActive then return end
+            for _, plr in ipairs(svcPlayers:GetPlayers()) do
+                if plr ~= self then
+                    local char = plr.Character
+                    local root = char and char:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        -- Check if any OTHER player is already flying (mass fling)
+                        local otherFlying = false
+                        for _, other in ipairs(svcPlayers:GetPlayers()) do
+                            if other ~= plr then
+                                local oChar = other.Character
+                                local oRoot = oChar and oChar:FindFirstChild("HumanoidRootPart")
+                                if oRoot and oRoot.AssemblyLinearVelocity.Magnitude > SPEED_THRESHOLD then
+                                    otherFlying = true
+                                    break
+                                end
+                            end
+                        end
+
+                        if root.AssemblyLinearVelocity.Magnitude > SPEED_THRESHOLD and not otherFlying then
+                            flingTimers[plr] = (flingTimers[plr] or 0) + dt
+                        else
+                            flingTimers[plr] = 0
+                        end
+
+                        if flingTimers[plr] >= TIME_WINDOW and not blacklist[plr] then
+                            blacklist[plr] = true
+                            setCollision(char, false)
+                            notify(plr.Name .. " is flinging! Type 'unanti " .. plr.Name .. "' to restore collision.")
+                        end
+
+                        if blacklist[plr] then
+                            for _, part in ipairs(char:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    part.AssemblyLinearVelocity  = Vector3.zero
+                                    part.AssemblyAngularVelocity = Vector3.zero
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        self.Chatted:Connect(function(msg)
+            msg = msg:lower()
+            if msg:sub(1, 7) == "unanti " then
+                local target = findPlayer(msg:sub(8))
+                if target and blacklist[target] then
+                    local char = target.Character
+                    if char then
+                        setCollision(char, true)
+                        blacklist[target] = nil
+                        notify("Collision restored for " .. target.Name)
+                    end
+                end
+            elseif msg:sub(1, 4) == "!bl " then
+                local target = findPlayer(msg:sub(5))
+                if target and not blacklist[target] then
+                    local char = target.Character
+                    if char then
+                        setCollision(char, false)
+                        blacklist[target] = true
+                        notify(target.Name .. " manually blacklisted for no-collision!")
+                    end
+                end
+            elseif msg == "disableanti" then
+                isActive = false
+                notify("Rexy's Anti Fling Disabled")
+            elseif msg == "enableanti" then
+                isActive = true
+                notify("Rexy's Anti Fling Enabled")
+            end
+        end)
+
+        notify("Rexy's Anti Fling Loaded!")
+        notify("Use '!bl <username>' to blacklist, 'unanti <username>' to restore, 'enableanti'/'disableanti' to toggle.")
+    end,
+})
