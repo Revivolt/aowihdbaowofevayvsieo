@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -228,9 +228,9 @@ local function createWeldToggle(name, offset, killTarget)
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 if conn then conn:Disconnect() conn = nil end
                 if savedCF then
-                    myRoot.CFrame                  = savedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame      = savedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
                     savedCF = nil
                 end
                 return
@@ -240,9 +240,9 @@ local function createWeldToggle(name, offset, killTarget)
             savedCF = myRoot.CFrame
             conn = weldRun.Heartbeat:Connect(function()
                 if not isEnabled then return end
-                myRoot.CFrame                  = CFrame.new(tgtRoot.Position + offset) * CFrame.Angles(-math.pi / 2, 0, 0)
-                myRoot.AssemblyLinearVelocity  = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
-                myRoot.AssemblyAngularVelocity = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
+                myRoot.CFrame       = CFrame.new(tgtRoot.Position + offset) * CFrame.Angles(-math.pi / 2, 0, 0)
+                myRoot.Velocity     = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
+                myRoot.RotVelocity  = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                 if killTarget then
                     task.wait(0.5)
@@ -255,7 +255,7 @@ local function createWeldToggle(name, offset, killTarget)
 end
 
 createWeldToggle("Fling Player",   Vector3.new(0,  0,    0), false)
-createWeldToggle("Fling 2.0",      Vector3.new(0, -3.2,  0), false)
+createWeldToggle("Fling 2.0",      Vector3.new(0, -2.5,  0), false)
 createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
 createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
