@@ -1,98 +1,68 @@
--- FastClientMove LocalScript
--- Place inside StarterPlayerScripts or StarterCharacterScripts
--- Uses BodyVelocity on the client side only — other players won't see the movement
+-- VibrateScript (LocalScript)
+-- Place in StarterCharacterScripts
+-- Vibrates your character SO fast it becomes a blur/unrecognizable
+-- 100% client-side — other players see you standing completely still
 
-local Players       = game:GetService("Players")
-local RunService    = game:GetService("RunService")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-local LocalPlayer   = Players.LocalPlayer
-local Character     = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HRP           = Character:WaitForChild("HumanoidRootPart")
-local Humanoid      = Character:WaitForChild("Humanoid")
+local LocalPlayer = Players.LocalPlayer
+local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HRP         = Character:WaitForChild("HumanoidRootPart")
 
 -- ============================================================
 --  CONFIG
 -- ============================================================
-local SPEED         = 9999       -- how fast (studs/s). Crank it up if you want
-local TOGGLE_KEY    = Enum.KeyCode.Q  -- hold Q to activate, release to stop
-local VERTICAL_LOCK = true      -- keeps you on the ground while dashing
+local TOGGLE_KEY   = Enum.KeyCode.Q   -- Hold to vibrate
+local INTENSITY    = 9999                -- How far each shake goes (studs). 8 = full blur
+local SPEED_MULT   = 9999                -- 1 = every frame. Lower = slower (not recommended)
 -- ============================================================
 
-local bodyVel = nil
-local active  = false
+local vibrating    = false
+local originCF     = nil
+local flip         = 1
 
-local function createBodyVelocity()
-    if HRP:FindFirstChild("__FastVel") then
-        HRP:FindFirstChild("__FastVel"):Destroy()
-    end
-
-    local bv       = Instance.new("BodyVelocity")
-    bv.Name        = "__FastVel"
-    bv.MaxForce    = Vector3.new(1e6, VERTICAL_LOCK and 0 or 1e6, 1e6)
-    bv.Velocity    = Vector3.zero
-    bv.Parent      = HRP
-    return bv
-end
-
--- Re-grab character after respawn
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    HRP       = newChar:WaitForChild("HumanoidRootPart")
-    Humanoid  = newChar:WaitForChild("Humanoid")
-    bodyVel   = nil
-    active    = false
+-- Respawn support
+LocalPlayer.CharacterAdded:Connect(function(c)
+    Character  = c
+    HRP        = c:WaitForChild("HumanoidRootPart")
+    vibrating  = false
+    originCF   = nil
+    flip       = 1
 end)
 
--- Key down → activate
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
     if input.KeyCode == TOGGLE_KEY then
-        active  = true
-        bodyVel = createBodyVelocity()
+        vibrating = true
+        originCF  = HRP.CFrame  -- lock the origin the moment you press
     end
 end)
 
--- Key up → deactivate
 UserInputService.InputEnded:Connect(function(input)
     if input.KeyCode == TOGGLE_KEY then
-        active = false
-        if bodyVel and bodyVel.Parent then
-            bodyVel:Destroy()
-            bodyVel = nil
+        vibrating = false
+        -- Snap back to where you started so you don't drift
+        if originCF then
+            HRP.CFrame = originCF
         end
     end
 end)
 
--- Every frame: point the BodyVelocity in the direction the camera faces + WASD
 RunService.RenderStepped:Connect(function()
-    if not active or not bodyVel or not bodyVel.Parent then return end
+    if not vibrating then return end
+    if not HRP or not HRP.Parent then return end
 
-    -- Build a movement direction from WASD relative to the camera
-    local camera    = workspace.CurrentCamera
-    local camCF     = camera.CFrame
-    local forward   = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z).Unit
-    local right     = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z).Unit
+    -- Flip the offset direction every single frame (max frequency possible)
+    flip = flip * -1
 
-    local moveDir   = Vector3.zero
+    local randX = (math.random() - 0.5) * 2 * INTENSITY
+    local randY = (math.random() - 0.5) * 2 * INTENSITY
+    local randZ = (math.random() - 0.5) * 2 * INTENSITY
 
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + forward  end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - forward  end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + right    end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - right    end
-
-    -- Optional vertical
-    if not VERTICAL_LOCK then
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            moveDir = moveDir + Vector3.new(0, 1, 0)
-        end
-    end
-
-    if moveDir.Magnitude > 0 then
-        bodyVel.Velocity = moveDir.Unit * SPEED
-    else
-        bodyVel.Velocity = Vector3.zero
-    end
+    -- Apply a random offset from origin every frame — creates the blur effect
+    HRP.CFrame = originCF * CFrame.new(randX * flip, randY * flip, randZ * flip)
 end)
 
-print("[FastClientMove] Loaded! Hold", TOGGLE_KEY.Name, "+ WASD to zoom around.")
+print("[VibrateScript] Loaded! Hold", TOGGLE_KEY.Name, "to vibrate into a blur.")
