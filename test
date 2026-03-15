@@ -1,60 +1,57 @@
--- LocalScript (place in StarterCharacterScripts or StarterPlayerScripts)
+-- LocalScript: Weld yourself above another player
+-- Place inside StarterCharacterScripts or run as a LocalScript
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 
--- CONFIG
-local TARGET_PLAYER_NAME = "62_AM" -- Change this to the target player's username
-local VERTICAL_OFFSET = 5 -- Studs above the target player
+-- ============================================================
+--  CONFIG
+-- ============================================================
+local TARGET_NAME   = "62_AM"   -- Target player's username
+local HEIGHT_OFFSET = 5                  -- Studs above their HumanoidRootPart
+-- ============================================================
 
--- References
-local localPlayer = Players.LocalPlayer
-local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
-local humanoid = character:WaitForChild("Humanoid")
+local LocalPlayer = Players.LocalPlayer
+local character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local hrp         = character:WaitForChild("HumanoidRootPart")
+local humanoid    = character:WaitForChild("Humanoid")
 
--- Disable default character physics so the weld can take effect
-humanoid.PlatformStand = true
+-- Wait for the target player to exist
+local target
+repeat
+	target = Players:FindFirstChild(TARGET_NAME)
+	if not target then task.wait(1) end
+until target
+print("[WeldAbove] Found target: " .. TARGET_NAME)
 
--- Find the target player
-local targetPlayer = Players:FindFirstChild(TARGET_PLAYER_NAME)
+-- Wait for their character and root part
+local targetCharacter = target.Character or target.CharacterAdded:Wait()
+local targetHRP       = targetCharacter:WaitForChild("HumanoidRootPart")
+print("[WeldAbove] Target character loaded.")
 
-if not targetPlayer then
-	warn("Player not found: " .. TARGET_PLAYER_NAME)
-	return
-end
-
-local targetCharacter = targetPlayer.Character or targetPlayer.CharacterAdded:Wait()
-local targetHRP = targetCharacter:WaitForChild("HumanoidRootPart")
-
--- Remove any existing weld
-local existingWeld = hrp:FindFirstChild("PlayerRideWeld")
-if existingWeld then
-	existingWeld:Destroy()
-end
-
--- Unanchor the local HRP just in case
-hrp.Anchored = false
-
--- Create the weld
-local weld = Instance.new("WeldConstraint")
-weld.Name = "PlayerRideWeld"
-weld.Part0 = hrp
-weld.Part1 = targetHRP
-weld.Parent = hrp
-
--- Offset your character above the target using CFrame before welding locks it in
-hrp.CFrame = targetHRP.CFrame * CFrame.new(0, VERTICAL_OFFSET, 0)
-
-print("Welded to " .. TARGET_PLAYER_NAME .. " successfully!")
-
--- Optional: Clean up if target character is removed
-targetCharacter.AncestryChanged:Connect(function()
-	if not targetCharacter:IsDescendantOf(workspace) then
-		if weld and weld.Parent then
-			weld:Destroy()
-			humanoid.PlatformStand = false
-			warn("Target character left — weld removed.")
-		end
+-- Unanchor all local character parts so the weld can move freely
+for _, part in character:GetDescendants() do
+	if part:IsA("BasePart") then
+		part.Anchored = false
 	end
-end)
+end
+
+-- Snap into position above the target before welding
+hrp.CFrame = targetHRP.CFrame * CFrame.new(0, HEIGHT_OFFSET, 0)
+
+-- Create the weld between our HRP and the target's HRP
+local weld      = Instance.new("WeldConstraint")
+weld.Part0      = hrp
+weld.Part1      = targetHRP
+weld.Parent     = hrp
+print("[WeldAbove] Welded to " .. TARGET_NAME .. " (" .. HEIGHT_OFFSET .. " studs above).")
+
+-- Clean up weld if either character is removed
+local function onCharacterRemoving()
+	if weld and weld.Parent then
+		weld:Destroy()
+		print("[WeldAbove] Weld removed (character reset).")
+	end
+end
+
+LocalPlayer.CharacterRemoving:Connect(onCharacterRemoving)
+target.CharacterRemoving:Connect(onCharacterRemoving)
