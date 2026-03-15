@@ -1,57 +1,91 @@
--- LocalScript: Weld yourself above another player
--- Place inside StarterCharacterScripts or run as a LocalScript
+-- test
+-- Place inside StarterCharacterScripts
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 -- ============================================================
---  CONFIG
+--  CONFIGURATION
 -- ============================================================
-local TARGET_NAME   = "62_AM"   -- Target player's username
+local TARGET_NAME   = "62_AM"   -- Username of the player to ride
 local HEIGHT_OFFSET = 5                  -- Studs above their HumanoidRootPart
 -- ============================================================
 
 local LocalPlayer = Players.LocalPlayer
-local character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local hrp         = character:WaitForChild("HumanoidRootPart")
-local humanoid    = character:WaitForChild("Humanoid")
 
--- Wait for the target player to exist
-local target
-repeat
-	target = Players:FindFirstChild(TARGET_NAME)
-	if not target then task.wait(1) end
-until target
-print("[WeldAbove] Found target: " .. TARGET_NAME)
-
--- Wait for their character and root part
-local targetCharacter = target.Character or target.CharacterAdded:Wait()
-local targetHRP       = targetCharacter:WaitForChild("HumanoidRootPart")
-print("[WeldAbove] Target character loaded.")
-
--- Unanchor all local character parts so the weld can move freely
-for _, part in character:GetDescendants() do
-	if part:IsA("BasePart") then
-		part.Anchored = false
-	end
+local function getCharacterParts(character)
+	local hrp      = character:WaitForChild("HumanoidRootPart", 10)
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	return hrp, humanoid
 end
 
--- Snap into position above the target before welding
-hrp.CFrame = targetHRP.CFrame * CFrame.new(0, HEIGHT_OFFSET, 0)
+local function weldAbove(targetPlayer)
+	-- Wait for both characters to be ready
+	local myChar     = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	local theirChar  = targetPlayer.Character or targetPlayer.CharacterAdded:Wait()
 
--- Create the weld between our HRP and the target's HRP
-local weld      = Instance.new("WeldConstraint")
-weld.Part0      = hrp
-weld.Part1      = targetHRP
-weld.Parent     = hrp
-print("[WeldAbove] Welded to " .. TARGET_NAME .. " (" .. HEIGHT_OFFSET .. " studs above).")
+	local myHRP,    myHumanoid    = getCharacterParts(myChar)
+	local theirHRP, theirHumanoid = getCharacterParts(theirChar)
 
--- Clean up weld if either character is removed
-local function onCharacterRemoving()
-	if weld and weld.Parent then
-		weld:Destroy()
-		print("[WeldAbove] Weld removed (character reset).")
+	if not (myHRP and theirHRP) then
+		warn("[WeldAbove] Could not find HumanoidRootParts.")
+		return
 	end
+
+	-- 1. Disable local character movement so physics don't fight the weld
+	myHumanoid.WalkSpeed    = 0
+	myHumanoid.JumpHeight   = 0
+	myHumanoid.AutoRotate   = false
+
+	-- 2. Snap above target before welding so the offset is baked in
+	myHRP.CFrame = theirHRP.CFrame * CFrame.new(0, HEIGHT_OFFSET, 0)
+
+	-- 3. WeldConstraint preserves the relative CFrame set in step 2
+	local weld      = Instance.new("WeldConstraint")
+	weld.Part0      = myHRP
+	weld.Part1      = theirHRP
+	weld.Parent     = myHRP
+
+	print("[WeldAbove] Welded to " .. targetPlayer.Name)
+
+	-- 4. Clean up if either character is removed / player leaves
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		if not myHRP.Parent or not theirHRP.Parent then
+			weld:Destroy()
+			-- Restore movement
+			if myHumanoid and myHumanoid.Parent then
+				myHumanoid.WalkSpeed  = 16
+				myHumanoid.JumpHeight = 7.2
+				myHumanoid.AutoRotate = true
+			end
+			conn:Disconnect()
+			print("[WeldAbove] Weld removed – character(s) gone.")
+		end
+	end)
+
+	return weld
 end
 
-LocalPlayer.CharacterRemoving:Connect(onCharacterRemoving)
-target.CharacterRemoving:Connect(onCharacterRemoving)
+-- Wait until the local character exists, then find the target
+LocalPlayer.CharacterAdded:Connect(function()
+	task.wait(1) -- brief wait for replication
+
+	local target = Players:FindFirstChild(TARGET_NAME)
+	if target then
+		weldAbove(target)
+	else
+		warn("[WeldAbove] Player '" .. TARGET_NAME .. "' not found in the server.")
+	end
+end)
+
+-- Also run immediately if character already exists
+if LocalPlayer.Character then
+	task.wait(1)
+	local target = Players:FindFirstChild(TARGET_NAME)
+	if target then
+		weldAbove(target)
+	else
+		warn("[WeldAbove] Player '" .. TARGET_NAME .. "' not found in the server.")
+	end
+end
