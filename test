@@ -1,16 +1,20 @@
--- LocalScript: Place in StarterCharacterScripts
--- Welds your character above a target player with low-latency replication.
+-- test
 
-local Players         = game:GetService("Players")
-local RunService      = game:GetService("RunService")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Stats            = game:GetService("Stats")
 
--- ─── CONFIG ───────────────────────────────────────────────────────────────────
+-- ─── CONFIG ──────────────────────────────────────────────────────────────────
 local CONFIG = {
-	TargetName   = "62_AM",  -- Exact username of the player to sit above
-	HeightOffset = 5,                 -- Studs above their HumanoidRootPart
-	ToggleKey    = Enum.KeyCode.E,    -- Key to attach / detach
-	MatchOrientation = true,          -- Inherit the target's facing direction
+	TargetName       = "62_AM",
+	HeightOffset     = 5,
+	ToggleKey        = Enum.KeyCode.E,
+	MatchOrientation = true,
+
+	-- Extrapolation smoothing: blends raw extrapolation with a low-pass filter
+	-- to avoid overcorrecting on laggy connections. 0 = no smoothing, 1 = max.
+	SmoothingAlpha   = 0.2,
 }
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -18,7 +22,11 @@ local localPlayer = Players.LocalPlayer
 local attached    = false
 local heartbeat   = nil
 
--- Returns the local character's HRP and Humanoid, or nils if unavailable
+-- Running estimate of the target's velocity, smoothed to reduce jitter
+-- caused by discrete network update steps
+local smoothedVelocity = Vector3.zero
+local lastTargetPos    = nil
+
 local function getLocalParts()
 	local char = localPlayer.Character
 	if not char then return nil, nil end
@@ -26,11 +34,19 @@ local function getLocalParts()
 	       char:FindFirstChildOfClass("Humanoid")
 end
 
--- Returns the target's HRP, or nil
 local function getTargetHRP()
 	local target = Players:FindFirstChild(CONFIG.TargetName)
 	if not (target and target.Character) then return nil end
 	return target.Character:FindFirstChild("HumanoidRootPart")
+end
+
+-- Returns total one-way latency in seconds:
+-- your outgoing ping + an estimate of the target's incoming ping.
+-- We can only directly read OUR ping, so we double it as a symmetric
+-- approximation. On asymmetric connections this is still far better than 0.
+local function getTotalLatency()
+	local myPing = localPlayer:GetNetworkPing() -- one-way, in seconds
+	return myPing * 2
 end
 
 local function attach()
@@ -39,49 +55,62 @@ local function attach()
 		warn("[Attach] Local character not ready.")
 		return
 	end
-
 	if not getTargetHRP() then
-		warn("[Attach] Target '"..CONFIG.TargetName.."' not found or has no character.")
+		warn("[Attach] Target not found.")
 		return
 	end
 
-	attached = true
-	hrp.Anchored = false
+	attached       = true
+	smoothedVelocity = Vector3.zero
+	lastTargetPos  = nil
+	hrp.Anchored   = false
 
-	-- Physics state: the Humanoid stops overriding our CFrame assignments.
-	-- This is the key step that makes client-side positioning smooth and
-	-- prevents the character controller from fighting the placement.
 	hum:ChangeState(Enum.HumanoidStateType.Physics)
 
-	heartbeat = RunService.Heartbeat:Connect(function()
+	heartbeat = RunService.Heartbeat:Connect(function(dt)
 		local myHRP, myHum = getLocalParts()
 		local targetHRP    = getTargetHRP()
-
 		if not (myHRP and targetHRP and myHum) then return end
 
-		-- Build the desired world CFrame: target position + height offset.
-		-- Optionally inherit target's rotation so we face the same direction.
-		local targetCF = targetHRP.CFrame
-		local desiredCF
+		-- ── Step 1: Compute a smoothed velocity from positional delta ──────
+		-- AssemblyLinearVelocity updates at network rate (not every frame),
+		-- so deriving velocity from position delta is more frame-accurate.
+		local currentPos = targetHRP.Position
 
+		if lastTargetPos then
+			local rawVelocity = (currentPos - lastTargetPos) / dt
+
+			-- Low-pass filter: prevents a single huge network jump from
+			-- causing a massive overshoot on the next frame
+			smoothedVelocity = smoothedVelocity:Lerp(rawVelocity, 1 - CONFIG.SmoothingAlpha)
+		end
+
+		lastTargetPos = currentPos
+
+		-- ── Step 2: Extrapolate target's world position forward ────────────
+		-- We push the sampled position ahead by the total round-trip latency
+		-- so that by the time our frame reaches the server (and then the
+		-- target's client), we are already where the target actually is.
+		local latency          = getTotalLatency()
+		local extrapolatedPos  = currentPos + smoothedVelocity * latency
+
+		-- ── Step 3: Build desired CFrame ───────────────────────────────────
+		local desiredCF
 		if CONFIG.MatchOrientation then
-			-- Same rotation as target, shifted up on the Y axis in world space
-			desiredCF = CFrame.new(targetCF.Position + Vector3.new(0, CONFIG.HeightOffset, 0))
-			            * (targetCF - targetCF.Position)  -- rotation component only
+			local rot = targetHRP.CFrame - targetHRP.CFrame.Position
+			desiredCF = CFrame.new(extrapolatedPos + Vector3.new(0, CONFIG.HeightOffset, 0)) * rot
 		else
-			desiredCF = CFrame.new(targetCF.Position + Vector3.new(0, CONFIG.HeightOffset, 0))
+			desiredCF = CFrame.new(extrapolatedPos + Vector3.new(0, CONFIG.HeightOffset, 0))
 		end
 
 		myHRP.CFrame = desiredCF
 
-		-- Copy the target's linear velocity so our character moves in the same
-		-- inertial frame. Without this you get a one-frame stutter every time
-		-- the target accelerates.
-		myHRP.AssemblyLinearVelocity  = targetHRP.AssemblyLinearVelocity
+		-- Match velocity so our character rides in the same inertial frame
+		myHRP.AssemblyLinearVelocity  = smoothedVelocity
 		myHRP.AssemblyAngularVelocity = Vector3.zero
 	end)
 
-	print("[Attach] Attached above '"..CONFIG.TargetName.."'. Press "..CONFIG.ToggleKey.Name.." to detach.")
+	print("[Attach] Attached. Press " .. CONFIG.ToggleKey.Name .. " to detach.")
 end
 
 local function detach()
@@ -92,16 +121,17 @@ local function detach()
 		heartbeat = nil
 	end
 
+	smoothedVelocity = Vector3.zero
+	lastTargetPos    = nil
+
 	local _, hum = getLocalParts()
 	if hum then
-		-- GettingUp transitions back to normal locomotion
 		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
 	end
 
 	print("[Attach] Detached.")
 end
 
--- Toggle on keypress
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == CONFIG.ToggleKey then
@@ -109,7 +139,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- Auto-detach on death / respawn so the new character starts clean
 localPlayer.CharacterAdded:Connect(function()
 	if heartbeat then
 		heartbeat:Disconnect()
