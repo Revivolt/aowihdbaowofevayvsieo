@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -255,10 +255,61 @@ local function createWeldToggle(name, offset, killTarget)
 end
 
 createWeldToggle("Fling Player",   Vector3.new(0,  0,    0), false)
-createWeldToggle("Fling 2.0",      Vector3.new(0, -2.5,  0), false)
 createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
 createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
+
+-- Fling 2.0 needs different logic: position ONCE then only push velocity each frame.
+-- Re-teleporting via CFrame every heartbeat cancels the actual physics movement,
+-- so momentum never transfers to the target server-side.
+do
+    local f2Conn      = nil
+    local f2SavedCF   = nil
+    local f2Enabled   = false
+    MainTab:CreateToggle({
+        Name         = "Fling 2.0",
+        CurrentValue = false,
+        Callback = function(state)
+            f2Enabled = state
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not f2Enabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                if f2Conn then f2Conn:Disconnect() f2Conn = nil end
+                if f2SavedCF then
+                    myRoot.CFrame                  = f2SavedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    f2SavedCF = nil
+                end
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                return
+            end
+
+            activeFlingCount = activeFlingCount + 1
+            f2SavedCF = myRoot.CFrame
+
+            -- Position inside the target's hitbox ONCE, then let physics run.
+            myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, -2.5, 0))
+                                             * CFrame.Angles(-math.pi / 2, 0, 0)
+            myRoot.AssemblyLinearVelocity  = Vector3.new(500, 500, 500)
+            myRoot.AssemblyAngularVelocity = Vector3.new(500, 500, 500)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+
+            -- Every subsequent frame: keep the rep glued and re-assert velocity
+            -- but do NOT reset CFrame — that would undo the physics movement.
+            f2Conn = weldRun.Heartbeat:Connect(function()
+                if not f2Enabled then return end
+                myRoot.AssemblyLinearVelocity  = Vector3.new(500, 500, 500)
+                myRoot.AssemblyAngularVelocity = Vector3.new(500, 500, 500)
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end,
+    })
+end
 
 -- Anti Jump
 do
