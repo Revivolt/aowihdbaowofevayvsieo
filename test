@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -259,65 +259,6 @@ createWeldToggle("Fling 2.0",      Vector3.new(0, -2.5,  0), false)
 createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
 createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
-
--- Fling 2.0: same per-frame CFrame lock as the other toggles, but CanCollide is
--- disabled on the local character so Roblox's physics can't eject us from inside
--- the target's collision box at the -2.5 Y offset.
-do
-    local f2Conn    = nil
-    local f2SavedCF = nil
-    local f2Enabled = false
-
-    local function setLocalCollision(char, state)
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = state
-            end
-        end
-    end
-
-    MainTab:CreateToggle({
-        Name         = "Fling 2.0",
-        CurrentValue = false,
-        Callback = function(state)
-            f2Enabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
-            if not f2Enabled then
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                if f2Conn then f2Conn:Disconnect() f2Conn = nil end
-                -- Restore collision and position
-                setLocalCollision(myChar, true)
-                if f2SavedCF then
-                    myRoot.CFrame                  = f2SavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    f2SavedCF = nil
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
-                return
-            end
-
-            activeFlingCount = activeFlingCount + 1
-            f2SavedCF = myRoot.CFrame
-            -- Disable collision so the target's parts can't push us back out
-            setLocalCollision(myChar, false)
-
-            f2Conn = weldRun.Heartbeat:Connect(function()
-                if not f2Enabled then return end
-                -- Same approach as the other weld toggles: lock CFrame + velocity every frame
-                myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, -2.5, 0))
-                                                 * CFrame.Angles(-math.pi / 2, 0, 0)
-                myRoot.AssemblyLinearVelocity  = Vector3.new(500, 500, 500)
-                myRoot.AssemblyAngularVelocity = Vector3.new(500, 500, 500)
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-            end)
-        end,
-    })
-end
 
 -- Anti Jump
 do
