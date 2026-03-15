@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -71,18 +71,27 @@ local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local RootPart    = Character:WaitForChild("HumanoidRootPart")
 local Humanoid    = Character:WaitForChild("Humanoid")
 
-local safeZoneCenter = Vector3.new(0, 100, 0)
-local minY           = 5
-local killY          = -20
-local maxY           = 500
-local speedThreshold = 100
-local lastSafePos    = RootPart.Position
+local killY          = -80   -- only trigger if genuinely fallen out of the world
+local maxY           = 5000  -- only trigger if somehow launched to extreme heights
+local speedThreshold = 350   -- high enough to not fire during normal movement/jumps
+local lastSafePos    = nil   -- populated once the character has fully loaded
 local antiMoveLock   = false
 
--- Track last safe position
+-- Wait a moment for the character to fully settle before we start tracking,
+-- so we don't snapshot a mid-spawn position as "safe"
+task.delay(1, function()
+    if RootPart then
+        lastSafePos = RootPart.Position
+    end
+end)
+
+-- Continuously update last safe position while the player is on solid ground
 RunService.Heartbeat:Connect(function()
+    if not RootPart then return end
     local pos = RootPart.Position
-    if pos.Y > minY and pos.Y < maxY then
+    -- Only consider a position safe if we're not in freefall and within normal bounds
+    if pos.Y > -10 and pos.Y < maxY
+    and RootPart.AssemblyLinearVelocity.Magnitude < speedThreshold then
         lastSafePos = pos
     end
 end)
@@ -90,6 +99,7 @@ end)
 -- Anti-fall / speed kill protection
 RunService.Heartbeat:Connect(function()
     if antiMoveLock then return end
+    if not lastSafePos then return end  -- don't act until we have a valid safe position
     antiMoveLock = true
 
     local pos  = RootPart.Position
@@ -97,33 +107,39 @@ RunService.Heartbeat:Connect(function()
     local velY = RootPart.AssemblyLinearVelocity.Y
 
     local function reset(target)
-        RootPart.CFrame                   = CFrame.new(target)
-        RootPart.AssemblyLinearVelocity   = Vector3.new(0, 0, 0)
-        Humanoid.Health                   = Humanoid.MaxHealth
-    end
-
-    if vel > speedThreshold or math.abs(velY) > 90 then
-        reset(safeZoneCenter)
-    elseif pos.Y > maxY then
-        reset(safeZoneCenter)
-    elseif pos.Y < minY and pos.Y > killY then
-        reset(safeZoneCenter)
-    elseif pos.Y < killY then
-        RootPart.CFrame                 = CFrame.new(lastSafePos.X, math.max(100, lastSafePos.Y), lastSafePos.Z)
+        RootPart.CFrame                 = CFrame.new(target)
         RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         Humanoid.Health                 = Humanoid.MaxHealth
+        antiMoveLock = false
     end
 
-    antiMoveLock = false
+    if vel > speedThreshold or math.abs(velY) > 350 then
+        reset(lastSafePos)
+    elseif pos.Y > maxY then
+        reset(lastSafePos)
+    elseif pos.Y < killY then
+        -- Fallen out of the world — restore to last known safe spot
+        RootPart.CFrame                 = CFrame.new(lastSafePos.X, math.max(lastSafePos.Y + 5, 10), lastSafePos.Z)
+        RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        Humanoid.Health                 = Humanoid.MaxHealth
+        antiMoveLock = false
+    else
+        antiMoveLock = false
+    end
 end)
 
 -- Re-grab refs on respawn
 LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character  = newChar
-    RootPart   = Character:WaitForChild("HumanoidRootPart")
-    Humanoid   = Character:WaitForChild("Humanoid")
-    wait(0.5)
-    safeZoneCenter = RootPart.Position
+    Character    = newChar
+    RootPart     = Character:WaitForChild("HumanoidRootPart")
+    Humanoid     = Character:WaitForChild("Humanoid")
+    antiMoveLock = false  -- always clear the lock on fresh spawn
+    lastSafePos  = nil    -- don't reuse old position; wait for character to settle
+    task.delay(1, function()
+        if RootPart then
+            lastSafePos = RootPart.Position
+        end
+    end)
 end)
 
 -- ============================================================
