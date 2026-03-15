@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -259,6 +259,60 @@ createWeldToggle("Fling 2.0",      Vector3.new(0, -2.5,  0), false)
 createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
 createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
+
+-- Spin Trap: orbits your character around the target's feet using a time-based
+-- rotating offset. The angular momentum transfers through PhysicsRepRootPart
+-- the same way Fling 2.0 does, but the constantly changing direction spins
+-- and drags the target outward with centrifugal-like force.
+do
+    local spinConn    = nil
+    local spinSavedCF = nil
+    local spinEnabled = false
+    local SPIN_RADIUS = 3.5  -- distance from target centre
+    local SPIN_SPEED  = 6    -- radians per second
+
+    MainTab:CreateToggle({
+        Name         = "Spin Trap",
+        CurrentValue = false,
+        Callback = function(state)
+            spinEnabled = state
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not spinEnabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                if spinConn then spinConn:Disconnect() spinConn = nil end
+                if spinSavedCF then
+                    myRoot.CFrame      = spinSavedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
+                    spinSavedCF = nil
+                end
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                return
+            end
+
+            activeFlingCount = activeFlingCount + 1
+            spinSavedCF = myRoot.CFrame
+            spinConn = weldRun.Heartbeat:Connect(function()
+                if not spinEnabled then return end
+                local angle  = tick() * SPIN_SPEED
+                local offset = Vector3.new(
+                    math.cos(angle) * SPIN_RADIUS,
+                    -2.5,
+                    math.sin(angle) * SPIN_RADIUS
+                )
+                myRoot.CFrame      = CFrame.new(tgtRoot.Position + offset)
+                                     * CFrame.Angles(-math.pi / 2, 0, 0)
+                myRoot.Velocity    = Vector3.new(500, 500, 500)
+                myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end,
+    })
+end
 
 -- Anti Jump
 do
