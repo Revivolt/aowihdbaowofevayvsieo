@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -208,34 +208,37 @@ MainTab:CreateInput({
 
 -- Generic weld toggle factory
 local function createWeldToggle(name, offset, killTarget)
-    local conn, savedCFrame = nil, nil
+    local conn       = nil
+    local savedCF    = nil
+    local isEnabled  = false  -- shared upvalue; not the callback parameter
     MainTab:CreateToggle({
         Name         = name,
         CurrentValue = false,
-        Callback = function(enabled)
+        Callback = function(state)
+            isEnabled = state  -- update the shared upvalue so the heartbeat sees it
+
             if not selectedTarget then return end
             local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
             local myRoot  = myChar:WaitForChild("HumanoidRootPart")
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
 
-            if not enabled then
-                if conn then conn:Disconnect() end
-                conn = nil
-                if savedCFrame then
-                    myRoot.CFrame                 = savedCFrame
-                    myRoot.Velocity               = Vector3.zero
-                    myRoot.RotVelocity            = Vector3.zero
-                    savedCFrame = nil
+            if not isEnabled then
+                if conn then conn:Disconnect() conn = nil end
+                if savedCF then
+                    myRoot.CFrame                  = savedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    savedCF = nil
                 end
                 return
             end
 
-            savedCFrame = myRoot.CFrame
+            savedCF = myRoot.CFrame
             conn = weldRun.Heartbeat:Connect(function()
-                if not enabled then return end
-                myRoot.CFrame       = CFrame.new(tgtRoot.Position + offset) * CFrame.Angles(-math.pi / 2, 0, 0)
-                myRoot.Velocity     = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
-                myRoot.RotVelocity  = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
+                if not isEnabled then return end  -- checks the shared upvalue, not a stale copy
+                myRoot.CFrame                  = CFrame.new(tgtRoot.Position + offset) * CFrame.Angles(-math.pi / 2, 0, 0)
+                myRoot.AssemblyLinearVelocity  = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
+                myRoot.AssemblyAngularVelocity = offset.Magnitude > 0 and Vector3.new(500, 500, 500) or Vector3.zero
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                 if killTarget then
                     task.wait(0.5)
@@ -255,23 +258,25 @@ createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
 
 -- Anti Jump
 do
-    local conn2, savedCF2 = nil, nil
+    local conn2      = nil
+    local savedCF2   = nil
+    local ajEnabled  = false
     MainTab:CreateToggle({
         Name         = "Anti Jump",
         CurrentValue = false,
-        Callback = function(enabled)
+        Callback = function(state)
+            ajEnabled = state
             if not selectedTarget then return end
             local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
             local myRoot  = myChar:WaitForChild("HumanoidRootPart")
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
 
-            if not enabled then
-                if conn2 then conn2:Disconnect() end
-                conn2 = nil
+            if not ajEnabled then
+                if conn2 then conn2:Disconnect() conn2 = nil end
                 if savedCF2 then
-                    myRoot.CFrame      = savedCF2
-                    myRoot.Velocity    = Vector3.zero
-                    myRoot.RotVelocity = Vector3.zero
+                    myRoot.CFrame                  = savedCF2
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
                     savedCF2 = nil
                 end
                 return
@@ -279,11 +284,11 @@ do
 
             savedCF2 = myRoot.CFrame
             conn2 = weldRun.Heartbeat:Connect(function()
-                if not enabled then return end
-                myRoot.Velocity    = Vector3.zero
-                myRoot.RotVelocity = Vector3.zero
-                myRoot.CFrame      = CFrame.new(tgtRoot.Position + Vector3.new(0, 3.5, 0))
-                                     * CFrame.Angles(-math.pi / 2, 0, 0)
+                if not ajEnabled then return end
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, 3.5, 0))
+                                                 * CFrame.Angles(-math.pi / 2, 0, 0)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end,
@@ -337,23 +342,23 @@ function glueB.tp(target, offset)
 end
 
 -- Movement toggles (Infinite Jump, Speed Boosts, Movement Breaker)
-local movConn    = nil
-local movEnabled = false
-
+-- Each call creates its own isolated conn + isEnabled so toggling one never affects another
 local function createMoveToggle(name, tpOffset)
+    local movConn2   = nil
+    local isEnabled2 = false
     MainTab:CreateToggle({
         Name         = name,
         CurrentValue = false,
-        Callback = function(enabled)
-            movEnabled = enabled
-            if movConn then movConn:Disconnect() movConn = nil end
+        Callback = function(state)
+            isEnabled2 = state
+            if movConn2 then movConn2:Disconnect() movConn2 = nil end
             if not selectedTarget then return end
-            if not movEnabled then
+            if not isEnabled2 then
                 glueB.glue(selectedTarget, false)
                 return
             end
-            movConn = glueRunB.Heartbeat:Connect(function()
-                if not movEnabled then return end
+            movConn2 = glueRunB.Heartbeat:Connect(function()
+                if not isEnabled2 then return end
                 glueB.tp(selectedTarget, tpOffset)
                 glueB.glue(selectedTarget, true)
             end)
@@ -369,51 +374,55 @@ createMoveToggle("Movement Breaker",     CFrame.new(0,   0.7, -0.8))
 
 -- Rocket Target
 do
-    local rocketConn, rocketSavedCF = nil, nil
+    local rocketConn    = nil
+    local rocketSavedCF = nil
+    local rocketActive  = false  -- shared upvalue
     MainTab:CreateToggle({
         Name         = "Rocket Target",
         CurrentValue = false,
-        Callback = function(enabled)
+        Callback = function(state)
+            rocketActive = state
             if not selectedTarget or not selectedTarget.Character then return end
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
             local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
             local myRoot  = myChar:WaitForChild("HumanoidRootPart")
 
-            if not enabled then
-                if rocketConn then rocketConn:Disconnect() end
-                rocketConn = nil
+            if not rocketActive then
+                if rocketConn then rocketConn:Disconnect() rocketConn = nil end
                 if rocketSavedCF then
-                    myRoot.CFrame                 = rocketSavedCF
-                    myRoot.Velocity               = Vector3.zero
-                    myRoot.RotVelocity            = Vector3.zero
+                    myRoot.CFrame                  = rocketSavedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
                     rocketSavedCF = nil
                 end
                 return
             end
 
             rocketSavedCF = myRoot.CFrame
+            -- fired is a one-shot guard so task.delay only spawns once per activation
+            local fired = false
             rocketConn = weldRun.Heartbeat:Connect(function()
-                if not enabled then return end
+                if not rocketActive then return end
                 if not tgtRoot.Parent then return end
                 local aim = tgtRoot.Position + Vector3.new(0, -3, 0)
-                myRoot.CFrame      = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
-                myRoot.Velocity    = Vector3.new(0, 50, 0)
-                myRoot.RotVelocity = Vector3.zero
-                if sethiddenproperty then
-                    pcall(function() sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot) end)
+                myRoot.CFrame                  = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
+                myRoot.AssemblyLinearVelocity  = Vector3.new(0, 50, 0)
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+                if not fired then
+                    fired = true
+                    task.delay(0.2, function()
+                        rocketActive = false
+                        if rocketConn then rocketConn:Disconnect() rocketConn = nil end
+                        if rocketSavedCF then
+                            myRoot.CFrame                  = rocketSavedCF
+                            myRoot.AssemblyLinearVelocity  = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            rocketSavedCF = nil
+                        end
+                        pcall(function() MainTab:SetToggle("Rocket Target", false) end)
+                    end)
                 end
-                task.delay(0.2, function()
-                    if rocketConn then rocketConn:Disconnect() end
-                    rocketConn = nil
-                    enabled = false
-                    if rocketSavedCF then
-                        myRoot.CFrame      = rocketSavedCF
-                        myRoot.Velocity    = Vector3.zero
-                        myRoot.RotVelocity = Vector3.zero
-                        rocketSavedCF = nil
-                    end
-                    pcall(function() MainTab:SetToggle("Rocket Target", false) end)
-                end)
             end)
         end,
     })
@@ -421,51 +430,54 @@ end
 
 -- GODSPEED Rocket Target
 do
-    local gsConn, gsSavedCF = nil, nil
+    local gsConn    = nil
+    local gsSavedCF = nil
+    local gsActive  = false  -- shared upvalue
     MainTab:CreateToggle({
         Name         = "GODSPEED Rocket Target",
         CurrentValue = false,
-        Callback = function(enabled)
+        Callback = function(state)
+            gsActive = state
             if not selectedTarget or not selectedTarget.Character then return end
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
             local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
             local myRoot  = myChar:WaitForChild("HumanoidRootPart")
 
-            if not enabled then
-                if gsConn then gsConn:Disconnect() end
-                gsConn = nil
+            if not gsActive then
+                if gsConn then gsConn:Disconnect() gsConn = nil end
                 if gsSavedCF then
-                    myRoot.CFrame      = gsSavedCF
-                    myRoot.Velocity    = Vector3.zero
-                    myRoot.RotVelocity = Vector3.zero
+                    myRoot.CFrame                  = gsSavedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
                     gsSavedCF = nil
                 end
                 return
             end
 
             gsSavedCF = myRoot.CFrame
+            local fired = false
             gsConn = weldRun.Heartbeat:Connect(function()
-                if not enabled then return end
+                if not gsActive then return end
                 if not tgtRoot.Parent then return end
                 local aim = tgtRoot.Position + Vector3.new(0, -3, 0)
-                myRoot.CFrame      = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
-                myRoot.Velocity    = Vector3.new(0, 5000, 0)
-                myRoot.RotVelocity = Vector3.zero
-                if sethiddenproperty then
-                    pcall(function() sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot) end)
+                myRoot.CFrame                  = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
+                myRoot.AssemblyLinearVelocity  = Vector3.new(0, 5000, 0)
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+                if not fired then
+                    fired = true
+                    task.delay(0.2, function()
+                        gsActive = false
+                        if gsConn then gsConn:Disconnect() gsConn = nil end
+                        if gsSavedCF then
+                            myRoot.CFrame                  = gsSavedCF
+                            myRoot.AssemblyLinearVelocity  = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            gsSavedCF = nil
+                        end
+                        pcall(function() MainTab:SetToggle("GODSPEED Rocket Target", false) end)
+                    end)
                 end
-                task.delay(0.2, function()
-                    if gsConn then gsConn:Disconnect() end
-                    gsConn = nil
-                    enabled = false
-                    if gsSavedCF then
-                        myRoot.CFrame      = gsSavedCF
-                        myRoot.Velocity    = Vector3.zero
-                        myRoot.RotVelocity = Vector3.zero
-                        gsSavedCF = nil
-                    end
-                    pcall(function() MainTab:SetToggle("Rocket Target", false) end)
-                end)
             end)
         end,
     })
