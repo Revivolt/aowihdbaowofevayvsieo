@@ -1,148 +1,98 @@
--- test
+-- FastClientMove LocalScript
+-- Place inside StarterPlayerScripts or StarterCharacterScripts
+-- Uses BodyVelocity on the client side only — other players won't see the movement
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
+local Players       = game:GetService("Players")
+local RunService    = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local Stats            = game:GetService("Stats")
 
--- ─── CONFIG ──────────────────────────────────────────────────────────────────
-local CONFIG = {
-	TargetName       = "62_AM",
-	HeightOffset     = 5,
-	ToggleKey        = Enum.KeyCode.E,
-	MatchOrientation = true,
+local LocalPlayer   = Players.LocalPlayer
+local Character     = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HRP           = Character:WaitForChild("HumanoidRootPart")
+local Humanoid      = Character:WaitForChild("Humanoid")
 
-	-- Extrapolation smoothing: blends raw extrapolation with a low-pass filter
-	-- to avoid overcorrecting on laggy connections. 0 = no smoothing, 1 = max.
-	SmoothingAlpha   = 0.2,
-}
--- ─────────────────────────────────────────────────────────────────────────────
+-- ============================================================
+--  CONFIG
+-- ============================================================
+local SPEED         = 9999       -- how fast (studs/s). Crank it up if you want
+local TOGGLE_KEY    = Enum.KeyCode.Q  -- hold Q to activate, release to stop
+local VERTICAL_LOCK = true      -- keeps you on the ground while dashing
+-- ============================================================
 
-local localPlayer = Players.LocalPlayer
-local attached    = false
-local heartbeat   = nil
+local bodyVel = nil
+local active  = false
 
--- Running estimate of the target's velocity, smoothed to reduce jitter
--- caused by discrete network update steps
-local smoothedVelocity = Vector3.zero
-local lastTargetPos    = nil
+local function createBodyVelocity()
+    if HRP:FindFirstChild("__FastVel") then
+        HRP:FindFirstChild("__FastVel"):Destroy()
+    end
 
-local function getLocalParts()
-	local char = localPlayer.Character
-	if not char then return nil, nil end
-	return char:FindFirstChild("HumanoidRootPart"),
-	       char:FindFirstChildOfClass("Humanoid")
+    local bv       = Instance.new("BodyVelocity")
+    bv.Name        = "__FastVel"
+    bv.MaxForce    = Vector3.new(1e6, VERTICAL_LOCK and 0 or 1e6, 1e6)
+    bv.Velocity    = Vector3.zero
+    bv.Parent      = HRP
+    return bv
 end
 
-local function getTargetHRP()
-	local target = Players:FindFirstChild(CONFIG.TargetName)
-	if not (target and target.Character) then return nil end
-	return target.Character:FindFirstChild("HumanoidRootPart")
-end
+-- Re-grab character after respawn
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    HRP       = newChar:WaitForChild("HumanoidRootPart")
+    Humanoid  = newChar:WaitForChild("Humanoid")
+    bodyVel   = nil
+    active    = false
+end)
 
--- Returns total one-way latency in seconds:
--- your outgoing ping + an estimate of the target's incoming ping.
--- We can only directly read OUR ping, so we double it as a symmetric
--- approximation. On asymmetric connections this is still far better than 0.
-local function getTotalLatency()
-	local myPing = localPlayer:GetNetworkPing() -- one-way, in seconds
-	return myPing * 2
-end
-
-local function attach()
-	local hrp, hum = getLocalParts()
-	if not (hrp and hum) then
-		warn("[Attach] Local character not ready.")
-		return
-	end
-	if not getTargetHRP() then
-		warn("[Attach] Target not found.")
-		return
-	end
-
-	attached       = true
-	smoothedVelocity = Vector3.zero
-	lastTargetPos  = nil
-	hrp.Anchored   = false
-
-	hum:ChangeState(Enum.HumanoidStateType.Physics)
-
-	heartbeat = RunService.Heartbeat:Connect(function(dt)
-		local myHRP, myHum = getLocalParts()
-		local targetHRP    = getTargetHRP()
-		if not (myHRP and targetHRP and myHum) then return end
-
-		-- ── Step 1: Compute a smoothed velocity from positional delta ──────
-		-- AssemblyLinearVelocity updates at network rate (not every frame),
-		-- so deriving velocity from position delta is more frame-accurate.
-		local currentPos = targetHRP.Position
-
-		if lastTargetPos then
-			local rawVelocity = (currentPos - lastTargetPos) / dt
-
-			-- Low-pass filter: prevents a single huge network jump from
-			-- causing a massive overshoot on the next frame
-			smoothedVelocity = smoothedVelocity:Lerp(rawVelocity, 1 - CONFIG.SmoothingAlpha)
-		end
-
-		lastTargetPos = currentPos
-
-		-- ── Step 2: Extrapolate target's world position forward ────────────
-		-- We push the sampled position ahead by the total round-trip latency
-		-- so that by the time our frame reaches the server (and then the
-		-- target's client), we are already where the target actually is.
-		local latency          = getTotalLatency()
-		local extrapolatedPos  = currentPos + smoothedVelocity * latency
-
-		-- ── Step 3: Build desired CFrame ───────────────────────────────────
-		local desiredCF
-		if CONFIG.MatchOrientation then
-			local rot = targetHRP.CFrame - targetHRP.CFrame.Position
-			desiredCF = CFrame.new(extrapolatedPos + Vector3.new(0, CONFIG.HeightOffset, 0)) * rot
-		else
-			desiredCF = CFrame.new(extrapolatedPos + Vector3.new(0, CONFIG.HeightOffset, 0))
-		end
-
-		myHRP.CFrame = desiredCF
-
-		-- Match velocity so our character rides in the same inertial frame
-		myHRP.AssemblyLinearVelocity  = smoothedVelocity
-		myHRP.AssemblyAngularVelocity = Vector3.zero
-	end)
-
-	print("[Attach] Attached. Press " .. CONFIG.ToggleKey.Name .. " to detach.")
-end
-
-local function detach()
-	attached = false
-
-	if heartbeat then
-		heartbeat:Disconnect()
-		heartbeat = nil
-	end
-
-	smoothedVelocity = Vector3.zero
-	lastTargetPos    = nil
-
-	local _, hum = getLocalParts()
-	if hum then
-		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-	end
-
-	print("[Attach] Detached.")
-end
-
+-- Key down → activate
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == CONFIG.ToggleKey then
-		if attached then detach() else attach() end
-	end
+    if gameProcessed then return end
+    if input.KeyCode == TOGGLE_KEY then
+        active  = true
+        bodyVel = createBodyVelocity()
+    end
 end)
 
-localPlayer.CharacterAdded:Connect(function()
-	if heartbeat then
-		heartbeat:Disconnect()
-		heartbeat = nil
-	end
-	attached = false
+-- Key up → deactivate
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == TOGGLE_KEY then
+        active = false
+        if bodyVel and bodyVel.Parent then
+            bodyVel:Destroy()
+            bodyVel = nil
+        end
+    end
 end)
+
+-- Every frame: point the BodyVelocity in the direction the camera faces + WASD
+RunService.RenderStepped:Connect(function()
+    if not active or not bodyVel or not bodyVel.Parent then return end
+
+    -- Build a movement direction from WASD relative to the camera
+    local camera    = workspace.CurrentCamera
+    local camCF     = camera.CFrame
+    local forward   = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z).Unit
+    local right     = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z).Unit
+
+    local moveDir   = Vector3.zero
+
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + forward  end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - forward  end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + right    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - right    end
+
+    -- Optional vertical
+    if not VERTICAL_LOCK then
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            moveDir = moveDir + Vector3.new(0, 1, 0)
+        end
+    end
+
+    if moveDir.Magnitude > 0 then
+        bodyVel.Velocity = moveDir.Unit * SPEED
+    else
+        bodyVel.Velocity = Vector3.zero
+    end
+end)
+
+print("[FastClientMove] Loaded! Hold", TOGGLE_KEY.Name, "+ WASD to zoom around.")
