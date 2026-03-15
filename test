@@ -1,91 +1,119 @@
--- test
--- Place inside StarterCharacterScripts
+-- LocalScript: Place in StarterCharacterScripts
+-- Welds your character above a target player with low-latency replication.
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Players         = game:GetService("Players")
+local RunService      = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
--- ============================================================
---  CONFIGURATION
--- ============================================================
-local TARGET_NAME   = "62_AM"   -- Username of the player to ride
-local HEIGHT_OFFSET = 5                  -- Studs above their HumanoidRootPart
--- ============================================================
+-- ─── CONFIG ───────────────────────────────────────────────────────────────────
+local CONFIG = {
+	TargetName   = "62_AM",  -- Exact username of the player to sit above
+	HeightOffset = 5,                 -- Studs above their HumanoidRootPart
+	ToggleKey    = Enum.KeyCode.E,    -- Key to attach / detach
+	MatchOrientation = true,          -- Inherit the target's facing direction
+}
+-- ─────────────────────────────────────────────────────────────────────────────
 
-local LocalPlayer = Players.LocalPlayer
+local localPlayer = Players.LocalPlayer
+local attached    = false
+local heartbeat   = nil
 
-local function getCharacterParts(character)
-	local hrp      = character:WaitForChild("HumanoidRootPart", 10)
-	local humanoid = character:WaitForChild("Humanoid", 10)
-	return hrp, humanoid
+-- Returns the local character's HRP and Humanoid, or nils if unavailable
+local function getLocalParts()
+	local char = localPlayer.Character
+	if not char then return nil, nil end
+	return char:FindFirstChild("HumanoidRootPart"),
+	       char:FindFirstChildOfClass("Humanoid")
 end
 
-local function weldAbove(targetPlayer)
-	-- Wait for both characters to be ready
-	local myChar     = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-	local theirChar  = targetPlayer.Character or targetPlayer.CharacterAdded:Wait()
+-- Returns the target's HRP, or nil
+local function getTargetHRP()
+	local target = Players:FindFirstChild(CONFIG.TargetName)
+	if not (target and target.Character) then return nil end
+	return target.Character:FindFirstChild("HumanoidRootPart")
+end
 
-	local myHRP,    myHumanoid    = getCharacterParts(myChar)
-	local theirHRP, theirHumanoid = getCharacterParts(theirChar)
-
-	if not (myHRP and theirHRP) then
-		warn("[WeldAbove] Could not find HumanoidRootParts.")
+local function attach()
+	local hrp, hum = getLocalParts()
+	if not (hrp and hum) then
+		warn("[Attach] Local character not ready.")
 		return
 	end
 
-	-- 1. Disable local character movement so physics don't fight the weld
-	myHumanoid.WalkSpeed    = 0
-	myHumanoid.JumpHeight   = 0
-	myHumanoid.AutoRotate   = false
+	if not getTargetHRP() then
+		warn("[Attach] Target '"..CONFIG.TargetName.."' not found or has no character.")
+		return
+	end
 
-	-- 2. Snap above target before welding so the offset is baked in
-	myHRP.CFrame = theirHRP.CFrame * CFrame.new(0, HEIGHT_OFFSET, 0)
+	attached = true
+	hrp.Anchored = false
 
-	-- 3. WeldConstraint preserves the relative CFrame set in step 2
-	local weld      = Instance.new("WeldConstraint")
-	weld.Part0      = myHRP
-	weld.Part1      = theirHRP
-	weld.Parent     = myHRP
+	-- Physics state: the Humanoid stops overriding our CFrame assignments.
+	-- This is the key step that makes client-side positioning smooth and
+	-- prevents the character controller from fighting the placement.
+	hum:ChangeState(Enum.HumanoidStateType.Physics)
 
-	print("[WeldAbove] Welded to " .. targetPlayer.Name)
+	heartbeat = RunService.Heartbeat:Connect(function()
+		local myHRP, myHum = getLocalParts()
+		local targetHRP    = getTargetHRP()
 
-	-- 4. Clean up if either character is removed / player leaves
-	local conn
-	conn = RunService.Heartbeat:Connect(function()
-		if not myHRP.Parent or not theirHRP.Parent then
-			weld:Destroy()
-			-- Restore movement
-			if myHumanoid and myHumanoid.Parent then
-				myHumanoid.WalkSpeed  = 16
-				myHumanoid.JumpHeight = 7.2
-				myHumanoid.AutoRotate = true
-			end
-			conn:Disconnect()
-			print("[WeldAbove] Weld removed – character(s) gone.")
+		if not (myHRP and targetHRP and myHum) then return end
+
+		-- Build the desired world CFrame: target position + height offset.
+		-- Optionally inherit target's rotation so we face the same direction.
+		local targetCF = targetHRP.CFrame
+		local desiredCF
+
+		if CONFIG.MatchOrientation then
+			-- Same rotation as target, shifted up on the Y axis in world space
+			desiredCF = CFrame.new(targetCF.Position + Vector3.new(0, CONFIG.HeightOffset, 0))
+			            * (targetCF - targetCF.Position)  -- rotation component only
+		else
+			desiredCF = CFrame.new(targetCF.Position + Vector3.new(0, CONFIG.HeightOffset, 0))
 		end
+
+		myHRP.CFrame = desiredCF
+
+		-- Copy the target's linear velocity so our character moves in the same
+		-- inertial frame. Without this you get a one-frame stutter every time
+		-- the target accelerates.
+		myHRP.AssemblyLinearVelocity  = targetHRP.AssemblyLinearVelocity
+		myHRP.AssemblyAngularVelocity = Vector3.zero
 	end)
 
-	return weld
+	print("[Attach] Attached above '"..CONFIG.TargetName.."'. Press "..CONFIG.ToggleKey.Name.." to detach.")
 end
 
--- Wait until the local character exists, then find the target
-LocalPlayer.CharacterAdded:Connect(function()
-	task.wait(1) -- brief wait for replication
+local function detach()
+	attached = false
 
-	local target = Players:FindFirstChild(TARGET_NAME)
-	if target then
-		weldAbove(target)
-	else
-		warn("[WeldAbove] Player '" .. TARGET_NAME .. "' not found in the server.")
+	if heartbeat then
+		heartbeat:Disconnect()
+		heartbeat = nil
+	end
+
+	local _, hum = getLocalParts()
+	if hum then
+		-- GettingUp transitions back to normal locomotion
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+
+	print("[Attach] Detached.")
+end
+
+-- Toggle on keypress
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == CONFIG.ToggleKey then
+		if attached then detach() else attach() end
 	end
 end)
 
--- Also run immediately if character already exists
-if LocalPlayer.Character then
-	task.wait(1)
-	local target = Players:FindFirstChild(TARGET_NAME)
-	if target then
-		weldAbove(target)
-	else
-		warn("[WeldAbove] Player '" .. TARGET_NAME .. "' not found in the server.")
+-- Auto-detach on death / respawn so the new character starts clean
+localPlayer.CharacterAdded:Connect(function()
+	if heartbeat then
+		heartbeat:Disconnect()
+		heartbeat = nil
 	end
-end
+	attached = false
+end)
