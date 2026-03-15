@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -268,8 +268,8 @@ do
     local spinConn    = nil
     local spinSavedCF = nil
     local spinEnabled = false
-    local SPIN_RADIUS = 3  -- distance from target centre
-    local SPIN_SPEED  = 9999    -- radians per second
+    local SPIN_RADIUS = 3.5  -- distance from target centre
+    local SPIN_SPEED  = 6    -- radians per second
 
     MainTab:CreateToggle({
         Name         = "Spin Trap",
@@ -693,6 +693,66 @@ NaNTab:CreateButton({
 --   Tab 4 – Other Stuff
 -- ============================================================
 local OtherTab = Window:CreateTab("Other Stuff", 4483362458)
+
+-- Ghost Mode: makes your own character invisible and non-collidable.
+-- No target needed. Completely independent of PhysicsRepRootPart / velocity abuse.
+do
+    local ghostEnabled  = false
+    local savedPartData = {}  -- stores {transparency, canCollide} per part so we can restore exactly
+
+    local function applyGhost(char, state)
+        if state then
+            -- Save originals and apply ghost
+            savedPartData = {}
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    savedPartData[part] = {
+                        transparency = part.Transparency,
+                        canCollide   = part.CanCollide,
+                    }
+                    part.Transparency = 1
+                    part.CanCollide   = false
+                elseif part:IsA("Decal") or part:IsA("SpecialMesh") then
+                    -- hide accessories/decals too
+                    savedPartData[part] = { transparency = part.Transparency }
+                    part.Transparency = 1
+                end
+            end
+        else
+            -- Restore originals
+            for part, data in pairs(savedPartData) do
+                if part and part.Parent then
+                    part.Transparency = data.transparency
+                    if data.canCollide ~= nil then
+                        part.CanCollide = data.canCollide
+                    end
+                end
+            end
+            savedPartData = {}
+        end
+    end
+
+    OtherTab:CreateToggle({
+        Name         = "Ghost Mode",
+        CurrentValue = false,
+        Callback = function(state)
+            ghostEnabled = state
+            local char = weldLocal.Character
+            if not char then return end
+            applyGhost(char, ghostEnabled)
+
+            -- Re-apply on respawn so toggling persists across deaths
+            if ghostEnabled then
+                weldLocal.CharacterAdded:Once(function(newChar)
+                    task.wait(0.5)  -- let the character fully load
+                    if ghostEnabled then
+                        applyGhost(newChar, true)
+                    end
+                end)
+            end
+        end,
+    })
+end
 
 OtherTab:CreateButton({
     Name = "Anti Fling",
