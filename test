@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -255,6 +255,7 @@ local function createWeldToggle(name, offset, killTarget)
 end
 
 createWeldToggle("Fling Player",   Vector3.new(0,  0,    0), false)
+createWeldToggle("Fling 2.0",      Vector3.new(0, -2.5,  0), false)
 createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
 createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
