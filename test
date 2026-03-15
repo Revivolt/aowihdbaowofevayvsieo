@@ -1,56 +1,339 @@
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local RootPart = Character:WaitForChild("HumanoidRootPart")
-local Humanoid = Character:WaitForChild("Humanoid")
+-- Fling script
+-- Spin Fling with Attach System
+-- Created for SSickCodes
+-- Hover + F = Attach & Spin Fling | C = Cancel
 
-local attachConnection
-local originalCFrame
-local attachedPlayer
+local player = game.Players.LocalPlayer
+local mouse = player:GetMouse()
+local runService = game:GetService("RunService")
+local tweenService = game:GetService("TweenService")
 
-local TARGET_NAME = "62_AM" -- Type the target player's username here
+local CONFIG = {
+    SPIN_SPEED = 500000,
+    POWER = 5000,
+    MARKER_COLOR = Color3.fromRGB(255, 0, 0),
+    
+    ATTACH_KEY = Enum.KeyCode.F,
+    CANCEL_KEY = Enum.KeyCode.C,
+}
 
-function AttachToPlayer(playerName)
-    local targetPlayer = Players:FindFirstChild(playerName)
-    if not targetPlayer then return end
-    if not targetPlayer.Character then return end
-    local targetHead = targetPlayer.Character:FindFirstChild("Head")
-    if not targetHead then return end
+local currentVictim = nil
+local isAttached = false
+local hoveredPlayer = nil
+local marker = nil
+local spinConnection = nil
+local attachConnection = nil
+local bodyAngularVelocity = nil
 
-    attachedPlayer = targetPlayer
-    originalCFrame = RootPart.CFrame
+local function notify(text)
+    game. StarterGui: SetCore("SendNotification", {
+        Title = "SPIN FLING",
+        Text = text,
+        Duration = 2,
+    })
+end
 
-    if attachConnection then
-        attachConnection:Disconnect()
+local function createMarker(targetCharacter)
+    if marker then
+        marker:Destroy()
     end
+    
+    local humanoidRootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    marker = Instance.new("Part")
+    marker.Name = "FlingMarker"
+    marker. Shape = Enum.PartType. Cylinder
+    marker.Size = Vector3.new(0.5, 6, 6)
+    marker.Material = Enum.Material.Neon
+    marker.Color = CONFIG.MARKER_COLOR
+    marker. Anchored = true
+    marker. CanCollide = false
+    marker.Transparency = 0.3
+    marker.CFrame = humanoidRootPart.CFrame * CFrame.new(0, 5, 0) * CFrame.Angles(0, 0, math.pi/2)
+    marker.Parent = workspace
+    
+    local pulse = tweenService:Create(marker, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut, -1, true), {
+        Transparency = 0.7,
+        Size = Vector3.new(0.5, 7, 7)
+    })
+    pulse:Play()
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.Adornee = humanoidRootPart
+    billboard.AlwaysOnTop = true
+    billboard.Parent = marker
+    
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = "TARGET LOCKED"
+    textLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+    textLabel.TextSize = 20
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextStrokeTransparency = 0.5
+    textLabel.Parent = billboard
+    
+    return marker
+end
 
-    attachConnection = RunService.RenderStepped:Connect(function(dt)
-        if not attachedPlayer then return end
-        if not attachedPlayer.Character then return end
-        local targetHead = attachedPlayer.Character:FindFirstChild("Head")
-        if not targetHead then return end
+local function updateMarker()
+    if marker and hoveredPlayer then
+        local targetChar = hoveredPlayer.Character
+        if targetChar then
+            local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                marker.CFrame = hrp.CFrame * CFrame.new(0, 5, 0) * CFrame.Angles(0, 0, math.pi/2)
+            end
+        end
+    end
+end
 
-        -- Predict next position using velocity to eliminate latency
-        local predictedPosition = targetHead.Position + (targetHead.Velocity * dt)
+local function getPlayerFromMouse()
+    local target = mouse.Target
+    if not target then return nil end
+    
+    local targetParent = target.Parent
+    if not targetParent then return nil end
+    
+    local humanoid = targetParent:FindFirstChild("Humanoid")
+    if humanoid then
+        local playerFromChar = game.Players:GetPlayerFromCharacter(targetParent)
+        if playerFromChar and playerFromChar ~= player then
+            return playerFromChar
+        end
+    end
+    
+    return nil
+end
 
-        RootPart.CFrame = CFrame.new(predictedPosition + Vector3.new(0, 3.6, 0))
-            * CFrame.Angles(-math.pi/2, 0, 0)
-
-        -- Stop physics
-        RootPart.Velocity = Vector3.new(0, 0, 0)
-        RootPart.RotVelocity = Vector3.new(0, 0, 0)
+local function startAttachAndFling(victim)
+    if isAttached then
+        stopAttachAndFling()
+    end
+    
+    local myChar = player.Character
+    local victimChar = victim.Character
+    
+    if not myChar or not victimChar then
+        notify("Failed to attach!")
+        return
+    end
+    
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    local myHumanoid = myChar:FindFirstChild("Humanoid")
+    local victimRoot = victimChar: FindFirstChild("HumanoidRootPart")
+    
+    if not myRoot or not myHumanoid or not victimRoot then
+        notify("Failed to attach!")
+        return
+    end
+    
+    currentVictim = victim
+    isAttached = true
+    
+    notify("ATTACHED TO " .. victim.Name ..  "!  FLINGING!")
+    print("Attached to:  " .. victim.Name)
+    print("Press C to cancel!")
+    
+    -- Disable normal rotation
+    myHumanoid. AutoRotate = false
+    
+    -- Create BodyAngularVelocity for spinning
+    bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+    bodyAngularVelocity.MaxTorque = Vector3.new(0, math.huge, 0)
+    bodyAngularVelocity. AngularVelocity = Vector3.new(0, CONFIG.SPIN_SPEED, 0)
+    bodyAngularVelocity.P = 1250
+    bodyAngularVelocity.Parent = myRoot
+    
+    -- Create BodyVelocity for extra push
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(CONFIG.POWER, 0, CONFIG.POWER)
+    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    bodyVelocity.Parent = myRoot
+    
+    -- Visual spin effect
+    local spinEffect = Instance.new("Part")
+    spinEffect.Name = "SpinEffect"
+    spinEffect. Shape = Enum.PartType.Cylinder
+    spinEffect. Size = Vector3.new(0.5, 10, 10)
+    spinEffect.Material = Enum.Material. Neon
+    spinEffect. Color = Color3.fromRGB(255, 0, 0)
+    spinEffect.Transparency = 0.7
+    spinEffect.Anchored = true
+    spinEffect. CanCollide = false
+    spinEffect.Parent = workspace
+    
+    -- Trail connecting you to victim
+    local trail = Instance.new("Trail")
+    local attachment0 = Instance.new("Attachment")
+    local attachment1 = Instance.new("Attachment")
+    
+    attachment0.Parent = myRoot
+    attachment1.Parent = victimRoot
+    
+    trail.Attachment0 = attachment0
+    trail.Attachment1 = attachment1
+    trail.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
+    trail.Lifetime = 0.5
+    trail.Parent = myRoot
+    
+    -- Attach loop:  Follow victim and spin
+    attachConnection = runService.Heartbeat:Connect(function()
+        if not isAttached or not currentVictim then
+            return
+        end
+        
+        local currentVictimChar = currentVictim.Character
+        if not currentVictimChar then
+            stopAttachAndFling()
+            return
+        end
+        
+        local currentVictimRoot = currentVictimChar:FindFirstChild("HumanoidRootPart")
+        local currentMyRoot = myChar:FindFirstChild("HumanoidRootPart")
+        
+        if not currentVictimRoot or not currentMyRoot then
+            stopAttachAndFling()
+            return
+        end
+        
+        -- Stick to the victim (close proximity)
+        local targetPosition = currentVictimRoot.Position + Vector3.new(0, 0, 2)
+        currentMyRoot.CFrame = CFrame.new(targetPosition)
+        
+        -- Keep spinning
+        if bodyAngularVelocity then
+            bodyAngularVelocity. AngularVelocity = Vector3.new(0, CONFIG.SPIN_SPEED, 0)
+        end
+    end)
+    
+    -- Visual update loop
+    spinConnection = runService.RenderStepped:Connect(function()
+        if not isAttached then
+            if spinEffect then spinEffect:Destroy() end
+            return
+        end
+        
+        local currentMyRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if currentMyRoot then
+            spinEffect.CFrame = currentMyRoot.CFrame * CFrame. Angles(0, 0, math.pi/2)
+        end
     end)
 end
 
-function Detach()
+function stopAttachAndFling()
+    if not isAttached then return end
+    
+    isAttached = false
+    
     if attachConnection then
-        attachConnection:Disconnect()
+        attachConnection: Disconnect()
         attachConnection = nil
     end
-    if originalCFrame then
-        RootPart.CFrame = originalCFrame
+    
+    if spinConnection then
+        spinConnection: Disconnect()
+        spinConnection = nil
     end
+    
+    local myChar = player.Character
+    if myChar then
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+        local myHumanoid = myChar:FindFirstChild("Humanoid")
+        
+        if bodyAngularVelocity then
+            bodyAngularVelocity:Destroy()
+            bodyAngularVelocity = nil
+        end
+        
+        if myRoot then
+            local bv = myRoot:FindFirstChild("BodyVelocity")
+            if bv then bv:Destroy() end
+            
+            myRoot. AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            myRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end
+        
+        if myHumanoid then
+            myHumanoid. AutoRotate = true
+        end
+        
+        local spinEffect = workspace:FindFirstChild("SpinEffect")
+        if spinEffect then
+            spinEffect:Destroy()
+        end
+    end
+    
+    if currentVictim then
+        notify("Released " .. currentVictim.Name)
+    end
+    
+    currentVictim = nil
+    print("Fling cancelled!")
 end
 
-AttachToPlayer(TARGET_NAME)
+-- Mouse hover detection
+runService.RenderStepped:Connect(function()
+    local targetPlayer = getPlayerFromMouse()
+    
+    if targetPlayer ~= hoveredPlayer then
+        hoveredPlayer = targetPlayer
+        
+        if marker then
+            marker:Destroy()
+            marker = nil
+        end
+        
+        if hoveredPlayer and hoveredPlayer.Character then
+            createMarker(hoveredPlayer.Character)
+        end
+    end
+    
+    updateMarker()
+end)
+
+-- Input handling
+game: GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == CONFIG.ATTACH_KEY then
+        if hoveredPlayer then
+            startAttachAndFling(hoveredPlayer)
+        else
+            notify("No target!  Hover over a player!")
+        end
+    end
+    
+    if input.KeyCode == CONFIG.CANCEL_KEY then
+        if isAttached then
+            stopAttachAndFling()
+        else
+            notify("Not attached to anyone!")
+        end
+    end
+end)
+
+-- Cleanup on death
+player.CharacterAdded:Connect(function(character)
+    stopAttachAndFling()
+    if marker then
+        marker:Destroy()
+        marker = nil
+    end
+end)
+
+print("========================================")
+print("SPIN FLING WITH ATTACH LOADED!")
+print("========================================")
+print("Controls:")
+print("- Hover over a player to target")
+print("- Press F to ATTACH and SPIN FLING")
+print("- Press C to CANCEL and release")
+print("========================================")
+print("You'll spin rapidly while stuck to them!")
+print("Made by SSickCodes")
+print("========================================")
+
+notify("Loaded!  Hover+F=Attach C=Cancel")
