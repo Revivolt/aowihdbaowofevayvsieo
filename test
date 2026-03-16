@@ -1,5 +1,5 @@
 -- ============================================================
---   test8
+--   test9
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -377,7 +377,7 @@ do
     local ftDist    = 3.5  -- change this to adjust how many studs in front of the target you appear
 
     MainTab:CreateToggle({
-        Name         = "Face Turn",
+        Name         = "Force Climb",
         CurrentValue = false,
         Callback = function(state)
             ftEnabled = state
@@ -414,6 +414,74 @@ do
             pcall(function()
                 local anim = Instance.new("Animation")
                 anim.AnimationId = "rbxassetid://82211728968005"
+                ftTrack = myHum:LoadAnimation(anim)
+                ftTrack.Priority = Enum.AnimationPriority.Action4
+                ftTrack:Play()
+                ftTrack:AdjustSpeed(0)
+            end)
+
+            ftConn = weldRun.Heartbeat:Connect(function()
+                if not ftEnabled then return end
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+                local targetCF = tgtRoot.CFrame * CFrame.new(0, 0, -ftDist)
+                myRoot.CFrame                  = targetCF
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end,
+    })
+end
+
+do
+    local ftConn    = nil
+    local ftSavedCF = nil
+    local ftEnabled = false
+    local ftTrack   = nil
+    local ftDist    = 1.6  -- change this to adjust how many studs in front of the target you appear
+
+    MainTab:CreateToggle({
+        Name         = "Force Climb 2",
+        CurrentValue = false,
+        Callback = function(state)
+            ftEnabled = state
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local myHum   = myChar:WaitForChild("Humanoid")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not ftEnabled then
+                if ftConn then ftConn:Disconnect() ftConn = nil end
+                if ftSavedCF then
+                    myRoot.CFrame                  = ftSavedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    ftSavedCF = nil
+                end
+                if ftTrack then
+                    ftTrack:Stop()
+                    ftTrack:Destroy()
+                    ftTrack = nil
+                end
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                return
+            end
+
+            ftSavedCF = myRoot.CFrame
+
+            pcall(function()
+                local anim = Instance.new("Animation")
+                anim.AnimationId = "rbxassetid://71806235559404"
                 ftTrack = myHum:LoadAnimation(anim)
                 ftTrack.Priority = Enum.AnimationPriority.Action4
                 ftTrack:Play()
