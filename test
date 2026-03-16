@@ -1,5 +1,5 @@
 -- ============================================================
---   test7
+--   test8
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -270,7 +270,7 @@ do
     local sinkEnabled = false
     local START_Y     = 3.5
     local END_Y       = -0.7
-    local DROP_RATE   = 0.5
+    local DROP_RATE   = 5
     local currentY    = START_Y
 
     MainTab:CreateToggle({
