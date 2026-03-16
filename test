@@ -1,5 +1,5 @@
 -- ============================================================
---   test9
+--   test10
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -442,7 +442,7 @@ do
     local ftSavedCF = nil
     local ftEnabled = false
     local ftTrack   = nil
-    local ftDist    = 1.6  -- change this to adjust how many studs in front of the target you appear
+    local ftDist    = 1.7  -- change this to adjust how many studs in front of the target you appear
 
     MainTab:CreateToggle({
         Name         = "Force Climb 2",
