@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -268,10 +268,11 @@ do
     local sinkConn    = nil
     local sinkSavedCF = nil
     local sinkEnabled = false
-    local START_Y     = 3.5   -- same starting height as Anti Jump
-    local END_Y       = 1.7     -- final resting offset
-    local DROP_RATE   = 0.5   -- studs per second to descend
+    local START_Y     = 3.5
+    local END_Y       = 1.8
+    local DROP_RATE   = 0.5
     local currentY    = START_Y
+    local frozen      = false
 
     MainTab:CreateToggle({
         Name         = "Sinking Anti Jump",
@@ -292,17 +293,36 @@ do
                     sinkSavedCF = nil
                 end
                 currentY = START_Y  -- reset for next use
+                frozen   = false
                 return
             end
 
             sinkSavedCF = myRoot.CFrame
             currentY    = START_Y
+            frozen      = false
             sinkConn = weldRun.Heartbeat:Connect(function(dt)
                 if not sinkEnabled then return end
                 -- Lower the offset each frame until we reach END_Y
                 if currentY > END_Y then
                     currentY = math.max(END_Y, currentY - DROP_RATE * dt)
+                elseif not frozen then
+                    -- Just landed — snap to final position and freeze
+                    frozen = true
+                    myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, END_Y, 0))
+                                                     * CFrame.Angles(-math.pi / 2, 0, 0)
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                    return
                 end
+
+                if frozen then
+                    -- Hold completely still — zero out any velocity the engine tries to apply
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    return
+                end
+
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
                 myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, currentY, 0))
