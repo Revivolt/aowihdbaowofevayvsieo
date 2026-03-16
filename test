@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -293,8 +293,10 @@ do
             bsvSavedCF = myRoot.CFrame
             bsvConn = weldRun.Heartbeat:Connect(function()
                 if not bsvEnabled then return end
-                -- CFrame.new with no rotation = character stays perfectly upright
-                myRoot.CFrame      = CFrame.new(tgtRoot.Position + Vector3.new(0, -1, 0))
+                -- Step 2 studs along the target's own look direction so "in front"
+                -- always means in front of wherever they're facing.
+                local inFront = tgtRoot.Position + (tgtRoot.CFrame.LookVector * 2)
+                myRoot.CFrame      = CFrame.new(inFront)
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
                 myRoot.RotVelocity = Vector3.new(500, 500, 500)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
@@ -310,8 +312,8 @@ do
     local spinConn    = nil
     local spinSavedCF = nil
     local spinEnabled = false
-    local SPIN_RADIUS = 10
-    local SPIN_SPEED  = 10
+    local SPIN_RADIUS = 3.5
+    local SPIN_SPEED  = 6
 
     MainTab:CreateToggle({
         Name         = "Spin Trap",
