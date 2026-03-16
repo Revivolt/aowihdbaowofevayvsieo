@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -301,7 +301,7 @@ do
                 local tgtPos   = tgtRoot.Position
                 local worldPos = tgtPos + Vector3.new(
                     math.cos(angle) * SPIN_RADIUS,
-                    -2.5,
+                    0,
                     math.sin(angle) * SPIN_RADIUS
                 )
                 -- CFrame.new(pos, lookAt) keeps the character upright and facing the target.
