@@ -1,5 +1,5 @@
 -- ============================================================
---   test13
+--   test14
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -512,7 +512,7 @@ do
     local gsinkSavedCF = nil
     local gsinkEnabled = false
     local gsinkTrack   = nil
-    local gsinkDist    = 5    -- studs behind the target
+    local gsinkDist    = 0    -- studs behind the target
     local gsinkDepth   = 5  -- how many studs below ground the character sinks
 
     MainTab:CreateToggle({
