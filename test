@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -590,36 +590,37 @@ do
     })
 end
 
+-- Face Up: positions your character above the target facing upward,
+-- frozen in animation 72546263602548 with no collision.
 do
-    local ftConn    = nil
-    local ftSavedCF = nil
-    local ftEnabled = false
-    local ftTrack   = nil
-    local ftDist    = 0.7  -- change this to adjust how many studs in front of the target you appear
+    local fuConn    = nil
+    local fuSavedCF = nil
+    local fuEnabled = false
+    local fuTrack   = nil
 
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Face Up",
         CurrentValue = false,
         Callback = function(state)
-            ftEnabled = state
+            fuEnabled = state
             if not selectedTarget then return end
             local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
             local myRoot  = myChar:WaitForChild("HumanoidRootPart")
             local myHum   = myChar:WaitForChild("Humanoid")
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
 
-            if not ftEnabled then
-                if ftConn then ftConn:Disconnect() ftConn = nil end
-                if ftSavedCF then
-                    myRoot.CFrame                  = ftSavedCF
+            if not fuEnabled then
+                if fuConn then fuConn:Disconnect() fuConn = nil end
+                if fuSavedCF then
+                    myRoot.CFrame                  = fuSavedCF
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
-                    ftSavedCF = nil
+                    fuSavedCF = nil
                 end
-                if ftTrack then
-                    ftTrack:Stop()
-                    ftTrack:Destroy()
-                    ftTrack = nil
+                if fuTrack then
+                    fuTrack:Stop()
+                    fuTrack:Destroy()
+                    fuTrack = nil
                 end
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
@@ -630,26 +631,32 @@ do
                 return
             end
 
-            ftSavedCF = myRoot.CFrame
+            fuSavedCF = myRoot.CFrame
 
+            -- Load and freeze the animation
             pcall(function()
                 local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://82211728968005"
-                ftTrack = myHum:LoadAnimation(anim)
-                ftTrack.Priority = Enum.AnimationPriority.Action4
-                ftTrack:Play()
-                ftTrack:AdjustSpeed(0)
+                anim.AnimationId = "rbxassetid://72546263602548"
+                fuTrack = myHum:LoadAnimation(anim)
+                fuTrack.Priority = Enum.AnimationPriority.Action4
+                fuTrack:Play()
+                fuTrack:AdjustSpeed(0)
             end)
 
-            ftConn = weldRun.Heartbeat:Connect(function()
-                if not ftEnabled then return end
+            fuConn = weldRun.Heartbeat:Connect(function()
+                if not fuEnabled then return end
+
+                -- Kill collision every frame
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
                     end
                 end
-                local targetCF = tgtRoot.CFrame * CFrame.new(0, 0, -ftDist)
-                myRoot.CFrame                  = targetCF
+
+                -- Place above the target facing upward
+                -- CFrame.Angles(math.pi / 2, 0, 0) tilts the character so they face up
+                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, 3.5, 0))
+                    * CFrame.Angles(math.pi / 2, 0, 0)
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
