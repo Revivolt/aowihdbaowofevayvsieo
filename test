@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -440,10 +440,98 @@ local function createMoveToggle(name, tpOffset)
     })
 end
 
-createMoveToggle("Infinite Jump",        CFrame.new(0,  -5.75, 0))
-createMoveToggle("Speed Boost (slow)",   CFrame.new(0,   0.7,  1))
-createMoveToggle("Speed Boost (medium)", CFrame.new(0,   0.7,  0.5))
-createMoveToggle("Speed Boost (fast)",   CFrame.new(0,   0.7,  0.35))
+createMoveToggle("Infinite Jump",      CFrame.new(0,  -5.75, 0))
+createMoveToggle("Speed Boost (slow)", CFrame.new(0,   0.7,  1))
+
+-- Speed Boost (medium) – with Movement Breaker animation logic
+do
+    local mbConnM    = nil
+    local mbEnabledM = false
+    local mbTrackM   = nil
+    MainTab:CreateToggle({
+        Name         = "Speed Boost (medium)",
+        CurrentValue = false,
+        Callback = function(state)
+            mbEnabledM = state
+            if mbConnM then mbConnM:Disconnect() mbConnM = nil end
+            if not selectedTarget then return end
+
+            if not mbEnabledM then
+                if mbTrackM then
+                    mbTrackM:Stop()
+                    mbTrackM:Destroy()
+                    mbTrackM = nil
+                end
+                glueB.glue(selectedTarget, false)
+                return
+            end
+
+            local myChar = weldLocal.Character
+            local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            if myHum then
+                pcall(function()
+                    local anim = Instance.new("Animation")
+                    anim.AnimationId = "rbxassetid://93193438936298"
+                    mbTrackM = myHum:LoadAnimation(anim)
+                    mbTrackM.Priority = Enum.AnimationPriority.Idle
+                    mbTrackM:Play()
+                    mbTrackM:AdjustSpeed(0)
+                end)
+            end
+
+            mbConnM = glueRunB.Heartbeat:Connect(function()
+                if not mbEnabledM then return end
+                glueB.tp(selectedTarget, CFrame.new(0, 0.7, 0.5))
+                glueB.glue(selectedTarget, true)
+            end)
+        end,
+    })
+end
+
+-- Speed Boost (fast) – with Movement Breaker animation logic
+do
+    local mbConnF    = nil
+    local mbEnabledF = false
+    local mbTrackF   = nil
+    MainTab:CreateToggle({
+        Name         = "Speed Boost (fast)",
+        CurrentValue = false,
+        Callback = function(state)
+            mbEnabledF = state
+            if mbConnF then mbConnF:Disconnect() mbConnF = nil end
+            if not selectedTarget then return end
+
+            if not mbEnabledF then
+                if mbTrackF then
+                    mbTrackF:Stop()
+                    mbTrackF:Destroy()
+                    mbTrackF = nil
+                end
+                glueB.glue(selectedTarget, false)
+                return
+            end
+
+            local myChar = weldLocal.Character
+            local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            if myHum then
+                pcall(function()
+                    local anim = Instance.new("Animation")
+                    anim.AnimationId = "rbxassetid://93193438936298"
+                    mbTrackF = myHum:LoadAnimation(anim)
+                    mbTrackF.Priority = Enum.AnimationPriority.Idle
+                    mbTrackF:Play()
+                    mbTrackF:AdjustSpeed(0)
+                end)
+            end
+
+            mbConnF = glueRunB.Heartbeat:Connect(function()
+                if not mbEnabledF then return end
+                glueB.tp(selectedTarget, CFrame.new(0, 0.7, 0.35))
+                glueB.glue(selectedTarget, true)
+            end)
+        end,
+    })
+end
 
 -- Movement Breaker: same glue/tp as the other move toggles, but also loads
 -- animation 93193438936298 on the target, plays it, then freezes it in place.
