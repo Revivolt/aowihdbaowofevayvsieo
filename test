@@ -1,5 +1,5 @@
 -- ============================================================
---   test5
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -264,11 +264,31 @@ createWeldToggle("Body Stuffer",   Vector3.new(0, -1,    0), false)
 -- Spin Trap: orbits your character around the target using a time-based
 -- rotating offset. Character stays upright and always faces the target.
 do
-    local spinConn    = nil
-    local spinSavedCF = nil
-    local spinEnabled = false
-    local SPIN_RADIUS = 10  -- distance from target centre
-    local SPIN_SPEED  = 100    -- radians per second
+    local spinConn      = nil
+    local spinSavedCF   = nil
+    local spinEnabled   = false
+    local spinCollision = {}  -- saved CanCollide per part for restore
+    local SPIN_RADIUS   = 10
+    local SPIN_SPEED    = 100
+
+    local function setSpinCollision(char, state)
+        if state then
+            spinCollision = {}
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    spinCollision[part] = part.CanCollide
+                    part.CanCollide = false
+                end
+            end
+        else
+            for part, saved in pairs(spinCollision) do
+                if part and part.Parent then
+                    part.CanCollide = saved
+                end
+            end
+            spinCollision = {}
+        end
+    end
 
     MainTab:CreateToggle({
         Name         = "Spin Trap",
@@ -289,12 +309,14 @@ do
                     myRoot.RotVelocity = Vector3.zero
                     spinSavedCF = nil
                 end
+                setSpinCollision(myChar, false)
                 pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
                 return
             end
 
             activeFlingCount = activeFlingCount + 1
             spinSavedCF = myRoot.CFrame
+            setSpinCollision(myChar, true)
             spinConn = weldRun.Heartbeat:Connect(function()
                 if not spinEnabled then return end
                 local angle    = tick() * SPIN_SPEED
@@ -304,9 +326,6 @@ do
                     0,
                     math.sin(angle) * SPIN_RADIUS
                 )
-                -- CFrame.new(pos, lookAt) keeps the character upright and facing the target.
-                -- We look toward the target's XZ position at the same Y so the character
-                -- doesn't tilt up or down while orbiting.
                 local lookAt = Vector3.new(tgtPos.X, worldPos.Y, tgtPos.Z)
                 myRoot.CFrame      = CFrame.new(worldPos, lookAt)
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
