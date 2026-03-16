@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -302,31 +302,17 @@ do
             frozen      = false
             sinkConn = weldRun.Heartbeat:Connect(function(dt)
                 if not sinkEnabled then return end
-                -- Lower the offset each frame until we reach END_Y
-                if currentY > END_Y then
+
+                if not frozen then
                     currentY = math.max(END_Y, currentY - DROP_RATE * dt)
-                elseif not frozen then
-                    -- Just landed — snap to final position and freeze
-                    frozen = true
-                    myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, END_Y, 0))
-                                                     * CFrame.Angles(-math.pi / 2, 0, 0)
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-                    return
+                    if currentY <= END_Y then frozen = true end
                 end
 
-                if frozen then
-                    -- Hold completely still — zero out any velocity the engine tries to apply
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    return
-                end
-
+                -- Always lock CFrame every frame — during descent AND once frozen
+                myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, currentY, 0))
+                                                 * CFrame.Angles(-math.pi / 2, 0, 0)
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
-                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, currentY, 0))
-                               * CFrame.Angles(-math.pi / 2, 0, 0)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end,
