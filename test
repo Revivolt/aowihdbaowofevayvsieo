@@ -1,5 +1,5 @@
 -- ============================================================
---   test7
+--   test8
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -369,26 +369,12 @@ do
     })
 end
 
--- Face Turn Distance slider (place this just before the Face Turn toggle)
-local ftDist = 3
-MainTab:CreateSlider({
-    Name         = "Face Turn Distance (studs)",
-    Range        = {0, 10},
-    Increment    = 0.1,
-    Suffix       = "studs",
-    CurrentValue = 3,
-    Callback = function(value)
-        ftDist = value
-    end,
-})
-
--- Face Turn: positions your character directly in front of the target,
--- back facing them, frozen in animation 79053275717483 with no collision.
 do
     local ftConn    = nil
     local ftSavedCF = nil
     local ftEnabled = false
     local ftTrack   = nil
+    local ftDist    = 3.5  -- change this to adjust how many studs in front of the target you appear
 
     MainTab:CreateToggle({
         Name         = "Face Turn",
@@ -402,22 +388,18 @@ do
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
 
             if not ftEnabled then
-                -- Disconnect loop
                 if ftConn then ftConn:Disconnect() ftConn = nil end
-                -- Restore saved position
                 if ftSavedCF then
                     myRoot.CFrame                  = ftSavedCF
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
                     ftSavedCF = nil
                 end
-                -- Stop and destroy the frozen animation
                 if ftTrack then
                     ftTrack:Stop()
                     ftTrack:Destroy()
                     ftTrack = nil
                 end
-                -- Restore collision on all parts
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = true
@@ -429,7 +411,6 @@ do
 
             ftSavedCF = myRoot.CFrame
 
-            -- Load the animation on enable, freeze it at frame 0
             pcall(function()
                 local anim = Instance.new("Animation")
                 anim.AnimationId = "rbxassetid://82211728968005"
@@ -441,17 +422,11 @@ do
 
             ftConn = weldRun.Heartbeat:Connect(function()
                 if not ftEnabled then return end
-
-                -- Kill collision every frame so the engine can't re-enable it
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
                     end
                 end
-
-                -- tgtRoot.CFrame * CFrame.new(0, 0, -ftDist) puts us directly
-                -- in front of the target at ftDist studs, oriented the same way
-                -- the target faces — so our back is toward them.
                 local targetCF = tgtRoot.CFrame * CFrame.new(0, 0, -ftDist)
                 myRoot.CFrame                  = targetCF
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
