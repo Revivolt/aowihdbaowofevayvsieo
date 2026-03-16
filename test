@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -269,10 +269,11 @@ do
     local sinkSavedCF = nil
     local sinkEnabled = false
     local START_Y     = 3.5
-    local END_Y       = 1.8
+    local END_Y       = 1.5
     local DROP_RATE   = 0.5
     local currentY    = START_Y
     local frozen      = false
+    local frozenCF    = nil  -- world CFrame snapshotted the moment we reach END_Y
 
     MainTab:CreateToggle({
         Name         = "Sinking Anti Jump",
@@ -294,21 +295,33 @@ do
                 end
                 currentY = START_Y  -- reset for next use
                 frozen   = false
+                frozenCF = nil
                 return
             end
 
             sinkSavedCF = myRoot.CFrame
             currentY    = START_Y
             frozen      = false
+            frozenCF    = nil
             sinkConn = weldRun.Heartbeat:Connect(function(dt)
                 if not sinkEnabled then return end
 
-                if not frozen then
-                    currentY = math.max(END_Y, currentY - DROP_RATE * dt)
-                    if currentY <= END_Y then frozen = true end
+                if frozen then
+                    -- Lock to the absolute world position we snapshotted on landing
+                    myRoot.CFrame                  = frozenCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    return
                 end
 
-                -- Always lock CFrame every frame — during descent AND once frozen
+                currentY = math.max(END_Y, currentY - DROP_RATE * dt)
+                if currentY <= END_Y then
+                    -- Snapshot the exact world CFrame at the moment of landing
+                    frozenCF = CFrame.new(tgtRoot.Position + Vector3.new(0, END_Y, 0))
+                               * CFrame.Angles(-math.pi / 2, 0, 0)
+                    frozen = true
+                end
+
                 myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, currentY, 0))
                                                  * CFrame.Angles(-math.pi / 2, 0, 0)
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
