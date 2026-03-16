@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -471,13 +471,13 @@ do
                 return
             end
 
-            -- Load and freeze the animation on the target
-            local tgtChar = selectedTarget.Character
-            local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
-            if tgtHum then
+            -- Load and freeze the animation on your own character
+            local myChar = weldLocal.Character
+            local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            if myHum then
                 local anim = Instance.new("Animation")
                 anim.AnimationId = "rbxassetid://93193438936298"
-                mbTrack = tgtHum:LoadAnimation(anim)
+                mbTrack = myHum:LoadAnimation(anim)
                 mbTrack:Play()
                 mbTrack:AdjustSpeed(0)  -- freeze on first frame
             end
