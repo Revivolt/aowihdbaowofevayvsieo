@@ -1,5 +1,5 @@
 -- ============================================================
---   test6
+--   test7
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -432,7 +432,7 @@ do
             -- Load the animation on enable, freeze it at frame 0
             pcall(function()
                 local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://71806235559404"
+                anim.AnimationId = "rbxassetid://82211728968005"
                 ftTrack = myHum:LoadAnimation(anim)
                 ftTrack.Priority = Enum.AnimationPriority.Action4
                 ftTrack:Play()
