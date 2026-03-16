@@ -1,5 +1,5 @@
 -- ============================================================
---   test3
+--   test4
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -373,7 +373,7 @@ end
 local ftDist = 3
 MainTab:CreateSlider({
     Name         = "Face Turn Distance (studs)",
-    Range        = {1, 10},
+    Range        = {0, 10},
     Increment    = 0.5,
     Suffix       = "studs",
     CurrentValue = 3,
