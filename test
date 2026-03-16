@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -465,9 +465,9 @@ do
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 if rocketConn then rocketConn:Disconnect() rocketConn = nil end
                 if rocketSavedCF then
-                    myRoot.CFrame                  = rocketSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame      = rocketSavedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
                     rocketSavedCF = nil
                 end
                 return
@@ -475,16 +475,14 @@ do
 
             activeFlingCount = activeFlingCount + 1
             rocketSavedCF = myRoot.CFrame
-            -- Schedule the auto-shutoff BEFORE connecting the heartbeat so
-            -- the delay is only ever registered once per activation.
             task.delay(0.2, function()
                 rocketActive = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 if rocketConn then rocketConn:Disconnect() rocketConn = nil end
                 if rocketSavedCF then
-                    myRoot.CFrame                  = rocketSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame      = rocketSavedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
                     rocketSavedCF = nil
                 end
                 pcall(function() MainTab:SetToggle("Rocket Target", false) end)
@@ -493,9 +491,9 @@ do
                 if not rocketActive then return end
                 if not tgtRoot.Parent then return end
                 local aim = tgtRoot.Position + Vector3.new(0, -3, 0)
-                myRoot.CFrame                  = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
-                myRoot.AssemblyLinearVelocity  = Vector3.new(0, 50, 0)
-                myRoot.AssemblyAngularVelocity = Vector3.zero
+                myRoot.CFrame      = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
+                myRoot.Velocity    = Vector3.new(0, 50, 0)
+                myRoot.RotVelocity = Vector3.zero
                 pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end,
@@ -521,9 +519,9 @@ do
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 if gsConn then gsConn:Disconnect() gsConn = nil end
                 if gsSavedCF then
-                    myRoot.CFrame                  = gsSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame      = gsSavedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
                     gsSavedCF = nil
                 end
                 return
@@ -536,9 +534,9 @@ do
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 if gsConn then gsConn:Disconnect() gsConn = nil end
                 if gsSavedCF then
-                    myRoot.CFrame                  = gsSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame      = gsSavedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
                     gsSavedCF = nil
                 end
                 pcall(function() MainTab:SetToggle("GODSPEED Rocket Target", false) end)
@@ -547,9 +545,9 @@ do
                 if not gsActive then return end
                 if not tgtRoot.Parent then return end
                 local aim = tgtRoot.Position + Vector3.new(0, -3, 0)
-                myRoot.CFrame                  = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
-                myRoot.AssemblyLinearVelocity  = Vector3.new(0, 5000, 0)
-                myRoot.AssemblyAngularVelocity = Vector3.zero
+                myRoot.CFrame      = CFrame.new(aim, aim + Vector3.new(0, 1, 0))
+                myRoot.Velocity    = Vector3.new(0, 5000, 0)
+                myRoot.RotVelocity = Vector3.zero
                 pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end,
