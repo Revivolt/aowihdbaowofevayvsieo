@@ -2,7 +2,7 @@
 -- CONFIG
 -----------------------------
 local ANIMATION_ID = 72546263602548          -- Your animation asset ID
-local FREEZE_AFTER_SECONDS = 0.5  -- Seconds before the animation freezes
+local FREEZE_AFTER_SECONDS = 0  -- Seconds before the animation freezes
 
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
