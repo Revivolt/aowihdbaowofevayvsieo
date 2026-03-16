@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -471,15 +471,20 @@ do
                 return
             end
 
-            -- Load and freeze the animation on your own character
+            -- Load and freeze the animation on your own character.
+            -- Priority set to Idle so it never overrides the CFrame/physics
+            -- assignments the other toggles rely on.
             local myChar = weldLocal.Character
             local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
             if myHum then
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://93193438936298"
-                mbTrack = myHum:LoadAnimation(anim)
-                mbTrack:Play()
-                mbTrack:AdjustSpeed(0)  -- freeze on first frame
+                pcall(function()
+                    local anim = Instance.new("Animation")
+                    anim.AnimationId = "rbxassetid://93193438936298"
+                    mbTrack = myHum:LoadAnimation(anim)
+                    mbTrack.Priority = Enum.AnimationPriority.Idle
+                    mbTrack:Play()
+                    mbTrack:AdjustSpeed(0)
+                end)
             end
 
             mbConn = glueRunB.Heartbeat:Connect(function()
