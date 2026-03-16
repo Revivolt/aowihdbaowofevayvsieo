@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test3
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -268,8 +268,8 @@ do
     local spinConn    = nil
     local spinSavedCF = nil
     local spinEnabled = false
-    local SPIN_RADIUS = 20
-    local SPIN_SPEED  = 500
+    local SPIN_RADIUS = 10
+    local SPIN_SPEED  = 20
 
     MainTab:CreateToggle({
         Name         = "Spin Trap",
