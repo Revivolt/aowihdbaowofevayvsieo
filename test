@@ -267,8 +267,8 @@ do
     local spinConn    = nil
     local spinSavedCF = nil
     local spinEnabled = false
-    local SPIN_RADIUS = 5  -- distance from target centre
-    local SPIN_SPEED  = 100    -- radians per second
+    local SPIN_RADIUS = 10  -- distance from target centre
+    local SPIN_SPEED  = 9999    -- radians per second
 
     MainTab:CreateToggle({
         Name         = "Spin Trap",
