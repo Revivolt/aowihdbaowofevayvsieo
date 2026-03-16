@@ -1,5 +1,5 @@
 -- ============================================================
---   test20
+--   test21
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -374,7 +374,7 @@ do
     local ftSavedCF = nil
     local ftEnabled = false
     local ftTrack   = nil
-    local ftDist    = 3.5  -- change this to adjust how many studs in front of the target you appear
+    local ftDist    = 3.3  -- change this to adjust how many studs in front of the target you appear
 
     MainTab:CreateToggle({
         Name         = "Force Climb",
@@ -517,7 +517,7 @@ do
     local gsinkLean    = 45    -- lean back angle in degrees, increase to lean further back
 
     MainTab:CreateToggle({
-        Name         = "Ground Sink",
+        Name         = "Wall",
         CurrentValue = false,
         Callback = function(state)
             gsinkEnabled = state
