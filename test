@@ -1,5 +1,5 @@
 -- ============================================================
---   test4
+--   test5
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -269,7 +269,7 @@ do
     local sinkSavedCF = nil
     local sinkEnabled = false
     local START_Y     = 3.5
-    local END_Y       = -5
+    local END_Y       = -1.5
     local DROP_RATE   = 0.5
     local currentY    = START_Y
 
