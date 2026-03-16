@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -261,44 +261,52 @@ createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
 createWeldToggle("Body Stuffer",   Vector3.new(0, -1,    0), false)
 
--- Body Stuffer (Vertical): same inside-the-target position as Body Stuffer
--- but the character stays upright instead of being laid flat.
+-- Sinking Anti Jump: starts above the target like Anti Jump, then slowly
+-- lowers the Y offset each frame until it reaches 0 (sitting on top of them).
+-- DROP_RATE controls how many studs per second it descends.
 do
-    local bsvConn    = nil
-    local bsvSavedCF = nil
-    local bsvEnabled = false
+    local sinkConn    = nil
+    local sinkSavedCF = nil
+    local sinkEnabled = false
+    local START_Y     = 3.5   -- same starting height as Anti Jump
+    local END_Y       = 0     -- final resting offset
+    local DROP_RATE   = 0.5   -- studs per second to descend
+    local currentY    = START_Y
+
     MainTab:CreateToggle({
-        Name         = "Body Stuffer (Vertical)",
+        Name         = "Sinking Anti Jump",
         CurrentValue = false,
         Callback = function(state)
-            bsvEnabled = state
+            sinkEnabled = state
             if not selectedTarget then return end
             local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
             local myRoot  = myChar:WaitForChild("HumanoidRootPart")
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
 
-            if not bsvEnabled then
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                if bsvConn then bsvConn:Disconnect() bsvConn = nil end
-                if bsvSavedCF then
-                    myRoot.CFrame      = bsvSavedCF
-                    myRoot.Velocity    = Vector3.zero
-                    myRoot.RotVelocity = Vector3.zero
-                    bsvSavedCF = nil
+            if not sinkEnabled then
+                if sinkConn then sinkConn:Disconnect() sinkConn = nil end
+                if sinkSavedCF then
+                    myRoot.CFrame                  = sinkSavedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sinkSavedCF = nil
                 end
+                currentY = START_Y  -- reset for next use
                 return
             end
 
-            activeFlingCount = activeFlingCount + 1
-            bsvSavedCF = myRoot.CFrame
-            bsvConn = weldRun.Heartbeat:Connect(function()
-                if not bsvEnabled then return end
-                -- Step 2 studs along the target's own look direction so "in front"
-                -- always means in front of wherever they're facing.
-                local inFront = tgtRoot.Position + (tgtRoot.CFrame.LookVector * 2)
-                myRoot.CFrame      = CFrame.new(inFront)
-                myRoot.Velocity    = Vector3.new(500, 500, 500)
-                myRoot.RotVelocity = Vector3.new(500, 500, 500)
+            sinkSavedCF = myRoot.CFrame
+            currentY    = START_Y
+            sinkConn = weldRun.Heartbeat:Connect(function(dt)
+                if not sinkEnabled then return end
+                -- Lower the offset each frame until we reach END_Y
+                if currentY > END_Y then
+                    currentY = math.max(END_Y, currentY - DROP_RATE * dt)
+                end
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, currentY, 0))
+                               * CFrame.Angles(-math.pi / 2, 0, 0)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end,
