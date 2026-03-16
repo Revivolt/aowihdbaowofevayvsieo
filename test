@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -444,7 +444,52 @@ createMoveToggle("Infinite Jump",        CFrame.new(0,  -5.75, 0))
 createMoveToggle("Speed Boost (slow)",   CFrame.new(0,   0.7,  1))
 createMoveToggle("Speed Boost (medium)", CFrame.new(0,   0.7,  0.5))
 createMoveToggle("Speed Boost (fast)",   CFrame.new(0,   0.7,  0.35))
-createMoveToggle("Movement Breaker",     CFrame.new(0,   0.7, -0.8))
+
+-- Movement Breaker: same glue/tp as the other move toggles, but also loads
+-- animation 93193438936298 on the target, plays it, then freezes it in place.
+do
+    local mbConn    = nil
+    local mbEnabled = false
+    local mbTrack   = nil  -- AnimationTrack on the target so we can stop it on disable
+
+    MainTab:CreateToggle({
+        Name         = "Movement Breaker",
+        CurrentValue = false,
+        Callback = function(state)
+            mbEnabled = state
+            if mbConn then mbConn:Disconnect() mbConn = nil end
+            if not selectedTarget then return end
+
+            if not mbEnabled then
+                -- Stop and destroy the frozen animation track
+                if mbTrack then
+                    mbTrack:Stop()
+                    mbTrack:Destroy()
+                    mbTrack = nil
+                end
+                glueB.glue(selectedTarget, false)
+                return
+            end
+
+            -- Load and freeze the animation on the target
+            local tgtChar = selectedTarget.Character
+            local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
+            if tgtHum then
+                local anim = Instance.new("Animation")
+                anim.AnimationId = "rbxassetid://93193438936298"
+                mbTrack = tgtHum:LoadAnimation(anim)
+                mbTrack:Play()
+                mbTrack:AdjustSpeed(0)  -- freeze on first frame
+            end
+
+            mbConn = glueRunB.Heartbeat:Connect(function()
+                if not mbEnabled then return end
+                glueB.tp(selectedTarget, CFrame.new(0, 0.7, -0.8))
+                glueB.glue(selectedTarget, true)
+            end)
+        end,
+    })
+end
 
 -- Rocket Target
 do
