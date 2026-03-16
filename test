@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -260,61 +260,6 @@ createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
 createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
 createWeldToggle("Body Stuffer",   Vector3.new(0, -1,    0), false)
-
--- Sinking Anti Jump: starts above the target like Anti Jump, then slowly
--- lowers the Y offset each frame until it reaches 0 (sitting on top of them).
--- DROP_RATE controls how many studs per second it descends.
-do
-    local sinkConn    = nil
-    local sinkSavedCF = nil
-    local sinkEnabled = false
-    local START_Y     = 3.5
-    local END_Y       = 0
-    local DROP_RATE   = 0.5
-    local currentY    = START_Y
-
-    MainTab:CreateToggle({
-        Name         = "Sinking Anti Jump",
-        CurrentValue = false,
-        Callback = function(state)
-            sinkEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
-            if not sinkEnabled then
-                if sinkConn then sinkConn:Disconnect() sinkConn = nil end
-                if sinkSavedCF then
-                    myRoot.CFrame                  = sinkSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    sinkSavedCF = nil
-                end
-                -- Detach from target so subsequent toggles start from a clean state
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
-                currentY = START_Y
-                return
-            end
-
-            sinkSavedCF = myRoot.CFrame
-            currentY    = START_Y
-            sinkConn = weldRun.Heartbeat:Connect(function(dt)
-                if not sinkEnabled then return end
-
-                if currentY > END_Y then
-                    currentY = math.max(END_Y, currentY - DROP_RATE * dt)
-                end
-
-                myRoot.CFrame                  = CFrame.new(tgtRoot.Position + Vector3.new(0, currentY, 0))
-                                                 * CFrame.Angles(-math.pi / 2, 0, 0)
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-            end)
-        end,
-    })
-end
 
 -- Spin Trap: orbits your character around the target using a time-based
 -- rotating offset. Character stays upright, always faces the target, and
