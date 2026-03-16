@@ -1,5 +1,5 @@
 -- ============================================================
---   test3
+--   simple welding abuse hub by Rexy and Artlino
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -261,6 +261,48 @@ createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
 createWeldToggle("Body Stuffer",   Vector3.new(0, -1,    0), false)
 
+-- Body Stuffer (Vertical): same inside-the-target position as Body Stuffer
+-- but the character stays upright instead of being laid flat.
+do
+    local bsvConn    = nil
+    local bsvSavedCF = nil
+    local bsvEnabled = false
+    MainTab:CreateToggle({
+        Name         = "Body Stuffer (Vertical)",
+        CurrentValue = false,
+        Callback = function(state)
+            bsvEnabled = state
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not bsvEnabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                if bsvConn then bsvConn:Disconnect() bsvConn = nil end
+                if bsvSavedCF then
+                    myRoot.CFrame      = bsvSavedCF
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
+                    bsvSavedCF = nil
+                end
+                return
+            end
+
+            activeFlingCount = activeFlingCount + 1
+            bsvSavedCF = myRoot.CFrame
+            bsvConn = weldRun.Heartbeat:Connect(function()
+                if not bsvEnabled then return end
+                -- CFrame.new with no rotation = character stays perfectly upright
+                myRoot.CFrame      = CFrame.new(tgtRoot.Position + Vector3.new(0, -1, 0))
+                myRoot.Velocity    = Vector3.new(500, 500, 500)
+                myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end,
+    })
+end
+
 -- Spin Trap: orbits your character around the target using a time-based
 -- rotating offset. Character stays upright, always faces the target, and
 -- has noclip (CanCollide forced off every frame so the engine can't re-enable it).
@@ -269,7 +311,7 @@ do
     local spinSavedCF = nil
     local spinEnabled = false
     local SPIN_RADIUS = 10
-    local SPIN_SPEED  = 20
+    local SPIN_SPEED  = 10
 
     MainTab:CreateToggle({
         Name         = "Spin Trap",
