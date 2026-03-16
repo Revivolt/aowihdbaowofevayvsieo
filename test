@@ -1,5 +1,5 @@
 -- ============================================================
---   test14
+--   test15
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -506,14 +506,15 @@ do
 end
 
 -- Ground Sink: positions your character upside down and sunken into the ground
--- behind the target, playing animation 70883871260184. No collision to avoid getting stuck.
+-- behind the target, back always facing the player's front, playing animation 70883871260184.
 do
     local gsinkConn    = nil
     local gsinkSavedCF = nil
     local gsinkEnabled = false
     local gsinkTrack   = nil
     local gsinkDist    = 0    -- studs behind the target
-    local gsinkDepth   = 5  -- how many studs below ground the character sinks
+    local gsinkDepth   = 10  -- how many studs below ground the character sinks
+    local gsinkLean    = 30    -- lean back angle in degrees, increase to lean further back
 
     MainTab:CreateToggle({
         Name         = "Ground Sink",
@@ -550,7 +551,6 @@ do
 
             gsinkSavedCF = myRoot.CFrame
 
-            -- Load and play the animation without freezing it
             pcall(function()
                 local anim = Instance.new("Animation")
                 anim.AnimationId = "rbxassetid://70883871260184"
@@ -562,19 +562,26 @@ do
             gsinkConn = weldRun.Heartbeat:Connect(function()
                 if not gsinkEnabled then return end
 
-                -- Kill collision every frame so we never get stuck in geometry
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
                     end
                 end
 
-                -- Place us behind the target, sunk below their feet, flipped upside down
-                -- CFrame.new(0, 0, gsinkDist) = behind the target in their local space
-                -- then we extract world position and apply the Y sink + upside down flip
-                local behindCF = tgtRoot.CFrame * CFrame.new(0, 0, gsinkDist)
+                -- Position behind the target in their local space
+                local tgtCF    = tgtRoot.CFrame
+                local behindCF = tgtCF * CFrame.new(0, 0, gsinkDist)
                 local sinkPos  = Vector3.new(behindCF.X, tgtRoot.Position.Y - gsinkDepth, behindCF.Z)
-                myRoot.CFrame                  = CFrame.new(sinkPos) * CFrame.Angles(math.pi, 0, 0)
+
+                -- Extract only the target's Y (yaw) rotation so our character
+                -- always faces the same horizontal direction as the target,
+                -- meaning our back is always toward the player's front.
+                -- math.pi flips us upside down, gsinkLean tilts us backward from there.
+                local _, tgtYaw, _ = tgtCF:ToEulerAnglesYXZ()
+                myRoot.CFrame = CFrame.new(sinkPos)
+                    * CFrame.Angles(0, tgtYaw, 0)
+                    * CFrame.Angles(math.pi + math.rad(gsinkLean), 0, 0)
+
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
