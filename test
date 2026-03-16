@@ -1,5 +1,5 @@
 -- ============================================================
---   simple welding abuse hub by Rexy and Artlino
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -262,33 +262,14 @@ createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
 createWeldToggle("Body Stuffer",   Vector3.new(0, -1,    0), false)
 
 -- Spin Trap: orbits your character around the target using a time-based
--- rotating offset. Character stays upright and always faces the target.
+-- rotating offset. Character stays upright, always faces the target, and
+-- has noclip (CanCollide forced off every frame so the engine can't re-enable it).
 do
-    local spinConn      = nil
-    local spinSavedCF   = nil
-    local spinEnabled   = false
-    local spinCollision = {}  -- saved CanCollide per part for restore
-    local SPIN_RADIUS   = 10
-    local SPIN_SPEED    = 100
-
-    local function setSpinCollision(char, state)
-        if state then
-            spinCollision = {}
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    spinCollision[part] = part.CanCollide
-                    part.CanCollide = false
-                end
-            end
-        else
-            for part, saved in pairs(spinCollision) do
-                if part and part.Parent then
-                    part.CanCollide = saved
-                end
-            end
-            spinCollision = {}
-        end
-    end
+    local spinConn    = nil
+    local spinSavedCF = nil
+    local spinEnabled = false
+    local SPIN_RADIUS = 10
+    local SPIN_SPEED  = 100
 
     MainTab:CreateToggle({
         Name         = "Spin Trap",
@@ -309,16 +290,28 @@ do
                     myRoot.RotVelocity = Vector3.zero
                     spinSavedCF = nil
                 end
-                setSpinCollision(myChar, false)
+                -- Restore collision on all parts once on disable
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
                 pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
                 return
             end
 
             activeFlingCount = activeFlingCount + 1
             spinSavedCF = myRoot.CFrame
-            setSpinCollision(myChar, true)
             spinConn = weldRun.Heartbeat:Connect(function()
                 if not spinEnabled then return end
+
+                -- Force CanCollide off every frame so Roblox can't re-enable it
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+
                 local angle    = tick() * SPIN_SPEED
                 local tgtPos   = tgtRoot.Position
                 local worldPos = tgtPos + Vector3.new(
