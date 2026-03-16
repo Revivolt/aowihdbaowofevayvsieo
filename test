@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -655,7 +655,7 @@ do
 
                 -- Place above the target facing upward
                 -- CFrame.Angles(math.pi / 2, 0, 0) tilts the character so they face up
-                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, 2, 0))
+                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, 2.5, 0))
                     * CFrame.Angles(math.pi / 2, 0, 0)
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
