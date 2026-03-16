@@ -1,5 +1,5 @@
 -- ============================================================
---   test17
+--   test18
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -514,7 +514,7 @@ do
     local gsinkTrack   = nil
     local gsinkDist    = 0    -- studs behind the target
     local gsinkDepth   = 50  -- how many studs below ground the character sinks
-    local gsinkLean    = 40    -- lean back angle in degrees, increase to lean further back
+    local gsinkLean    = 38    -- lean back angle in degrees, increase to lean further back
 
     MainTab:CreateToggle({
         Name         = "Ground Sink",
