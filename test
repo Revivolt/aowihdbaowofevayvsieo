@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -269,7 +269,7 @@ do
     local sinkSavedCF = nil
     local sinkEnabled = false
     local START_Y     = 3.5   -- same starting height as Anti Jump
-    local END_Y       = 5     -- final resting offset
+    local END_Y       = 1.7     -- final resting offset
     local DROP_RATE   = 0.5   -- studs per second to descend
     local currentY    = START_Y
 
