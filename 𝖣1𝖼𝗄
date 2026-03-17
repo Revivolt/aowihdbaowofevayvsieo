@@ -12,7 +12,7 @@ local WALK_ANIMS = {
 	{ id = 108716025720327, key = Enum.KeyCode.Z},
 	{ id = 121107013783398, key = Enum.KeyCode.X},
 	{ id = 78141481814457, key = Enum.KeyCode.C},
-	{ id = 0, key = Enum.KeyCode.V},
+	{ id = 76815905486072, key = Enum.KeyCode.V},
 	{ id = 0, key = Enum.KeyCode.B},
 	{ id = 0, key = Enum.KeyCode.N},
 	{ id = 0, key = Enum.KeyCode.M},
