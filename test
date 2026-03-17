@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -604,6 +604,100 @@ do
     local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
     local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
     local cpFaceBack  = false  -- true = back of your character faces the player's front
+                               -- false = front of your character faces the player's front
+    local cpNoCollide = true   -- true = no collision, false = normal collision
+
+    MainTab:CreateToggle({
+        Name         = "Better Speed Boost?",
+        CurrentValue = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local myHum   = myChar:WaitForChild("Humanoid")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not cpEnabled then
+                if cpConn then cpConn:Disconnect() cpConn = nil end
+                if cpSavedCF then
+                    myRoot.CFrame                  = cpSavedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    cpSavedCF = nil
+                end
+                if cpTrack then
+                    cpTrack:Stop()
+                    cpTrack:Destroy()
+                    cpTrack = nil
+                end
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = not cpNoCollide
+                    end
+                end
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                return
+            end
+
+            cpSavedCF = myRoot.CFrame
+
+            -- Load and freeze the animation
+            pcall(function()
+                local anim = Instance.new("Animation")
+                anim.AnimationId = "rbxassetid://93206392584401"
+                cpTrack = myHum:LoadAnimation(anim)
+                cpTrack.Priority = Enum.AnimationPriority.Action4
+                cpTrack:Play()
+                cpTrack:AdjustSpeed(0)
+            end)
+
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        if cpNoCollide then
+                            part.CanCollide = true
+                        end
+                    end
+                end
+
+                -- Extract the target's yaw so we always match their facing direction,
+                -- then apply the local space offsets and angle adjustments on top
+                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                local offset = CFrame.new(0, cpUp, -cpForward)
+                myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                    * CFrame.Angles(0, yaw, 0)
+                    * offset
+                    * CFrame.Angles(
+                        math.rad(cpTiltX),
+                        math.rad(cpTiltY),
+                        math.rad(cpTiltZ)
+                    )
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end,
+    })
+end
+
+-- Custom Pose: fully adjustable position and angle relative to the target,
+-- frozen in a specified animation. Tweak the variables at the top to adjust.
+do
+    local cpConn    = nil
+    local cpSavedCF = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+
+    local cpUp      =  -5    -- studs above (+) or below (-) the target
+    local cpForward = -1     -- studs in front (+) or behind (-) the target
+    local cpTiltX   = 0     -- tilt angle in degrees on the X axis (forward/back lean)
+    local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
+    local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
+    local cpFaceBack  = true  -- true = back of your character faces the player's front
                                -- false = front of your character faces the player's front
     local cpNoCollide = true   -- true = no collision, false = normal collision
 
