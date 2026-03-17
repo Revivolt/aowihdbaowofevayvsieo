@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -655,7 +655,7 @@ do
                 -- Extract only the target's Y (yaw) so our character matches
                 -- their horizontal facing direction, then tilt to face upward
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, 0.5, 0))
+                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, 3.1, 0))
                     * CFrame.Angles(0, tgtYaw, 0)
                     * CFrame.Angles(math.pi / 2, 0, 0)
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
