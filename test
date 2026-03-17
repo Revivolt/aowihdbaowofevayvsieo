@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -984,7 +984,7 @@ do
     local cpNoCollide = true   -- true = no collision, false = normal collision
 
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Pony Ride",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -1068,9 +1068,9 @@ do
     local cpEnabled = false
     local cpTrack   = nil
 
-    local cpUp      =  3    -- studs above (+) or below (-) the target
+    local cpUp      =  2    -- studs above (+) or below (-) the target
     local cpForward = 0     -- studs in front (+) or behind (-) the target
-    local cpTiltX   = 0     -- tilt angle in degrees on the X axis (forward/back lean)
+    local cpTiltX   = 90     -- tilt angle in degrees on the X axis (forward/back lean)
     local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
     local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
     local cpFaceBack  = true  -- true = back of your character faces the player's front
@@ -1079,7 +1079,7 @@ do
     local cpFreezeAt  = 0
 
     MainTab:CreateToggle({
-        Name         = "test2",
+        Name         = "test",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
