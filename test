@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1076,7 +1076,7 @@ do
     local cpFaceBack  = false  -- true = back of your character faces the player's front
                                -- false = front of your character faces the player's front
     local cpNoCollide = true   -- true = no collision, false = normal collision
-    local cpFreezeAt  = 5
+    local cpFreezeAt  = 3
 
     MainTab:CreateToggle({
         Name         = "test",
