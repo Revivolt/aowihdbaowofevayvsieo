@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,12 +254,12 @@ local function createWeldToggle(name, offset, killTarget)
     })
 end
 
-createWeldToggle("Fling Player",   Vector3.new(0,  0,    0), false)
-createWeldToggle("Fling 2.0",      Vector3.new(0, -2.5,  0), false)
+createWeldToggle("nothing",   Vector3.new(0,  0,    0), false)
+createWeldToggle("nothing",      Vector3.new(0, -2.5,  0), false)
 createWeldToggle("Platform Fly",   Vector3.new(0, -4,    0), false)
 createWeldToggle("Magic Carpet",   Vector3.new(0, -3.6,  0), false)
 createWeldToggle("Elevator",       Vector3.new(0, -3,    0), false)
-createWeldToggle("Body Stuffer",   Vector3.new(0, -1,    0), false)
+createWeldToggle("Fling",   Vector3.new(0, -1,    0), false)
 
 -- Spin Trap: orbits your character around the target using a time-based
 -- rotating offset. Character stays upright, always faces the target, and
@@ -268,11 +268,11 @@ do
     local spinConn    = nil
     local spinSavedCF = nil
     local spinEnabled = false
-    local SPIN_RADIUS = 3.5
-    local SPIN_SPEED  = 6
+    local SPIN_RADIUS = 10
+    local SPIN_SPEED  = 10
 
     MainTab:CreateToggle({
-        Name         = "Spin Trap",
+        Name         = "Fling Aura",
         CurrentValue = false,
         Callback = function(state)
             spinEnabled = state
@@ -597,6 +597,95 @@ do
     local cpTrack   = nil
 
     local cpUp      =  -1.5    -- studs above (+) or below (-) the target
+    local cpForward = -2.3     -- studs in front (+) or behind (-) the target
+    local cpTiltX   = -72     -- tilt angle in degrees on the X axis (forward/back lean)
+    local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
+    local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
+    local cpFaceBack  = false  -- true = back of your character faces the player's front
+                               -- false = front of your character faces the player's front
+
+    MainTab:CreateToggle({
+        Name         = "Trapped Joyride",
+        CurrentValue = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not selectedTarget then return end
+            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+            local myHum   = myChar:WaitForChild("Humanoid")
+            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
+
+            if not cpEnabled then
+                if cpConn then cpConn:Disconnect() cpConn = nil end
+                if cpSavedCF then
+                    myRoot.CFrame                  = cpSavedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    cpSavedCF = nil
+                end
+                if cpTrack then
+                    cpTrack:Stop()
+                    cpTrack:Destroy()
+                    cpTrack = nil
+                end
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                return
+            end
+
+            cpSavedCF = myRoot.CFrame
+
+            -- Load and freeze the animation
+            pcall(function()
+                local anim = Instance.new("Animation")
+                anim.AnimationId = "rbxassetid://118294259309188"
+                cpTrack = myHum:LoadAnimation(anim)
+                cpTrack.Priority = Enum.AnimationPriority.Action4
+                cpTrack:Play()
+                cpTrack:AdjustSpeed(0)
+            end)
+
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+
+                -- Extract the target's yaw so we always match their facing direction,
+                -- then apply the local space offsets and angle adjustments on top
+                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                local offset = CFrame.new(0, cpUp, -cpForward)
+                myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                    * CFrame.Angles(0, yaw, 0)
+                    * offset
+                    * CFrame.Angles(
+                        math.rad(cpTiltX),
+                        math.rad(cpTiltY),
+                        math.rad(cpTiltZ)
+                    )
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end,
+    })
+end
+
+do
+    local cpConn    = nil
+    local cpSavedCF = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+
+    local cpUp      =  -1.2    -- studs above (+) or below (-) the target
     local cpForward = -2.3     -- studs in front (+) or behind (-) the target
     local cpTiltX   = -72     -- tilt angle in degrees on the X axis (forward/back lean)
     local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
