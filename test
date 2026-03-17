@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1165,7 +1165,7 @@ do
     local cpUp      =  2    -- studs above (+) or below (-) the target
     local cpForward = 0     -- studs in front (+) or behind (-) the target
     local cpTiltX   = 0     -- tilt angle in degrees on the X axis (forward/back lean)
-    local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
+    local cpTiltY   = -90     -- tilt angle in degrees on the Y axis (left/right spin)
     local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
     local cpFaceBack  = false  -- true = back of your character faces the player's front
                                -- false = front of your character faces the player's front
