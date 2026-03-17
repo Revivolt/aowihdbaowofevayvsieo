@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -590,37 +590,43 @@ do
     })
 end
 
--- Face Up: positions your character above the target facing upward,
--- frozen in animation 72546263602548 with no collision.
 do
-    local fuConn    = nil
-    local fuSavedCF = nil
-    local fuEnabled = false
-    local fuTrack   = nil
+    local cpConn    = nil
+    local cpSavedCF = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+
+    local cpUp      =  5    -- studs above (+) or below (-) the target
+    local cpForward = 0     -- studs in front (+) or behind (-) the target
+    local cpTiltX   = 90     -- tilt angle in degrees on the X axis (forward/back lean)
+    local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
+    local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
+    local cpFaceBack  = false  -- true = back of your character faces the player's front
+                               -- false = front of your character faces the player's front
 
     MainTab:CreateToggle({
-        Name         = "Face Up",
+        Name         = "test",
         CurrentValue = false,
         Callback = function(state)
-            fuEnabled = state
+            cpEnabled = state
             if not selectedTarget then return end
             local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
             local myRoot  = myChar:WaitForChild("HumanoidRootPart")
             local myHum   = myChar:WaitForChild("Humanoid")
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
 
-            if not fuEnabled then
-                if fuConn then fuConn:Disconnect() fuConn = nil end
-                if fuSavedCF then
-                    myRoot.CFrame                  = fuSavedCF
+            if not cpEnabled then
+                if cpConn then cpConn:Disconnect() cpConn = nil end
+                if cpSavedCF then
+                    myRoot.CFrame                  = cpSavedCF
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
-                    fuSavedCF = nil
+                    cpSavedCF = nil
                 end
-                if fuTrack then
-                    fuTrack:Stop()
-                    fuTrack:Destroy()
-                    fuTrack = nil
+                if cpTrack then
+                    cpTrack:Stop()
+                    cpTrack:Destroy()
+                    cpTrack = nil
                 end
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
@@ -631,33 +637,40 @@ do
                 return
             end
 
-            fuSavedCF = myRoot.CFrame
+            cpSavedCF = myRoot.CFrame
 
             -- Load and freeze the animation
             pcall(function()
                 local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://72546263602548"
-                fuTrack = myHum:LoadAnimation(anim)
-                fuTrack.Priority = Enum.AnimationPriority.Action4
-                fuTrack:Play()
-                fuTrack:AdjustSpeed(0)
+                anim.AnimationId = "rbxassetid://118294259309188"
+                cpTrack = myHum:LoadAnimation(anim)
+                cpTrack.Priority = Enum.AnimationPriority.Action4
+                cpTrack:Play()
+                cpTrack:AdjustSpeed(0)
             end)
 
-            fuConn = weldRun.Heartbeat:Connect(function()
-                if not fuEnabled then return end
-            
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
                     end
                 end
-            
-                -- Extract only the target's Y (yaw) so our character matches
-                -- their horizontal facing direction, then tilt to face upward
+
+                -- Extract the target's yaw so we always match their facing direction,
+                -- then apply the local space offsets and angle adjustments on top
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                myRoot.CFrame = CFrame.new(tgtRoot.Position + Vector3.new(0, 3.1, 0))
-                    * CFrame.Angles(0, tgtYaw, 0)
-                    * CFrame.Angles(math.pi / 2, 0, 0)
+                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                local offset = CFrame.new(0, cpUp, -cpForward)
+                myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                    * CFrame.Angles(0, yaw, 0)
+                    * offset
+                    * CFrame.Angles(
+                        math.rad(cpTiltX),
+                        math.rad(cpTiltY),
+                        math.rad(cpTiltZ)
+                    )
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
