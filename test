@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -974,9 +974,9 @@ do
     local cpEnabled = false
     local cpTrack   = nil
 
-    local cpUp      =  -2.5    -- studs above (+) or below (-) the target
-    local cpForward = -0.5     -- studs in front (+) or behind (-) the target
-    local cpTiltX   = -10     -- tilt angle in degrees on the X axis (forward/back lean)
+    local cpUp      =  4    -- studs above (+) or below (-) the target
+    local cpForward = 0     -- studs in front (+) or behind (-) the target
+    local cpTiltX   = 0     -- tilt angle in degrees on the X axis (forward/back lean)
     local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
     local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
     local cpFaceBack  = false  -- true = back of your character faces the player's front
@@ -1021,7 +1021,7 @@ do
             -- Load and freeze the animation
             pcall(function()
                 local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://121853667211125"
+                anim.AnimationId = "rbxassetid://137644260443394"
                 cpTrack = myHum:LoadAnimation(anim)
                 cpTrack.Priority = Enum.AnimationPriority.Action4
                 cpTrack:Play()
