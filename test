@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -786,8 +786,8 @@ do
     local cpEnabled = false
     local cpTrack   = nil
 
-    local cpUp      =  -4    -- studs above (+) or below (-) the target
-    local cpForward = -1     -- studs in front (+) or behind (-) the target
+    local cpUp      =  -4.5    -- studs above (+) or below (-) the target
+    local cpForward = -1.5     -- studs in front (+) or behind (-) the target
     local cpTiltX   = 0     -- tilt angle in degrees on the X axis (forward/back lean)
     local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
     local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
