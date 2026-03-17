@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1069,14 +1069,14 @@ do
     local cpTrack   = nil
 
     local cpUp      =  2    -- studs above (+) or below (-) the target
-    local cpForward = 3     -- studs in front (+) or behind (-) the target
+    local cpForward = -3     -- studs in front (+) or behind (-) the target
     local cpTiltX   = -90     -- tilt angle in degrees on the X axis (forward/back lean)
     local cpTiltY   = 0     -- tilt angle in degrees on the Y axis (left/right spin)
     local cpTiltZ   = 0     -- tilt angle in degrees on the Z axis (left/right roll)
     local cpFaceBack  = true  -- true = back of your character faces the player's front
                                -- false = front of your character faces the player's front
     local cpNoCollide = true   -- true = no collision, false = normal collision
-    local cpFreezeAt  = 3
+    local cpFreezeAt  = 5
 
     MainTab:CreateToggle({
         Name         = "test",
