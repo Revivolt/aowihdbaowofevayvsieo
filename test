@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -175,13 +175,28 @@ local weldRun        = game:GetService("RunService")
 local weldLocal      = weldPlayers.LocalPlayer
 local selectedTarget = nil
 
+-- Update the Select Target input to handle "-" for all players
+local flingTargetAll = false
+
 MainTab:CreateInput({
     Name                    = "Select Target",
-    PlaceholderText         = "Username / Display",
+    PlaceholderText         = "Username / Display  |  - = everyone",
     RemoveTextAfterFocusLost = false,
     Callback = function(input)
         input = (tostring(input or "")):lower()
+        flingTargetAll = false
         selectedTarget = nil
+
+        if input == "-" then
+            flingTargetAll = true
+            Rayfield:Notify({
+                Title    = "Target Selected",
+                Content  = "All Players",
+                Duration = 3,
+            })
+            return
+        end
+
         for _, plr in ipairs(weldPlayers:GetPlayers()) do
             local name    = plr.Name:lower()
             local display = (plr.DisplayName or plr.Name):lower()
@@ -458,7 +473,7 @@ do
     local cpTrack     = nil
     local cpLoopTask  = nil
 
-    local cpUp        = 0
+    local cpUp        = -1
     local cpForward   =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
@@ -466,6 +481,9 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+
+    -- Velocity below this after the fling window = still grounded, retry
+    local FLING_SUCCESS_VEL = 50
 
     local function stopFling(myRoot, myChar)
         activeFlingCount = math.max(0, activeFlingCount - 1)
@@ -490,7 +508,7 @@ do
     end
 
     local function startFling(myChar, myRoot, myHum, tgtRoot)
-        if cpConn then return end  -- already running
+        if cpConn then return end
         activeFlingCount = activeFlingCount + 1
         cpSavedCF = myRoot.CFrame
 
@@ -524,14 +542,68 @@ do
         end)
     end
 
+    -- Returns true if the fling succeeded (target is airborne/launched),
+    -- false if they are still standing or climbing and we should retry
+    local function flingSucceeded(target)
+        local tgtChar = target.Character
+        local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
+        local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+        if not tgtHum or not tgtRoot then return true end  -- dead/gone = done
+
+        local vel   = tgtRoot.AssemblyLinearVelocity.Magnitude
+        local state = tgtHum:GetState()
+
+        local grounded =
+            state == Enum.HumanoidStateType.Running         or
+            state == Enum.HumanoidStateType.RunningNoPhysics or
+            state == Enum.HumanoidStateType.Climbing        or
+            state == Enum.HumanoidStateType.Landed          or
+            state == Enum.HumanoidStateType.GettingUp       or
+            vel < FLING_SUCCESS_VEL
+
+        return not grounded
+    end
+
+    -- Attempt to fling a single target, retrying if they are still grounded after 1.5s
+    local function flingTarget(target)
+        local retrying = true
+        while retrying and cpEnabled do
+            local myChar = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+            local myRoot = myChar:WaitForChild("HumanoidRootPart")
+            local myHum  = myChar:WaitForChild("Humanoid")
+
+            -- Wait for target to have a live character
+            local tgtRoot
+            repeat
+                task.wait(0.1)
+                if not cpEnabled then return end
+                local tgtChar = target.Character
+                local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
+                tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if tgtHum and tgtHum.Health <= 0 then tgtRoot = nil end
+            until tgtRoot
+
+            startFling(myChar, myRoot, myHum, tgtRoot)
+            task.wait(1.5)
+            stopFling(myRoot, myChar)
+
+            if not cpEnabled then return end
+
+            if flingSucceeded(target) then
+                retrying = false
+            else
+                -- Still grounded — brief pause then try again
+                task.wait(0.3)
+            end
+        end
+    end
+
     MainTab:CreateToggle({
         Name         = "Fling",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
 
-            -- Kill the loop task if toggled off
             if not cpEnabled then
                 if cpLoopTask then task.cancel(cpLoopTask) cpLoopTask = nil end
                 local myChar = weldLocal.Character or weldLocal.CharacterAdded:Wait()
@@ -540,37 +612,42 @@ do
                 return
             end
 
-            -- Main loop: fling for 1.5s, restore, wait for target to respawn, repeat
             cpLoopTask = task.spawn(function()
                 while cpEnabled do
-                    local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-                    local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-                    local myHum   = myChar:WaitForChild("Humanoid")
+                    if flingTargetAll then
+                        -- Build a snapshot of all other players and fling them one by one
+                        local targets = {}
+                        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                            if plr ~= weldLocal then
+                                table.insert(targets, plr)
+                            end
+                        end
 
-                    -- Wait for target to have a living character
-                    local tgtRoot
-                    repeat
-                        task.wait(0.1)
+                        for _, target in ipairs(targets) do
+                            if not cpEnabled then return end
+                            flingTarget(target)
+                            -- Brief gap between players
+                            if cpEnabled then task.wait(0.3) end
+                        end
+
+                        -- Small pause before cycling through everyone again
+                        if cpEnabled then task.wait(0.5) end
+
+                    else
+                        -- Single target mode
+                        if not selectedTarget then task.wait(0.1) continue end
+
+                        flingTarget(selectedTarget)
+
                         if not cpEnabled then return end
-                        local tgtChar = selectedTarget.Character
-                        tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                    until tgtRoot
 
-                    -- Fling for 1.5 seconds
-                    startFling(myChar, myRoot, myHum, tgtRoot)
-                    task.wait(1.5)
-
-                    -- Restore and wait for target to die/respawn before going again
-                    stopFling(myRoot, myChar)
-
-                    if not cpEnabled then return end
-
-                    -- Wait for the target's character to reset (they die or respawn)
-                    local oldChar = selectedTarget.Character
-                    repeat
-                        task.wait(0.1)
-                        if not cpEnabled then return end
-                    until selectedTarget.Character ~= oldChar or not selectedTarget.Character
+                        -- Wait for the target to die and respawn before going again
+                        local oldChar = selectedTarget.Character
+                        repeat
+                            task.wait(0.1)
+                            if not cpEnabled then return end
+                        until selectedTarget.Character ~= oldChar or not selectedTarget.Character
+                    end
                 end
             end)
         end,
