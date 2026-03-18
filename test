@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -554,7 +554,7 @@ do
         until tgtRoot
 
         startFling(myChar, myRoot, myHum, tgtRoot)
-        task.wait(2.5)
+        task.wait(0.5)
         stopFling(myRoot, myChar)
     end
 
