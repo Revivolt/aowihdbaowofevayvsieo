@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -174,7 +174,6 @@ local weldPlayers    = game:GetService("Players")
 local weldRun        = game:GetService("RunService")
 local weldLocal      = weldPlayers.LocalPlayer
 local selectedTarget = nil
-
 local flingTargetAll = false
 
 MainTab:CreateInput({
@@ -215,12 +214,52 @@ MainTab:CreateInput({
     end,
 })
 
+-- Shared cleanup helper used by every toggle
+local function cleanupToggle(cpConn, cpTrack, cpNoCollide, toggleName)
+    if cpConn then cpConn:Disconnect() end
+    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+    local mc = weldLocal.Character
+    if mc then
+        for _, part in ipairs(mc:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if cpNoCollide then part.CanCollide = true end
+            end
+        end
+        local mr = mc:FindFirstChild("HumanoidRootPart")
+        if mr then
+            mr.AssemblyLinearVelocity  = Vector3.zero
+            mr.AssemblyAngularVelocity = Vector3.zero
+            pcall(sethiddenproperty, mr, "PhysicsRepRootPart", mr)
+        end
+    end
+    if toggleName then
+        pcall(function() MainTab:SetToggle(toggleName, false) end)
+    end
+end
+
+-- Shared animation loader, re-called whenever the character changes
+local function loadAnim(myChar, animId, freezeAt, freeze)
+    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    if not myHum then return nil end
+    local track
+    pcall(function()
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://" .. tostring(animId)
+        track = myHum:LoadAnimation(anim)
+        track.Priority = Enum.AnimationPriority.Action4
+        track:Play()
+        track.TimePosition = freezeAt or 0
+        if freeze then track:AdjustSpeed(0) end
+    end)
+    return track
+end
+
 -- Platform Fly
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -4
     local cpForward   =  0
@@ -230,69 +269,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 0
 
     MainTab:CreateToggle({
         Name         = "Platform Fly",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://0"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Platform Fly")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -301,9 +322,9 @@ end
 -- Magic Carpet
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -3.6
     local cpForward   =  0
@@ -313,69 +334,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 0
 
     MainTab:CreateToggle({
         Name         = "Magic Carpet",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://0"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Magic Carpet")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -384,9 +387,9 @@ end
 -- Elevator
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -3
     local cpForward   =  0
@@ -396,69 +399,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 0
 
     MainTab:CreateToggle({
         Name         = "Elevator",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://0"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Elevator")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -468,6 +453,7 @@ end
 do
     local cpConn      = nil
     local cpEnabled   = false
+    local cpTrack     = nil
     local cpLoopTask  = nil
 
     local cpUp        = -1
@@ -477,6 +463,7 @@ do
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = false
+    local cpFreezeAt  = 0
 
     local function stopFlingConn()
         activeFlingCount = math.max(0, activeFlingCount - 1)
@@ -486,34 +473,23 @@ do
     local function startFlingOnTarget(target)
         if cpConn then cpConn:Disconnect() cpConn = nil end
         activeFlingCount = activeFlingCount + 1
-
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
-
-            -- Always re-fetch local refs fresh every frame
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
             if not myChar or not myRoot or not myHum then return end
-
-            -- Always re-fetch target refs fresh every frame
             local tgtChar = target.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
-
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = false end
-                    end
+                    if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                 end
-
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
+                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                    * CFrame.new(0, cpUp, -cpForward)
                     * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
                 myRoot.RotVelocity = Vector3.new(500, 500, 500)
@@ -529,10 +505,7 @@ do
         repeat
             task.wait(0.1)
             elapsed = elapsed + 0.1
-            if not cpEnabled then
-                stopFlingConn()
-                return
-            end
+            if not cpEnabled then stopFlingConn() return end
         until elapsed >= 0.5
         stopFlingConn()
     end
@@ -542,21 +515,17 @@ do
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-
             if not cpEnabled then
                 if cpLoopTask then task.cancel(cpLoopTask) cpLoopTask = nil end
                 stopFlingConn()
                 return
             end
-
             cpLoopTask = task.spawn(function()
                 while cpEnabled do
                     if flingTargetAll then
                         local targets = {}
                         for _, plr in ipairs(weldPlayers:GetPlayers()) do
-                            if plr ~= weldLocal then
-                                table.insert(targets, plr)
-                            end
+                            if plr ~= weldLocal then table.insert(targets, plr) end
                         end
                         for _, target in ipairs(targets) do
                             if not cpEnabled then return end
@@ -578,87 +547,63 @@ end
 -- Fling Aura
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
-    local cpUp        =  0
-    local cpForward   =  0
-    local cpTiltX     =  0
-    local cpTiltY     =  0
-    local cpTiltZ     =  0
-    local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 0
     local SPIN_RADIUS = 10
-    local SPIN_SPEED  = 20
+    local SPIN_SPEED  = 10
 
     MainTab:CreateToggle({
         Name         = "Fling Aura",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
                 activeFlingCount = math.max(0, activeFlingCount - 1)
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
+            if not selectedTarget then return end
             activeFlingCount = activeFlingCount + 1
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://0"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Fling Aura")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local angle    = tick() * SPIN_SPEED
-                local tgtPos   = tgtRoot.Position
-                local worldPos = tgtPos + Vector3.new(
-                    math.cos(angle) * SPIN_RADIUS,
-                    0,
-                    math.sin(angle) * SPIN_RADIUS
-                )
-                local lookAt = Vector3.new(tgtPos.X, worldPos.Y, tgtPos.Z)
-                myRoot.CFrame      = CFrame.new(worldPos, lookAt)
-                myRoot.Velocity    = Vector3.new(500, 500, 500)
-                myRoot.RotVelocity = Vector3.new(500, 500, 500)
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local angle    = tick() * SPIN_SPEED
+                    local tgtPos   = tgtRoot.Position
+                    local worldPos = tgtPos + Vector3.new(
+                        math.cos(angle) * SPIN_RADIUS, 0, math.sin(angle) * SPIN_RADIUS)
+                    local lookAt = Vector3.new(tgtPos.X, worldPos.Y, tgtPos.Z)
+                    myRoot.CFrame      = CFrame.new(worldPos, lookAt)
+                    myRoot.Velocity    = Vector3.new(500, 500, 500)
+                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -667,9 +612,9 @@ end
 -- Anti Jump
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  3.5
     local cpForward   =  0
@@ -679,69 +624,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 0
 
     MainTab:CreateToggle({
         Name         = "Anti Jump",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://0"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Anti Jump")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -750,9 +677,9 @@ end
 -- Force Climb
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  0
     local cpForward   =  3
@@ -762,69 +689,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 82211728968005
 
     MainTab:CreateToggle({
         Name         = "Force Climb",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://82211728968005"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Force Climb")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -833,9 +742,9 @@ end
 -- Force Climb 2
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  0
     local cpForward   =  1.5
@@ -845,69 +754,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 71806235559404
 
     MainTab:CreateToggle({
         Name         = "Force Climb 2",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://71806235559404"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Force Climb 2")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -916,79 +807,64 @@ end
 -- Wall
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -80
     local cpForward   =  0
-    local cpTiltX     = 225   -- 180 (upside down) + 45 (lean)
+    local cpTiltX     = 225
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 70883871260184
 
     MainTab:CreateToggle({
         Name         = "Wall",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://70883871260184"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    -- Wall animation plays freely, no freeze
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -997,9 +873,9 @@ end
 -- Force Climb 3
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -4.5
     local cpForward   = -1
@@ -1009,69 +885,51 @@ do
     local cpFaceBack  = true
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 93206392584401
 
     MainTab:CreateToggle({
         Name         = "Force Climb 3",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://93206392584401"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Force Climb 3")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1080,9 +938,9 @@ end
 -- Force Climb 4
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -4.5
     local cpForward   = -1.5
@@ -1092,69 +950,51 @@ do
     local cpFaceBack  = true
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 93206392584401
 
     MainTab:CreateToggle({
         Name         = "Force Climb 4",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://93206392584401"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Force Climb 4")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1163,9 +1003,9 @@ end
 -- Pony Ride
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -2
     local cpForward   =  1.5
@@ -1175,69 +1015,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 137644260443394
 
     MainTab:CreateToggle({
         Name         = "Pony Ride",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://137644260443394"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Pony Ride")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1246,9 +1068,9 @@ end
 -- Force Climb (FINAL)
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  0.2
     local cpForward   =  1
@@ -1258,69 +1080,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
+    local cpAnimId    = 105800689702222
 
     MainTab:CreateToggle({
         Name         = "Force Climb (FINAL)",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://105800689702222"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Force Climb (FINAL)")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1329,9 +1133,9 @@ end
 -- Body Armor
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  1.5
     local cpForward   = -1.1
@@ -1341,69 +1145,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 3
+    local cpAnimId    = 131622627648697
 
     MainTab:CreateToggle({
         Name         = "Body Armor",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://131622627648697"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Body Armor")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1412,9 +1198,9 @@ end
 -- test
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  2.6
     local cpForward   =  0
@@ -1424,69 +1210,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 4.2
+    local cpAnimId    = 136924276934156
 
     MainTab:CreateToggle({
         Name         = "test",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://136924276934156"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1495,9 +1263,9 @@ end
 -- Infinite Jump
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        = -5.75
     local cpForward   =  0
@@ -1507,69 +1275,46 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 0
 
     MainTab:CreateToggle({
         Name         = "Infinite Jump",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://0"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Infinite Jump")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1578,9 +1323,9 @@ end
 -- Speed Boost (slow)
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  0.7
     local cpForward   = -1
@@ -1590,69 +1335,46 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 0
 
     MainTab:CreateToggle({
         Name         = "Speed Boost (slow)",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://0"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Speed Boost (slow)")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1661,9 +1383,9 @@ end
 -- Speed Boost (medium)
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  0.7
     local cpForward   = -0.5
@@ -1673,69 +1395,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 93193438936298
 
     MainTab:CreateToggle({
         Name         = "Speed Boost (medium)",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://93193438936298"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Speed Boost (medium)")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1744,9 +1448,9 @@ end
 -- Speed Boost (fast)
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  0.7
     local cpForward   = -0.35
@@ -1756,69 +1460,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 93193438936298
 
     MainTab:CreateToggle({
         Name         = "Speed Boost (fast)",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://93193438936298"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Speed Boost (fast)")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
@@ -1827,9 +1513,9 @@ end
 -- Movement Breaker
 do
     local cpConn    = nil
-    local cpSavedCF = nil
     local cpEnabled = false
     local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  0.7
     local cpForward   =  0.8
@@ -1839,69 +1525,51 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
+    local cpAnimId    = 93193438936298
 
     MainTab:CreateToggle({
         Name         = "Movement Breaker",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-            if not selectedTarget then return end
-            local myChar  = weldLocal.Character or weldLocal.CharacterAdded:Wait()
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
-
             if not cpEnabled then
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                if cpSavedCF then
-                    myRoot.CFrame                  = cpSavedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    cpSavedCF = nil
-                end
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = not cpNoCollide
-                    end
-                end
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
-            cpSavedCF = myRoot.CFrame
-
-            pcall(function()
-                local anim = Instance.new("Animation")
-                anim.AnimationId = "rbxassetid://93193438936298"
-                cpTrack = myHum:LoadAnimation(anim)
-                cpTrack.Priority = Enum.AnimationPriority.Action4
-                cpTrack:Play()
-                cpTrack.TimePosition = cpFreezeAt
-                cpTrack:AdjustSpeed(0)
-            end)
-
+            if not selectedTarget then return end
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if cpNoCollide then part.CanCollide = true end
-                    end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Movement Breaker")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
                 end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw    = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                local offset = CFrame.new(0, cpUp, -cpForward)
-                myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * offset
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
             end)
         end,
     })
