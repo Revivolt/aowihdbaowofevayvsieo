@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -222,7 +222,7 @@ local function cleanupToggle(cpConn, cpTrack, cpNoCollide, toggleName)
     if mc then
         for _, part in ipairs(mc:GetDescendants()) do
             if part:IsA("BasePart") then
-                if cpNoCollide then part.CanCollide = true end
+                part.CanCollide = true
             end
         end
         local mr = mc:FindFirstChild("HumanoidRootPart")
