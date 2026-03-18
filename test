@@ -554,7 +554,7 @@ do
         until tgtRoot
 
         startFling(myChar, myRoot, myHum, tgtRoot)
-        task.wait(1.5)
+        task.wait(2.5)
         stopFling(myRoot, myChar)
     end
 
