@@ -533,7 +533,7 @@ do
                 stopFlingConn()
                 return
             end
-        until elapsed >= 1.5
+        until elapsed >= 0.5
         stopFlingConn()
     end
 
