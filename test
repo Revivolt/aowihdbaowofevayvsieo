@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -827,15 +827,18 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
             if not selectedTarget then return end
+            activeFlingCount = activeFlingCount + 1
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
@@ -849,7 +852,6 @@ do
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    -- Wall animation plays freely, no freeze
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
                 end
                 pcall(function()
