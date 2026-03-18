@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -478,6 +478,7 @@ do
             local tgtRoot = selectedTarget.Character:WaitForChild("HumanoidRootPart")
 
             if not cpEnabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
                 if cpConn then cpConn:Disconnect() cpConn = nil end
                 if cpSavedCF then
                     myRoot.CFrame                  = cpSavedCF
@@ -499,6 +500,7 @@ do
                 return
             end
 
+            activeFlingCount = activeFlingCount + 1
             cpSavedCF = myRoot.CFrame
 
             pcall(function()
