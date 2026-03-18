@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -263,6 +263,7 @@ do
 
     local cpUp        = -4
     local cpForward   =  0
+    local cpSide      =  0   -- positive = right, negative = left
     local cpTiltX     =  90
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -308,7 +309,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -328,6 +329,7 @@ do
 
     local cpUp        = -3.6
     local cpForward   =  0
+    local cpSide      =  0
     local cpTiltX     =  90
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -373,7 +375,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -393,6 +395,7 @@ do
 
     local cpUp        = -3
     local cpForward   =  0
+    local cpSide      =  0
     local cpTiltX     =  90
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -438,7 +441,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -458,6 +461,7 @@ do
 
     local cpUp        = -1
     local cpForward   =  0
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -489,7 +493,7 @@ do
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                 myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                    * CFrame.new(0, cpUp, -cpForward)
+                    * CFrame.new(cpSide, cpUp, -cpForward)
                     * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
                 myRoot.RotVelocity = Vector3.new(500, 500, 500)
@@ -618,6 +622,7 @@ do
 
     local cpUp        =  3.5
     local cpForward   =  0
+    local cpSide      =  0
     local cpTiltX     = -90
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -663,7 +668,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -683,6 +688,7 @@ do
 
     local cpUp        =  0
     local cpForward   =  3
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -728,7 +734,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -748,6 +754,7 @@ do
 
     local cpUp        =  0
     local cpForward   =  1.5
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -793,7 +800,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -813,6 +820,7 @@ do
 
     local cpUp        = -80
     local cpForward   =  0
+    local cpSide      =  0
     local cpTiltX     = 225
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -861,7 +869,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -881,6 +889,7 @@ do
 
     local cpUp        = -4.5
     local cpForward   = -1
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -926,7 +935,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -946,6 +955,7 @@ do
 
     local cpUp        = -4.5
     local cpForward   = -1.5
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -991,7 +1001,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1011,6 +1021,7 @@ do
 
     local cpUp        = -2
     local cpForward   =  1.5
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1056,7 +1067,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1076,6 +1087,7 @@ do
 
     local cpUp        =  0.2
     local cpForward   =  1
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1121,7 +1133,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1141,6 +1153,7 @@ do
 
     local cpUp        =  1.5
     local cpForward   = -1.1
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1186,7 +1199,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1197,7 +1210,7 @@ do
     })
 end
 
--- e
+-- Better Force Climb
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1206,6 +1219,7 @@ do
 
     local cpUp        =  2.6
     local cpForward   =  0
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1251,7 +1265,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1262,7 +1276,7 @@ do
     })
 end
 
--- e
+-- test
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1271,8 +1285,9 @@ do
 
     local cpUp        =  3
     local cpForward   =  0
+    local cpSide      =  -3
     local cpTiltX     =  0
-    local cpTiltY     =  0
+    local cpTiltY     =  180
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
@@ -1294,7 +1309,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Better Force Climb")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1316,7 +1331,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1336,6 +1351,7 @@ do
 
     local cpUp        = -5.75
     local cpForward   =  0
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1376,7 +1392,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1396,6 +1412,7 @@ do
 
     local cpUp        =  0.7
     local cpForward   = -1
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1436,7 +1453,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1456,6 +1473,7 @@ do
 
     local cpUp        =  0.7
     local cpForward   = -0.5
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1501,7 +1519,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1521,6 +1539,7 @@ do
 
     local cpUp        =  0.7
     local cpForward   = -0.35
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1566,7 +1585,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -1586,6 +1605,7 @@ do
 
     local cpUp        =  0.7
     local cpForward   =  0.8
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -1631,7 +1651,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(0, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
