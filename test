@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1269,15 +1269,15 @@ do
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  -4.6
+    local cpUp        =  3
     local cpForward   =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 0.8
-    local cpAnimId    = 119142109676821
+    local cpFreezeAt  = 0
+    local cpAnimId    = 137844445934987
 
     MainTab:CreateToggle({
         Name         = "test",
