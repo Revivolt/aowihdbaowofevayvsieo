@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1229,7 +1229,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Better Force Climb")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1275,7 +1275,7 @@ do
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
-    local cpNoCollide = true
+    local cpNoCollide = false
     local cpFreezeAt  = 0
     local cpAnimId    = 94566164803307
 
