@@ -222,7 +222,7 @@ local function cleanupToggle(cpConn, cpTrack, cpNoCollide, toggleName)
     if mc then
         for _, part in ipairs(mc:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.CanCollide = true  -- always restore on disable
+                if cpNoCollide then part.CanCollide = true end
             end
         end
         local mr = mc:FindFirstChild("HumanoidRootPart")
@@ -1262,22 +1262,22 @@ do
     })
 end
 
--- test
+-- e
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  -3.5
-    local cpForward   =  1.5
-    local cpTiltX     =  -180
+    local cpUp        =  3
+    local cpForward   =  0
+    local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
-    local cpNoCollide = false
-    local cpFreezeAt  = 0
-    local cpAnimId    = 94566164803307
+    local cpNoCollide = true
+    local cpFreezeAt  = 3
+    local cpAnimId    = 118026749672083
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -1294,7 +1294,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Better Force Climb")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1311,9 +1311,7 @@ do
                 end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = not cpNoCollide
-                        end
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                     end
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
