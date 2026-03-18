@@ -457,7 +457,7 @@ do
     local cpEnabled = false
     local cpTrack   = nil
 
-    local cpUp        = -1
+    local cpUp        = 0
     local cpForward   =  0
     local cpTiltX     =  90
     local cpTiltY     =  0
