@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -457,9 +457,9 @@ do
     local cpEnabled = false
     local cpTrack   = nil
 
-    local cpUp        = 0
+    local cpUp        = -1
     local cpForward   =  0
-    local cpTiltX     =  90
+    local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
@@ -525,8 +525,8 @@ do
                     * CFrame.Angles(0, yaw, 0)
                     * offset
                     * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
+                myRoot.Velocity    = Vector3.new(500, 500, 500)
+                myRoot.RotVelocity = Vector3.new(500, 500, 500)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end,
