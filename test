@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1311,7 +1311,9 @@ do
                 end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                        if part:IsA("BasePart") then
+                            part.CanCollide = not cpNoCollide
+                        end
                     end
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
