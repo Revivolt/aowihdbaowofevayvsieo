@@ -258,10 +258,13 @@ end
 do
     local cpConn    = nil
     local cpEnabled = false
+    local cpTrack   = nil
     local lastChar  = nil
 
-    local MOVE_THRESH = 2    -- min horizontal speed to count as moving
-    local JUMP_THRESH = 5    -- min upward Y speed to count as jumping
+    local cpAnimId    = 93193438936298
+    local cpFreezeAt  = 0
+    local MOVE_THRESH = 2
+    local JUMP_THRESH = 5
 
     MainTab:CreateToggle({
         Name         = "Direction Tracker",
@@ -269,8 +272,9 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
-                cleanupToggle(cpConn, nil, false, nil)
+                cleanupToggle(cpConn, cpTrack, false, nil)
                 cpConn   = nil
+                cpTrack  = nil
                 lastChar = nil
                 return
             end
@@ -280,8 +284,9 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, nil, false, "Direction Tracker")
+                    cleanupToggle(cpConn, cpTrack, false, "Direction Tracker")
                     cpConn   = nil
+                    cpTrack  = nil
                     lastChar = nil
                     return
                 end
@@ -294,37 +299,41 @@ do
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
 
+                -- Reload animation if character changed
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+
                 pcall(function()
-                    local vel     = tgtRoot.AssemblyLinearVelocity
-                    local horizV  = Vector3.new(vel.X, 0, vel.Z)
-                    local speed   = horizV.Magnitude
+                    local vel        = tgtRoot.AssemblyLinearVelocity
+                    local horizV     = Vector3.new(vel.X, 0, vel.Z)
+                    local speed      = horizV.Magnitude
+                    local tgtForward = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
+                    local dot        = horizV:Dot(tgtForward)
 
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    -- Project velocity onto the target's forward vector to detect forward vs backward
-                    local tgtForward  = tgtRoot.CFrame.LookVector
-                    local flatForward = Vector3.new(tgtForward.X, 0, tgtForward.Z).Unit
-                    local dot         = horizV:Dot(flatForward)  -- positive = moving forward, negative = moving backward
-
                     local offsetCF
                     if vel.Y > JUMP_THRESH then
-                        -- Jumping: 3.5 studs up, tilted 90 degrees forward (tiltX = -90)
+                        -- Jumping: 3.5 up, tilted 90 degrees forward
                         offsetCF = baseCF
                             * CFrame.new(0, 3.5, 0)
                             * CFrame.Angles(math.rad(-90), 0, 0)
 
                     elseif speed > MOVE_THRESH and dot >= 0 then
                         -- Moving forward: 0.7 up, 0.8 forward
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -1)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
 
                     elseif speed > MOVE_THRESH and dot < 0 then
                         -- Moving backward: 0.7 down, 0.8 back
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
+                        offsetCF = baseCF * CFrame.new(0, -0.7, 0.8)
 
                     else
-                        -- Idle: just sit in front at neutral height
-                        offsetCF = baseCF * CFrame.new(0, 3, 0)
+                        -- Idle
+                        offsetCF = baseCF * CFrame.new(0, -4, 0)
                     end
 
                     myRoot.CFrame                  = offsetCF
