@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -252,6 +252,76 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
         if freeze then track:AdjustSpeed(0) end
     end)
     return track
+end
+
+-- Direction Tracker
+do
+    local cpConn    = nil
+    local cpEnabled = false
+    local lastChar  = nil
+
+    local STUD       = 0.8        -- offset distance in studs
+    local MOVE_THRESH = 0.1       -- min horizontal speed to count as "moving"
+    local JUMP_THRESH = 0.1       -- min upward speed to count as "jumping"
+
+    MainTab:CreateToggle({
+        Name         = "Direction Tracker",
+        CurrentValue = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                cleanupToggle(cpConn, nil, false, nil)
+                cpConn = nil
+                lastChar = nil
+                return
+            end
+            if not selectedTarget then return end
+
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, nil, false, "Direction Tracker")
+                    cpConn = nil
+                    lastChar = nil
+                    return
+                end
+
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+
+                pcall(function()
+                    local vel    = tgtRoot.AssemblyLinearVelocity
+                    local horizV = Vector3.new(vel.X, 0, vel.Z).Magnitude
+
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
+
+                    local offsetCF
+                    if vel.Y > JUMP_THRESH then
+                        -- target is jumping: go above
+                        offsetCF = baseCF * CFrame.new(0, STUD, 0)
+                    elseif horizV > MOVE_THRESH then
+                        -- target is walking/running: go behind
+                        offsetCF = baseCF * CFrame.new(0, 0, STUD)
+                    else
+                        -- target is idle: go in front
+                        offsetCF = baseCF * CFrame.new(0, 0, -STUD)
+                    end
+
+                    myRoot.CFrame                  = offsetCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
 end
 
 -- Platform Fly
