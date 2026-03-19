@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -263,7 +263,7 @@ do
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
-    local MOVE_THRESH = 2
+    local MOVE_THRESH = 1
 
     MainTab:CreateToggle({
         Name         = "Direction Tracker",
@@ -326,7 +326,7 @@ do
                     else
                         -- Idle: stop the animation
                         if cpTrack then cpTrack:Stop() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
+                        offsetCF = baseCF * CFrame.new(0, 4, 0)
                     end
 
                     myRoot.CFrame                  = offsetCF
