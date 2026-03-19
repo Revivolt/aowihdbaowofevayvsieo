@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1276,23 +1276,23 @@ do
     })
 end
 
--- test
+-- Wall
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  0
-    local cpForward   =  -1
-    local cpSide      =  -2
-    local cpTiltX     =  0
-    local cpTiltY     =  180
+    local cpUp        = 0
+    local cpForward   =  0
+    local cpSide      =  0
+    local cpTiltX     = 0
+    local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
-    local cpAnimId    = 137844445934987
+    local cpAnimId    = 122123267716180
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -1300,16 +1300,19 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
             if not selectedTarget then return end
+            activeFlingCount = activeFlingCount + 1
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1322,7 +1325,7 @@ do
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
                 end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
