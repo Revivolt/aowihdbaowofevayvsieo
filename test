@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -326,7 +326,7 @@ do
                     else
                         -- Idle: stop the animation
                         if cpTrack then cpTrack:Stop() end
-                        offsetCF = baseCF * CFrame.new(0, -4, 0)
+                        offsetCF = baseCF * CFrame.new(0, -8, 0)
                     end
 
                     myRoot.CFrame                  = offsetCF
