@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -260,9 +260,8 @@ do
     local cpEnabled = false
     local lastChar  = nil
 
-    local STUD       = 0.8        -- offset distance in studs
-    local MOVE_THRESH = 0.1       -- min horizontal speed to count as "moving"
-    local JUMP_THRESH = 0.1       -- min upward speed to count as "jumping"
+    local MOVE_THRESH = 2    -- min horizontal speed to count as moving
+    local JUMP_THRESH = 5    -- min upward Y speed to count as jumping
 
     MainTab:CreateToggle({
         Name         = "Direction Tracker",
@@ -271,7 +270,7 @@ do
             cpEnabled = state
             if not cpEnabled then
                 cleanupToggle(cpConn, nil, false, nil)
-                cpConn = nil
+                cpConn   = nil
                 lastChar = nil
                 return
             end
@@ -282,7 +281,7 @@ do
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, nil, false, "Direction Tracker")
-                    cpConn = nil
+                    cpConn   = nil
                     lastChar = nil
                     return
                 end
@@ -296,22 +295,36 @@ do
                 if not tgtChar or not tgtRoot then return end
 
                 pcall(function()
-                    local vel    = tgtRoot.AssemblyLinearVelocity
-                    local horizV = Vector3.new(vel.X, 0, vel.Z).Magnitude
+                    local vel     = tgtRoot.AssemblyLinearVelocity
+                    local horizV  = Vector3.new(vel.X, 0, vel.Z)
+                    local speed   = horizV.Magnitude
 
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
+                    -- Project velocity onto the target's forward vector to detect forward vs backward
+                    local tgtForward  = tgtRoot.CFrame.LookVector
+                    local flatForward = Vector3.new(tgtForward.X, 0, tgtForward.Z).Unit
+                    local dot         = horizV:Dot(flatForward)  -- positive = moving forward, negative = moving backward
+
                     local offsetCF
                     if vel.Y > JUMP_THRESH then
-                        -- target is jumping: go above
-                        offsetCF = baseCF * CFrame.new(0, STUD, 0)
-                    elseif horizV > MOVE_THRESH then
-                        -- target is walking/running: go behind
-                        offsetCF = baseCF * CFrame.new(0, 0, STUD)
+                        -- Jumping: 3.5 studs up, tilted 90 degrees forward (tiltX = -90)
+                        offsetCF = baseCF
+                            * CFrame.new(0, 3.5, 0)
+                            * CFrame.Angles(math.rad(-90), 0, 0)
+
+                    elseif speed > MOVE_THRESH and dot >= 0 then
+                        -- Moving forward: 0.7 up, 0.8 forward
+                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
+
+                    elseif speed > MOVE_THRESH and dot < 0 then
+                        -- Moving backward: 0.7 down, 0.8 back
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
+
                     else
-                        -- target is idle: go in front
-                        offsetCF = baseCF * CFrame.new(0, 0, -STUD)
+                        -- Idle: just sit in front at neutral height
+                        offsetCF = baseCF * CFrame.new(0, 0, -0.8)
                     end
 
                     myRoot.CFrame                  = offsetCF
