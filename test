@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -264,7 +264,6 @@ do
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
     local MOVE_THRESH = 2
-    local JUMP_THRESH = 5
 
     MainTab:CreateToggle({
         Name         = "Direction Tracker",
@@ -299,7 +298,6 @@ do
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
 
-                -- Reload animation if character changed
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
@@ -317,23 +315,15 @@ do
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
                     local offsetCF
-                    if vel.Y > JUMP_THRESH then
-                        -- Jumping: 3.5 up, tilted 90 degrees forward
-                        offsetCF = baseCF
-                            * CFrame.new(0, 3.5, 0)
-                            * CFrame.Angles(math.rad(-90), 0, 0)
-
+                    if speed > MOVE_THRESH and dot < 0 then
+                        -- Moving backward: 0.7 down, 0.8 back
+                        offsetCF = baseCF * CFrame.new(0, -0.7, 0.8)
                     elseif speed > MOVE_THRESH and dot >= 0 then
                         -- Moving forward: 0.7 up, 0.8 forward
                         offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
-
-                    elseif speed > MOVE_THRESH and dot < 0 then
-                        -- Moving backward: 0.7 down, 0.8 back
-                        offsetCF = baseCF * CFrame.new(0, -0.7, 0.8)
-
                     else
-                        -- Idle
-                        offsetCF = baseCF * CFrame.new(0, -4, 0)
+                        -- Idle: 0.7 up, 0.8 forward
+                        offsetCF = baseCF * CFrame.new(0, 4, 0)
                     end
 
                     myRoot.CFrame                  = offsetCF
