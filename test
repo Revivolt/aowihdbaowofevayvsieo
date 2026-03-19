@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1284,8 +1284,8 @@ do
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUpStart   =  10      -- height to start descending from
-    local cpUpTarget  =  -10     -- height to stop at (same as Anti Jump)
+    local cpUpStart   =  20      -- height to start descending from
+    local cpUpTarget  =  -20     -- height to stop at (same as Anti Jump)
     local cpSide      =  0
     local cpForward   =  0
     local cpTiltX     =  90
@@ -1295,7 +1295,7 @@ do
     local cpNoCollide = false
     local cpFreezeAt  = 0
     local cpAnimId    = 0
-    local cpSpeed     =  7    -- studs to descend per heartbeat tick
+    local cpSpeed     =  5    -- studs to descend per heartbeat tick
 
     local cpCurrentUp = cpUpStart
 
