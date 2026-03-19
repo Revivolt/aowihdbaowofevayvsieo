@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1284,16 +1284,20 @@ do
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  0.5
-    local cpForward   =  0.8
+    local cpUpStart   =  2.6      -- height to start descending from
+    local cpUpTarget  =  0     -- height to stop at (same as Anti Jump)
     local cpSide      =  0
+    local cpForward   =  0
     local cpTiltX     =  0
-    local cpTiltY     =  180
+    local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
-    local cpNoCollide = true
-    local cpFreezeAt  = 0.4
-    local cpAnimId    = 109963521342353
+    local cpNoCollide = false
+    local cpFreezeAt  = 4.1
+    local cpAnimId    = 136924276934156
+    local cpSpeed     =  0.01    -- studs to descend per heartbeat tick
+
+    local cpCurrentUp = cpUpStart
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -1303,15 +1307,18 @@ do
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
+                cpCurrentUp = cpUpStart  -- reset for next use
                 return
             end
             if not selectedTarget then return end
+            cpCurrentUp = cpUpStart  -- always start from top
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
+                    cpCurrentUp = cpUpStart
                     return
                 end
                 local myChar = weldLocal.Character
@@ -1325,6 +1332,10 @@ do
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
+                -- step down each frame until target is reached
+                if cpCurrentUp > cpUpTarget then
+                    cpCurrentUp = math.max(cpCurrentUp - cpSpeed, cpUpTarget)
+                end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
@@ -1332,7 +1343,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(cpSide, cpUp, -cpForward)
+                        * CFrame.new(cpSide, cpCurrentUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
