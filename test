@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,7 +254,7 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- Direction Tracker
+-- e
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -266,7 +266,7 @@ do
     local MOVE_THRESH = 2
 
     MainTab:CreateToggle({
-        Name         = "Direction Tracker",
+        Name         = "test",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -283,7 +283,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, false, "Direction Tracker")
+                    cleanupToggle(cpConn, cpTrack, false, "test")
                     cpConn   = nil
                     cpTrack  = nil
                     lastChar = nil
@@ -317,13 +317,13 @@ do
                     local offsetCF
                     if speed > MOVE_THRESH and dot < 0 then
                         -- Moving backward: 0.7 down, 0.8 back
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 1.1)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.7)
                     elseif speed > MOVE_THRESH and dot >= 0 then
                         -- Moving forward: 0.7 up, 0.8 forward
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -1.1)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.7)
                     else
                         -- Idle: 0.7 up, 0.8 forward
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -1.1)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.7)
                     end
 
                     myRoot.CFrame                  = offsetCF
