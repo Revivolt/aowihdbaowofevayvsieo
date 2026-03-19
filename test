@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test1
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1284,20 +1284,27 @@ do
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUpStart   =  20      -- height to start descending from
-    local cpUpTarget  =  -20     -- height to stop at (same as Anti Jump)
+    local cpUpStart   =  0     -- height to start descending from
+    local cpUpTarget  =  0    -- height to stop at
     local cpSide      =  0
-    local cpForward   =  0
-    local cpTiltX     =  90
+    local cpForward   =  1
+    local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
     local cpAnimId    = 0
-    local cpSpeed     =  5    -- studs to descend per heartbeat tick
+    local cpSpeed     =  0   -- studs to descend per heartbeat tick
+
+    local cpLoop      = false    -- if true, resets back to cpUpStart and loops
+    local cpBobble    = true    -- if true, slowly moves forward/back in a loop
+    local cpBobSpeed  =  100   -- studs to move per heartbeat tick
+    local cpBobRange  =  2      -- max studs forward and back from cpForward
 
     local cpCurrentUp = cpUpStart
+    local cpBobOffset = 0
+    local cpBobDir    = 1       -- 1 = going forward, -1 = going back
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -1307,11 +1314,15 @@ do
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
-                cpCurrentUp = cpUpStart  -- reset for next use
+                cpCurrentUp = cpUpStart
+                cpBobOffset = 0
+                cpBobDir    = 1
                 return
             end
             if not selectedTarget then return end
-            cpCurrentUp = cpUpStart  -- always start from top
+            cpCurrentUp = cpUpStart
+            cpBobOffset = 0
+            cpBobDir    = 1
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
@@ -1319,6 +1330,8 @@ do
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     cpCurrentUp = cpUpStart
+                    cpBobOffset = 0
+                    cpBobDir    = 1
                     return
                 end
                 local myChar = weldLocal.Character
@@ -1332,10 +1345,26 @@ do
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
-                -- step down each frame until target is reached
+
+                -- descend logic
                 if cpCurrentUp > cpUpTarget then
                     cpCurrentUp = math.max(cpCurrentUp - cpSpeed, cpUpTarget)
+                elseif cpLoop then
+                    cpCurrentUp = cpUpStart
                 end
+
+                -- bobble logic
+                if cpBobble then
+                    cpBobOffset = cpBobOffset + cpBobSpeed * cpBobDir
+                    if cpBobOffset >= cpBobRange then
+                        cpBobOffset = cpBobRange
+                        cpBobDir = -1
+                    elseif cpBobOffset <= -cpBobRange then
+                        cpBobOffset = -cpBobRange
+                        cpBobDir = 1
+                    end
+                end
+
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
@@ -1343,7 +1372,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(cpSide, cpCurrentUp, -cpForward)
+                        * CFrame.new(cpSide, cpCurrentUp, -(cpForward + cpBobOffset))
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
