@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -316,7 +316,7 @@ do
 
                     elseif speed > MOVE_THRESH and dot >= 0 then
                         -- Moving forward: 0.7 up, 0.8 forward
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -1)
 
                     elseif speed > MOVE_THRESH and dot < 0 then
                         -- Moving backward: 0.7 down, 0.8 back
