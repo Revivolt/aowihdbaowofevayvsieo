@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1284,7 +1284,7 @@ do
     local lastChar  = nil
 
     local cpUpStart   =  3      -- height to start descending from
-    local cpUpTarget  =  0.2     -- height to stop at (same as Anti Jump)
+    local cpUpTarget  =  0.3     -- height to stop at (same as Anti Jump)
     local cpSide      =  0
     local cpForward   =  0
     local cpTiltX     = -90
