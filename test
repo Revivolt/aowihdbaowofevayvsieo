@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -260,6 +260,7 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
+    local lastState = "front"  -- remembers last known state during jumps
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
@@ -272,9 +273,10 @@ do
             cpEnabled = state
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, false, nil)
-                cpConn   = nil
-                cpTrack  = nil
-                lastChar = nil
+                cpConn     = nil
+                cpTrack    = nil
+                lastChar   = nil
+                lastState  = "front"
                 return
             end
             if not selectedTarget then return end
@@ -284,9 +286,10 @@ do
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, false, "test")
-                    cpConn   = nil
-                    cpTrack  = nil
-                    lastChar = nil
+                    cpConn     = nil
+                    cpTrack    = nil
+                    lastChar   = nil
+                    lastState  = "front"
                     return
                 end
 
@@ -314,15 +317,27 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
+                    -- Only update lastState when there's clear horizontal movement
+                    if speed > MOVE_THRESH then
+                        lastState = dot < 0 and "back" or "front"
+                    end
+
                     local offsetCF
-                    if speed > MOVE_THRESH and dot < 0 then
-                        -- Moving backward: 0.7 down, 0.8 back
+                    if lastState == "back" and speed > MOVE_THRESH then
+                        -- Moving backward
+                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, 0.7)
-                    elseif speed > MOVE_THRESH and dot >= 0 then
-                        -- Moving forward: 0.7 up, 0.8 forward
+                    elseif lastState == "front" and speed > MOVE_THRESH then
+                        -- Moving forward
+                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, -0.7)
+                    elseif lastState == "back" then
+                        -- Jumping or idle, was last going back
+                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
+                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.7)
                     else
-                        -- Idle: 0.7 up, 0.8 forward
+                        -- Jumping or idle, was last going front
+                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, -0.7)
                     end
 
