@@ -1285,7 +1285,7 @@ do
     local lastChar  = nil
 
     local cpUp        =  0.7
-    local cpForward   =  -0.8
+    local cpForward   =  0.8
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  180
