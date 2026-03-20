@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -302,7 +302,8 @@ do
 
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not tgtChar or not tgtRoot then return end
+                local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
+                if not tgtChar or not tgtRoot or not tgtHum then return end
 
                 if myChar ~= lastChar then
                     lastChar = myChar
@@ -320,27 +321,29 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    -- Increment backCounter only on sustained backward movement
-                    if speed > MOVE_THRESH and dot < 0 then
-                        backCounter = backCounter + 1
-                    else
-                        backCounter = 0
-                    end
+                    -- Only update state when the target is on the ground
+                    local isGrounded = tgtHum.FloorMaterial ~= Enum.Material.Air
+                    if isGrounded then
+                        if speed > MOVE_THRESH and dot < 0 then
+                            backCounter = backCounter + 1
+                        else
+                            backCounter = 0
+                        end
 
-                    -- Forward commits instantly, backward requires 8 consecutive frames
-                    if speed > MOVE_THRESH and dot >= 0 then
-                        lastState = "front"
-                    elseif backCounter >= 8 then
-                        lastState = "back"
+                        if speed > MOVE_THRESH and dot >= 0 then
+                            lastState = "front"
+                        elseif backCounter >= 8 then
+                            lastState = "back"
+                        end
                     end
 
                     local offsetCF
                     if lastState == "back" then
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.85)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
                     else
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.85)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
                     end
 
                     myRoot.CFrame                  = offsetCF
