@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -261,11 +261,12 @@ do
     local cpTrack     = nil
     local lastChar    = nil
     local lastState   = "front"
-    local backCounter = 0
+    local posHistory  = {}
+    local HISTORY_SIZE = 30  -- frames to look back (~0.5s)
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
-    local MOVE_THRESH = 2
+    local MOVE_THRESH = 1.5
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -278,7 +279,7 @@ do
                 cpTrack     = nil
                 lastChar    = nil
                 lastState   = "front"
-                backCounter = 0
+                posHistory  = {}
                 return
             end
             if not selectedTarget then return end
@@ -292,7 +293,7 @@ do
                     cpTrack     = nil
                     lastChar    = nil
                     lastState   = "front"
-                    backCounter = 0
+                    posHistory  = {}
                     return
                 end
 
@@ -302,8 +303,7 @@ do
 
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
-                if not tgtChar or not tgtRoot or not tgtHum then return end
+                if not tgtChar or not tgtRoot then return end
 
                 if myChar ~= lastChar then
                     lastChar = myChar
@@ -312,28 +312,32 @@ do
                 end
 
                 pcall(function()
-                    local vel        = tgtRoot.AssemblyLinearVelocity
-                    local horizV     = Vector3.new(vel.X, 0, vel.Z)
-                    local speed      = horizV.Magnitude
-                    local tgtForward = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
-                    local dot        = horizV:Dot(tgtForward)
+                    local currentPos = tgtRoot.Position
+
+                    -- Store position history
+                    table.insert(posHistory, currentPos)
+                    if #posHistory > HISTORY_SIZE then
+                        table.remove(posHistory, 1)
+                    end
 
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                    local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
+                    local baseCF = CFrame.new(currentPos) * CFrame.Angles(0, tgtYaw, 0)
 
-                    -- Only update state when the target is on the ground
-                    local isGrounded = tgtHum.FloorMaterial ~= Enum.Material.Air
-                    if isGrounded then
-                        if speed > MOVE_THRESH and dot < 0 then
-                            backCounter = backCounter + 1
-                        else
-                            backCounter = 0
-                        end
+                    -- Only update state if we have enough history
+                    if #posHistory == HISTORY_SIZE then
+                        local oldPos     = posHistory[1]
+                        local delta      = currentPos - oldPos
+                        local flatDelta  = Vector3.new(delta.X, 0, delta.Z)
+                        local dist       = flatDelta.Magnitude
 
-                        if speed > MOVE_THRESH and dot >= 0 then
-                            lastState = "front"
-                        elseif backCounter >= 8 then
-                            lastState = "back"
+                        if dist > MOVE_THRESH then
+                            local tgtForward = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
+                            local dot        = flatDelta:Dot(tgtForward)
+                            if dot >= 0 then
+                                lastState = "front"
+                            else
+                                lastState = "back"
+                            end
                         end
                     end
 
