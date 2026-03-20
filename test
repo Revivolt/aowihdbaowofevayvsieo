@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -261,8 +261,7 @@ do
     local cpTrack     = nil
     local lastChar    = nil
     local lastState   = "front"
-    local posHistory  = {}
-    local HISTORY_SIZE = 30  -- frames to look back (~0.5s)
+    local sampleTask  = nil
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
@@ -274,26 +273,53 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
+                if sampleTask then task.cancel(sampleTask) sampleTask = nil end
                 cleanupToggle(cpConn, cpTrack, false, nil)
-                cpConn      = nil
-                cpTrack     = nil
-                lastChar    = nil
-                lastState   = "front"
-                posHistory  = {}
+                cpConn     = nil
+                cpTrack    = nil
+                lastChar   = nil
+                lastState  = "front"
                 return
             end
             if not selectedTarget then return end
+
+            -- Separate task that samples position every 0.4s to decide state
+            sampleTask = task.spawn(function()
+                while cpEnabled do
+                    local tgtChar = selectedTarget and selectedTarget.Character
+                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                    if tgtRoot then
+                        local posA = tgtRoot.Position
+                        task.wait(0.4)
+                        if not cpEnabled then break end
+                        tgtChar = selectedTarget and selectedTarget.Character
+                        tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                        if tgtRoot then
+                            local posB    = tgtRoot.Position
+                            local delta   = posB - posA
+                            local flat    = Vector3.new(delta.X, 0, delta.Z)
+                            if flat.Magnitude > MOVE_THRESH then
+                                local fwd = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
+                                local dot = flat:Dot(fwd)
+                                lastState = dot >= 0 and "front" or "back"
+                            end
+                        end
+                    else
+                        task.wait(0.4)
+                    end
+                end
+            end)
 
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
+                    if sampleTask then task.cancel(sampleTask) sampleTask = nil end
                     cleanupToggle(cpConn, cpTrack, false, "test")
-                    cpConn      = nil
-                    cpTrack     = nil
-                    lastChar    = nil
-                    lastState   = "front"
-                    posHistory  = {}
+                    cpConn     = nil
+                    cpTrack    = nil
+                    lastChar   = nil
+                    lastState  = "front"
                     return
                 end
 
@@ -312,34 +338,8 @@ do
                 end
 
                 pcall(function()
-                    local currentPos = tgtRoot.Position
-
-                    -- Store position history
-                    table.insert(posHistory, currentPos)
-                    if #posHistory > HISTORY_SIZE then
-                        table.remove(posHistory, 1)
-                    end
-
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                    local baseCF = CFrame.new(currentPos) * CFrame.Angles(0, tgtYaw, 0)
-
-                    -- Only update state if we have enough history
-                    if #posHistory == HISTORY_SIZE then
-                        local oldPos     = posHistory[1]
-                        local delta      = currentPos - oldPos
-                        local flatDelta  = Vector3.new(delta.X, 0, delta.Z)
-                        local dist       = flatDelta.Magnitude
-
-                        if dist > MOVE_THRESH then
-                            local tgtForward = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
-                            local dot        = flatDelta:Dot(tgtForward)
-                            if dot >= 0 then
-                                lastState = "front"
-                            else
-                                lastState = "back"
-                            end
-                        end
-                    end
+                    local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
                     local offsetCF
                     if lastState == "back" then
