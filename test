@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -263,6 +263,121 @@ do
     local lastState    = "front"
     local backCounter  = 0
     local frontCounter = 0
+
+    local cpAnimId    = 136924276934156
+    local cpFreezeAt  = 4.1
+    local MOVE_THRESH = 2
+
+    MainTab:CreateToggle({
+        Name         = "test",
+        CurrentValue = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                cleanupToggle(cpConn, cpTrack, false, nil)
+                cpConn        = nil
+                cpTrack       = nil
+                lastChar      = nil
+                lastState     = "front"
+                backCounter   = 0
+                frontCounter  = 0
+                return
+            end
+            if not selectedTarget then return end
+
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, false, "test")
+                    cpConn        = nil
+                    cpTrack       = nil
+                    lastChar      = nil
+                    lastState     = "front"
+                    backCounter   = 0
+                    frontCounter  = 0
+                    return
+                end
+
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+
+                pcall(function()
+                    local vel        = tgtRoot.AssemblyLinearVelocity
+                    local horizV     = Vector3.new(vel.X, 0, vel.Z)
+                    local speed      = horizV.Magnitude
+                    local tgtForward = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
+                    local dot        = horizV:Dot(tgtForward)
+
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
+
+                    local isAirborne = math.abs(vel.Y) > 15
+
+                    if not isAirborne then
+                        if speed > MOVE_THRESH and dot < 0 then
+                            backCounter  = backCounter + 1
+                            frontCounter = 0
+                        elseif speed > MOVE_THRESH and dot >= 0 then
+                            frontCounter = frontCounter + 1
+                            backCounter  = 0
+                        else
+                            backCounter  = 0
+                            frontCounter = 0
+                        end
+
+                        if backCounter >= 30 then
+                            lastState    = "back"
+                            frontCounter = 0
+                        elseif frontCounter >= 30 then
+                            lastState   = "front"
+                            backCounter = 0
+                        end
+                    end
+
+                    local offsetCF
+                    if lastState == "back" then
+                        -- 2.6 studs above, rotated 180 degrees
+                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
+                        offsetCF = baseCF
+                            * CFrame.new(0, 2.6, 0)
+                            * CFrame.Angles(0, math.rad(180), 0)
+                    else
+                        -- 2.6 studs above, no rotation
+                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
+                        offsetCF = baseCF * CFrame.new(0, 2.6, 0)
+                    end
+
+                    myRoot.CFrame                  = offsetCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
+end
+
+-- e
+do
+    local cpConn       = nil
+    local cpEnabled    = false
+    local cpTrack      = nil
+    local lastChar     = nil
+    local lastState    = "front"
+    local backCounter  = 0
+    local frontCounter = 0
     local wasAirborne  = false
 
     local cpAnimId    = 93193438936298
@@ -270,7 +385,7 @@ do
     local MOVE_THRESH = 2
 
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Movement Breaker V2",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -291,7 +406,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, false, "test")
+                    cleanupToggle(cpConn, cpTrack, false, "Movement Breaker V2")
                     cpConn        = nil
                     cpTrack       = nil
                     lastChar      = nil
