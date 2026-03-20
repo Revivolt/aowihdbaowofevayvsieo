@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -266,7 +266,7 @@ do
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
     local MOVE_THRESH = 2
-    local JUMP_THRESH = 5   -- freeze state updates if target has upward velocity
+    local JUMP_THRESH = 10   -- freeze state updates if target has upward velocity
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -332,7 +332,7 @@ do
 
                         if speed > MOVE_THRESH and dot >= 0 then
                             lastState = "front"
-                        elseif backCounter >= 15 then
+                        elseif backCounter >= 25 then
                             lastState = "back"
                         end
                     end
