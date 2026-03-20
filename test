@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -330,7 +330,7 @@ do
                     -- Forward flips instantly, backward requires 8 consecutive frames
                     if speed > MOVE_THRESH and dot >= 0 then
                         lastState = "front"
-                    elseif backCounter >= 10 then
+                    elseif backCounter >= 6 then
                         lastState = "back"
                     end
 
