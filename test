@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -286,7 +286,7 @@ do
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
-                    cpEnabled   = false
+                    cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, false, "test")
                     cpConn      = nil
                     cpTrack     = nil
@@ -327,10 +327,10 @@ do
                         backCounter = 0
                     end
 
-                    -- Forward flips instantly, backward requires 8 consecutive frames
+                    -- Forward commits instantly, backward requires 8 consecutive frames
                     if speed > MOVE_THRESH and dot >= 0 then
                         lastState = "front"
-                    elseif backCounter >= 6 then
+                    elseif backCounter >= 8 then
                         lastState = "back"
                     end
 
