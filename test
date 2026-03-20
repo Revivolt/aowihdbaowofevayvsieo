@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -267,7 +267,7 @@ do
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
-    local MOVE_THRESH = 10
+    local MOVE_THRESH = 2
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -355,10 +355,10 @@ do
                     local offsetCF
                     if lastState == "back" then
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.7)
                     else
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.7)
                     end
 
                     myRoot.CFrame                  = offsetCF
