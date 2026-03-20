@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -262,11 +262,11 @@ do
     local lastChar    = nil
     local lastState   = "front"
     local backCounter = 0
+    local wasAirborne = false
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
     local MOVE_THRESH = 2
-    local JUMP_THRESH = 15   -- freeze state updates if target has upward velocity
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -280,6 +280,7 @@ do
                 lastChar    = nil
                 lastState   = "front"
                 backCounter = 0
+                wasAirborne = false
                 return
             end
             if not selectedTarget then return end
@@ -294,6 +295,7 @@ do
                     lastChar    = nil
                     lastState   = "front"
                     backCounter = 0
+                    wasAirborne = false
                     return
                 end
 
@@ -321,11 +323,15 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    if vel.Y > 2 then
+                    local isAirborne = math.abs(vel.Y) > 15
+                    local justLanded = wasAirborne and not isAirborne
+                    wasAirborne      = isAirborne
+
+                    -- Wipe counter on landing so post-jump push can't commit
+                    if justLanded then
                         backCounter = 0
                     end
 
-                    local isAirborne = math.abs(vel.Y) > 15
                     if not isAirborne then
                         if speed > MOVE_THRESH and dot < 0 then
                             backCounter = backCounter + 1
@@ -343,7 +349,7 @@ do
                     local offsetCF
                     if lastState == "back" then
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
+                        offsetCF = baseCF * CFrame.new(0, -0.7, 0.8)
                     else
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
