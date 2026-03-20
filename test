@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -327,7 +327,13 @@ do
                     local justLanded = wasAirborne and not isAirborne
                     wasAirborne      = isAirborne
 
-                    -- Wipe counter on landing so post-jump push can't commit
+                    -- Wipe counter the instant any upward movement is detected
+                    -- catches the jump before vel.Y builds up to isAirborne threshold
+                    if vel.Y > 1 then
+                        backCounter = 0
+                    end
+
+                    -- Also wipe on landing to clear any residual from the fall
                     if justLanded then
                         backCounter = 0
                     end
