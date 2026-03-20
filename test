@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,7 +254,7 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- e
+-- Direction Tracker 2
 do
     local cpConn       = nil
     local cpEnabled    = false
@@ -263,7 +263,6 @@ do
     local lastState    = "front"
     local backCounter  = 0
     local frontCounter = 0
-    local wasAirborne  = false
 
     local cpAnimId    = 89506037040597
     local cpFreezeAt  = 0
@@ -282,7 +281,6 @@ do
                 lastState     = "front"
                 backCounter   = 0
                 frontCounter  = 0
-                wasAirborne   = false
                 return
             end
             if not selectedTarget then return end
@@ -298,7 +296,6 @@ do
                     lastState     = "front"
                     backCounter   = 0
                     frontCounter  = 0
-                    wasAirborne   = false
                     return
                 end
 
@@ -328,7 +325,6 @@ do
 
                     local isAirborne = math.abs(vel.Y) > 15
 
-                    -- Both counters frozen while airborne, no state can change mid jump
                     if not isAirborne then
                         if speed > MOVE_THRESH and dot < 0 then
                             backCounter  = backCounter + 1
@@ -341,8 +337,6 @@ do
                             frontCounter = 0
                         end
 
-                        -- Both directions require same threshold so neither can
-                        -- out-race the other from a brief push
                         if backCounter >= 30 then
                             lastState    = "back"
                             frontCounter = 0
@@ -354,10 +348,20 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
+                        if cpTrack and not cpTrack.IsPlaying then
+                            cpTrack:Play()
+                            cpTrack.TimePosition = cpFreezeAt
+                            cpTrack:AdjustSpeed(0)
+                        end
+                        offsetCF = baseCF
+                            * CFrame.new(0, 0.7, 0.8)
+                            * CFrame.Angles(0, math.rad(180), 0)
                     else
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
+                        if cpTrack and not cpTrack.IsPlaying then
+                            cpTrack:Play()
+                            cpTrack.TimePosition = cpFreezeAt
+                            cpTrack:AdjustSpeed(0)
+                        end
                         offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
                     end
 
