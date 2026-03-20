@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -348,14 +348,20 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        -- 2.6 studs above, rotated 180 degrees
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
+                        if cpTrack and not cpTrack.IsPlaying then
+                            cpTrack:Play()
+                            cpTrack.TimePosition = cpFreezeAt
+                            cpTrack:AdjustSpeed(0)
+                        end
                         offsetCF = baseCF
                             * CFrame.new(0, 2.6, 0)
                             * CFrame.Angles(0, math.rad(180), 0)
                     else
-                        -- 2.6 studs above, no rotation
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
+                        if cpTrack and not cpTrack.IsPlaying then
+                            cpTrack:Play()
+                            cpTrack.TimePosition = cpFreezeAt
+                            cpTrack:AdjustSpeed(0)
+                        end
                         offsetCF = baseCF * CFrame.new(0, 2.6, 0)
                     end
 
