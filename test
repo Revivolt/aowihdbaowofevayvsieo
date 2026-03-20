@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,7 +254,7 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- e
+-- test
 do
     local cpConn      = nil
     local cpEnabled   = false
@@ -323,9 +323,21 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    local isAirborne = math.abs(vel.Y) > 15
+                    local isAirborne  = math.abs(vel.Y) > 15
+                    local justLeftGround = not wasAirborne and isAirborne
+                    wasAirborne = isAirborne
 
-                    -- While airborne, touch nothing — counter and state stay exactly as they were
+                    -- The moment they leave the ground, snapshot direction instantly
+                    if justLeftGround then
+                        if speed > MOVE_THRESH and dot < 0 then
+                            lastState = "back"
+                        elseif speed > MOVE_THRESH and dot >= 0 then
+                            lastState = "front"
+                        end
+                        backCounter = 0
+                    end
+
+                    -- While grounded, use the counter as normal
                     if not isAirborne then
                         if speed > MOVE_THRESH and dot < 0 then
                             backCounter = backCounter + 1
