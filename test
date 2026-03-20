@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,13 +254,14 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- e
+-- Direction Tracker
 do
-    local cpConn    = nil
-    local cpEnabled = false
-    local cpTrack   = nil
-    local lastChar  = nil
-    local lastState = "front"  -- remembers last known state during jumps
+    local cpConn      = nil
+    local cpEnabled   = false
+    local cpTrack     = nil
+    local lastChar    = nil
+    local lastState   = "front"
+    local backCounter = 0
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
@@ -273,10 +274,11 @@ do
             cpEnabled = state
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, false, nil)
-                cpConn     = nil
-                cpTrack    = nil
-                lastChar   = nil
-                lastState  = "front"
+                cpConn      = nil
+                cpTrack     = nil
+                lastChar    = nil
+                lastState   = "front"
+                backCounter = 0
                 return
             end
             if not selectedTarget then return end
@@ -284,12 +286,13 @@ do
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
-                    cpEnabled = false
+                    cpEnabled   = false
                     cleanupToggle(cpConn, cpTrack, false, "test")
-                    cpConn     = nil
-                    cpTrack    = nil
-                    lastChar   = nil
-                    lastState  = "front"
+                    cpConn      = nil
+                    cpTrack     = nil
+                    lastChar    = nil
+                    lastState   = "front"
+                    backCounter = 0
                     return
                 end
 
@@ -317,26 +320,25 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    -- Only update lastState when there's clear horizontal movement
-                    if speed > MOVE_THRESH then
-                        lastState = dot < 0 and "back" or "front"
+                    -- Increment backCounter only on sustained backward movement
+                    if speed > MOVE_THRESH and dot < 0 then
+                        backCounter = backCounter + 1
+                    else
+                        backCounter = 0
+                    end
+
+                    -- Forward flips instantly, backward requires 8 consecutive frames
+                    if speed > MOVE_THRESH and dot >= 0 then
+                        lastState = "front"
+                    elseif backCounter >= 8 then
+                        lastState = "back"
                     end
 
                     local offsetCF
-                    if lastState == "back" and speed > MOVE_THRESH then
-                        -- Moving backward
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.7)
-                    elseif lastState == "front" and speed > MOVE_THRESH then
-                        -- Moving forward
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.7)
-                    elseif lastState == "back" then
-                        -- Jumping or idle, was last going back
+                    if lastState == "back" then
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, 0.7)
                     else
-                        -- Jumping or idle, was last going front
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, -0.7)
                     end
