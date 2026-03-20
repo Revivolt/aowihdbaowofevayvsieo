@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -261,11 +261,12 @@ do
     local cpTrack     = nil
     local lastChar    = nil
     local lastState   = "front"
-    local sampleTask  = nil
+    local backCounter = 0
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
-    local MOVE_THRESH = 1.5
+    local MOVE_THRESH = 2
+    local JUMP_THRESH = 5   -- freeze state updates if target has upward velocity
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -273,53 +274,26 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
-                if sampleTask then task.cancel(sampleTask) sampleTask = nil end
                 cleanupToggle(cpConn, cpTrack, false, nil)
-                cpConn     = nil
-                cpTrack    = nil
-                lastChar   = nil
-                lastState  = "front"
+                cpConn      = nil
+                cpTrack     = nil
+                lastChar    = nil
+                lastState   = "front"
+                backCounter = 0
                 return
             end
             if not selectedTarget then return end
-
-            -- Separate task that samples position every 0.4s to decide state
-            sampleTask = task.spawn(function()
-                while cpEnabled do
-                    local tgtChar = selectedTarget and selectedTarget.Character
-                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                    if tgtRoot then
-                        local posA = tgtRoot.Position
-                        task.wait(0.4)
-                        if not cpEnabled then break end
-                        tgtChar = selectedTarget and selectedTarget.Character
-                        tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                        if tgtRoot then
-                            local posB    = tgtRoot.Position
-                            local delta   = posB - posA
-                            local flat    = Vector3.new(delta.X, 0, delta.Z)
-                            if flat.Magnitude > MOVE_THRESH then
-                                local fwd = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
-                                local dot = flat:Dot(fwd)
-                                lastState = dot >= 0 and "front" or "back"
-                            end
-                        end
-                    else
-                        task.wait(0.4)
-                    end
-                end
-            end)
 
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    if sampleTask then task.cancel(sampleTask) sampleTask = nil end
                     cleanupToggle(cpConn, cpTrack, false, "test")
-                    cpConn     = nil
-                    cpTrack    = nil
-                    lastChar   = nil
-                    lastState  = "front"
+                    cpConn      = nil
+                    cpTrack     = nil
+                    lastChar    = nil
+                    lastState   = "front"
+                    backCounter = 0
                     return
                 end
 
@@ -338,8 +312,30 @@ do
                 end
 
                 pcall(function()
+                    local vel        = tgtRoot.AssemblyLinearVelocity
+                    local horizV     = Vector3.new(vel.X, 0, vel.Z)
+                    local speed      = horizV.Magnitude
+                    local tgtForward = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
+                    local dot        = horizV:Dot(tgtForward)
+
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
+
+                    -- Freeze all state updates if the target is jumping or falling
+                    local isAirborne = math.abs(vel.Y) > JUMP_THRESH
+                    if not isAirborne then
+                        if speed > MOVE_THRESH and dot < 0 then
+                            backCounter = backCounter + 1
+                        else
+                            backCounter = 0
+                        end
+
+                        if speed > MOVE_THRESH and dot >= 0 then
+                            lastState = "front"
+                        elseif backCounter >= 15 then
+                            lastState = "back"
+                        end
+                    end
 
                     local offsetCF
                     if lastState == "back" then
