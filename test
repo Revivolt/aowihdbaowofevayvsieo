@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -354,7 +354,7 @@ do
                             cpTrack:AdjustSpeed(0)
                         end
                         offsetCF = baseCF
-                            * CFrame.new(0, 1.9, 0)
+                            * CFrame.new(0, 2.2, 0)
                             * CFrame.Angles(0, math.rad(180), 0)
                     else
                         if cpTrack and not cpTrack.IsPlaying then
