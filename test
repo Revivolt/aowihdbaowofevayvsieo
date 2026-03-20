@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -256,13 +256,14 @@ end
 
 -- test
 do
-    local cpConn      = nil
-    local cpEnabled   = false
-    local cpTrack     = nil
-    local lastChar    = nil
-    local lastState   = "front"
-    local backCounter = 0
-    local wasAirborne = false
+    local cpConn       = nil
+    local cpEnabled    = false
+    local cpTrack      = nil
+    local lastChar     = nil
+    local lastState    = "front"
+    local backCounter  = 0
+    local frontCounter = 0
+    local wasAirborne  = false
 
     local cpAnimId    = 93193438936298
     local cpFreezeAt  = 0
@@ -275,12 +276,13 @@ do
             cpEnabled = state
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, false, nil)
-                cpConn      = nil
-                cpTrack     = nil
-                lastChar    = nil
-                lastState   = "front"
-                backCounter = 0
-                wasAirborne = false
+                cpConn        = nil
+                cpTrack       = nil
+                lastChar      = nil
+                lastState     = "front"
+                backCounter   = 0
+                frontCounter  = 0
+                wasAirborne   = false
                 return
             end
             if not selectedTarget then return end
@@ -290,12 +292,13 @@ do
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, false, "test")
-                    cpConn      = nil
-                    cpTrack     = nil
-                    lastChar    = nil
-                    lastState   = "front"
-                    backCounter = 0
-                    wasAirborne = false
+                    cpConn        = nil
+                    cpTrack       = nil
+                    lastChar      = nil
+                    lastState     = "front"
+                    backCounter   = 0
+                    frontCounter  = 0
+                    wasAirborne   = false
                     return
                 end
 
@@ -323,32 +326,28 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    local isAirborne  = math.abs(vel.Y) > 15
-                    local justLeftGround = not wasAirborne and isAirborne
-                    wasAirborne = isAirborne
+                    local isAirborne = math.abs(vel.Y) > 15
+                    wasAirborne      = isAirborne
 
-                    -- The moment they leave the ground, snapshot direction instantly
-                    if justLeftGround then
-                        if speed > MOVE_THRESH and dot < 0 then
-                            lastState = "back"
-                        elseif speed > MOVE_THRESH and dot >= 0 then
-                            lastState = "front"
-                        end
-                        backCounter = 0
-                    end
-
-                    -- While grounded, use the counter as normal
                     if not isAirborne then
                         if speed > MOVE_THRESH and dot < 0 then
-                            backCounter = backCounter + 1
+                            backCounter  = backCounter + 1
+                            frontCounter = 0
+                        elseif speed > MOVE_THRESH and dot >= 0 then
+                            frontCounter = frontCounter + 1
+                            backCounter  = 0
                         else
-                            backCounter = 0
+                            backCounter  = 0
+                            frontCounter = 0
                         end
 
-                        if speed > MOVE_THRESH and dot >= 0 then
-                            lastState = "front"
-                        elseif backCounter >= 35 then
+                        -- Back requires 35 frames, front requires 10 frames
+                        -- Both need sustained movement so brief pushes or
+                        -- jump physics cant flip the state
+                        if backCounter >= 35 then
                             lastState = "back"
+                        elseif frontCounter >= 10 then
+                            lastState = "front"
                         end
                     end
 
