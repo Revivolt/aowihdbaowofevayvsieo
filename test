@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -355,10 +355,10 @@ do
                     local offsetCF
                     if lastState == "back" then
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
+                        offsetCF = baseCF * CFrame.new(0, -2, 2)
                     else
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
+                        offsetCF = baseCF * CFrame.new(0, -2, -2)
                     end
 
                     myRoot.CFrame                  = offsetCF
