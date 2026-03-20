@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -321,8 +321,11 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    -- Freeze all state updates if the target is jumping or falling
-                    local isAirborne = math.abs(vel.Y) > JUMP_THRESH
+                    if vel.Y > 2 then
+                        backCounter = 0
+                    end
+
+                    local isAirborne = math.abs(vel.Y) > 15
                     if not isAirborne then
                         if speed > MOVE_THRESH and dot < 0 then
                             backCounter = backCounter + 1
