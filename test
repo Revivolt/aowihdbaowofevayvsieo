@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -265,7 +265,7 @@ do
     local frontCounter = 0
     local wasAirborne  = false
 
-    local cpAnimId    = 84961330091637
+    local cpAnimId    = 89506037040597
     local cpFreezeAt  = 0
     local MOVE_THRESH = 2
 
@@ -355,10 +355,10 @@ do
                     local offsetCF
                     if lastState == "back" then
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, -2, 2)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.8)
                     else
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, -2, -2)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.8)
                     end
 
                     myRoot.CFrame                  = offsetCF
