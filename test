@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -399,7 +399,7 @@ do
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
-                    local isAirborne = math.abs(vel.Y) > 15
+                    local isAirborne = math.abs(vel.Y) > 8
 
                     -- Both counters frozen while airborne, no state can change mid jump
                     if not isAirborne then
@@ -416,10 +416,10 @@ do
 
                         -- Both directions require same threshold so neither can
                         -- out-race the other from a brief push
-                        if backCounter >= 20 then
+                        if backCounter >= 30 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 20 then
+                        elseif frontCounter >= 30 then
                             lastState   = "front"
                             backCounter = 0
                         end
@@ -427,9 +427,9 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        offsetCF = baseCF * CFrame.new(0, 2.2, 0.3)
+                        offsetCF = baseCF * CFrame.new(0, 2.6, 0)
                     else
-                        offsetCF = baseCF * CFrame.new(0, 2.5, 0)
+                        offsetCF = baseCF * CFrame.new(0, 2.2, 0.3)
                     end
 
                     myRoot.CFrame                  = offsetCF
