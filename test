@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -424,7 +424,7 @@ do
                         offsetCF = baseCF * CFrame.new(0, 2.5, 0)
                     else
                         if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
-                        offsetCF = baseCF * CFrame.new(0, 2.45, -0.8)
+                        offsetCF = baseCF * CFrame.new(0, 2.2, 0.3)
                     end
 
                     myRoot.CFrame                  = offsetCF
