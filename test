@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -416,10 +416,10 @@ do
 
                         -- Both directions require same threshold so neither can
                         -- out-race the other from a brief push
-                        if backCounter >= 30 then
+                        if backCounter >= 25 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 30 then
+                        elseif frontCounter >= 25 then
                             lastState   = "front"
                             backCounter = 0
                         end
