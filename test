@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1860,11 +1860,9 @@ NaNTab:CreateButton({
 })
 
 NaNTab:CreateButton({
-    Name = "bring",
+    Name = "silent tp",
     Callback = function()
         if nanTarget == "" then return end
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
         local target
@@ -1879,46 +1877,16 @@ NaNTab:CreateButton({
         if not target or not target.Character then return end
 
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
 
-        local tgtChar = target.Character
-        local tgtHum  = tgtChar:FindFirstChildOfClass("Humanoid")
-        local tgtRoot = tgtChar:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot or not tgtHum then return end
+        -- kill momentum so you don't slide/bounce on arrival
+        myRoot.AssemblyLinearVelocity  = Vector3.zero
+        myRoot.AssemblyAngularVelocity = Vector3.zero
 
-        local nan    = 0 / 0
-        local nanVec = Vector3.new(nan, nan, nan)
-
-        local savedPlatform = tgtHum.PlatformStand
-        local savedVel      = tgtRoot.Velocity
-        local savedCF       = tgtRoot.CFrame
-        tgtHum.PlatformStand = true
-
-        local startTime = tick()
-        nanConn = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then return end
-
-            if tick() - startTime >= 1.5 then
-                nanConn:Disconnect()
-                nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    tgtHum.PlatformStand            = savedPlatform
-                    tgtRoot.AssemblyLinearVelocity  = Vector3.zero
-                    tgtRoot.AssemblyAngularVelocity = Vector3.zero
-                    tgtRoot.Velocity                = Vector3.zero
-                    tgtRoot.RotVelocity             = Vector3.zero
-                    pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", nil)
-                end)
-                return
-            end
-
-            -- Lock the TARGET to YOUR position instead of you to theirs
-            tgtRoot.CFrame                  = myRoot.CFrame
-            tgtRoot.AssemblyLinearVelocity  = nanVec
-            tgtRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() tgtHum:Move(nanVec) end)
-            pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", myRoot)
-        end)
+        -- offset slightly so you don't clip inside them
+        myRoot.CFrame = tgtRoot.CFrame * CFrame.new(0, 0, 2.5)
     end,
 })
