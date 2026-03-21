@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -270,7 +270,7 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 1
-    local cpAnimId    = 80120791952773
+    local cpAnimId    = 109963521342353
 
     MainTab:CreateToggle({
         Name         = "test",
