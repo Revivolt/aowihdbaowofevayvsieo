@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,14 +254,14 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- Trap
+-- test
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  2.6
+    local cpUp        =  1.9
     local cpForward   =  -0.8
     local cpSide      =  0
     local cpTiltX     =  0
@@ -273,7 +273,7 @@ do
     local cpAnimId    = 136924276934156
 
     MainTab:CreateToggle({
-        Name         = "Trap",
+        Name         = "test",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -287,7 +287,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Trap")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
