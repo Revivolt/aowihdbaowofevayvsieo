@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,53 +254,30 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
+-- Trap
 do
-    local cpConn      = nil
-    local cpEnabled   = false
-    local cpTrack     = nil
-    local lastChar    = nil
-    local cpRootJoint = nil
-    local cpBaseC0    = nil
+    local cpConn    = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+    local lastChar  = nil
 
     local cpUp        =  2.6
-    local cpForward   =  0
+    local cpForward   =  -0.8
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
-    local cpAnimRotX  =  0   -- Motor6D animation rotation (degrees)
-    local cpAnimRotY  =  90  -- e.g. 90 rotates the anim 90° on Y
-    local cpAnimRotZ  =  0
     local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 4.1
     local cpAnimId    = 136924276934156
 
-    local function applyAnimRot()
-        if cpRootJoint and cpBaseC0 then
-            cpRootJoint.C0 = cpBaseC0 * CFrame.Angles(
-                math.rad(cpAnimRotX),
-                math.rad(cpAnimRotY),
-                math.rad(cpAnimRotZ)
-            )
-        end
-    end
-
-    local function restoreAnimRot()
-        if cpRootJoint and cpBaseC0 then
-            cpRootJoint.C0 = cpBaseC0
-        end
-        cpRootJoint = nil
-        cpBaseC0    = nil
-    end
-
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Trap",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
-                restoreAnimRot()
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 return
@@ -310,8 +287,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    restoreAnimRot()
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Trap")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -321,37 +297,18 @@ do
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
-
                 if myChar ~= lastChar then
                     lastChar = myChar
-
-                    -- Restore old joint before switching character
-                    restoreAnimRot()
-
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
-
-                    -- Mirror the reference script: find joint, save original C0, apply once
-                    cpRootJoint = myRoot:FindFirstChild("RootJoint")
-                        or (myChar:FindFirstChild("LowerTorso")
-                            and myChar:FindFirstChild("LowerTorso"):FindFirstChildWhichIsA("Motor6D"))
-
-                    if cpRootJoint then
-                        cpBaseC0 = cpRootJoint.C0
-                        applyAnimRot() -- set once after anim loads, not per-frame
-                    end
                 end
-
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") and cpNoCollide then
-                            part.CanCollide = false
-                        end
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                     end
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                        * CFrame.Angles(0, yaw, 0)
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
                         * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
