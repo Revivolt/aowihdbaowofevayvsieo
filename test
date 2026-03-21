@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1879,53 +1879,42 @@ NaNTab:CreateButton({
         if not target or not target.Character then return end
 
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
 
-        local tgtChar = target.Character
-        local tgtHum  = tgtChar:FindFirstChildOfClass("Humanoid")
-        local tgtRoot = tgtChar:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot or not tgtHum then return end
-
-        local nan    = 0 / 0
-        local nanVec = Vector3.new(nan, nan, nan)
-
+        local savedCF       = myRoot.CFrame
+        local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
+        local nan           = 0 / 0
+        local nanVec        = Vector3.new(nan, -9999, nan)
+
         myHum.PlatformStand = true
-
-        -- ghost yourself onto them first so the NaN originates from contact
-        myRoot.CFrame = tgtRoot.CFrame
-
         local startTime = tick()
+
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
-
             if tick() - startTime >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum.PlatformStand            = savedPlatform
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myHum.PlatformStand               = savedPlatform
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.CFrame                     = savedCF
+                    myRoot.Velocity                   = savedVel
+                    myRoot.RotVelocity                = Vector3.zero
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                    pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", nil)
                 end)
                 return
             end
-
-            -- you stay locked on them
             myRoot.CFrame                  = tgtRoot.CFrame
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
-
-            -- NaN bleeds into the target via PhysicsRepRootPart cross-link
-            pcall(sethiddenproperty, myRoot,  "PhysicsRepRootPart", tgtRoot)
-            pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", myRoot)
-
-            tgtHum.PlatformStand            = true
-            tgtRoot.AssemblyLinearVelocity  = nanVec
-            tgtRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(nanVec) end)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
     end,
 })
