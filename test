@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1855,6 +1855,70 @@ NaNTab:CreateButton({
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+        end)
+    end,
+})
+
+NaNTab:CreateButton({
+    Name = "bring",
+    Callback = function()
+        if nanTarget == "" then return end
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+        if nanConn then nanConn:Disconnect() nanConn = nil end
+
+        local target
+        for _, plr in ipairs(nanPlayers:GetPlayers()) do
+            if plr ~= nanLocal
+            and (plr.Name:lower():find(nanTarget:lower())
+                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                target = plr
+                break
+            end
+        end
+        if not target or not target.Character then return end
+
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+
+        local tgtChar = target.Character
+        local tgtHum  = tgtChar:FindFirstChildOfClass("Humanoid")
+        local tgtRoot = tgtChar:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot or not tgtHum then return end
+
+        local nan    = 0 / 0
+        local nanVec = Vector3.new(nan, nan, nan)
+
+        local savedPlatform = tgtHum.PlatformStand
+        local savedVel      = tgtRoot.Velocity
+        local savedCF       = tgtRoot.CFrame
+        tgtHum.PlatformStand = true
+
+        local startTime = tick()
+        nanConn = nanRun.Heartbeat:Connect(function()
+            if nanCounter ~= localID then return end
+
+            if tick() - startTime >= 1.5 then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    tgtHum.PlatformStand            = savedPlatform
+                    tgtRoot.AssemblyLinearVelocity  = Vector3.zero
+                    tgtRoot.AssemblyAngularVelocity = Vector3.zero
+                    tgtRoot.Velocity                = Vector3.zero
+                    tgtRoot.RotVelocity             = Vector3.zero
+                    pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+
+            -- Lock the TARGET to YOUR position instead of you to theirs
+            tgtRoot.CFrame                  = myRoot.CFrame
+            tgtRoot.AssemblyLinearVelocity  = nanVec
+            tgtRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() tgtHum:Move(nanVec) end)
+            pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", myRoot)
         end)
     end,
 })
