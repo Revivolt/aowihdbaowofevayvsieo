@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -380,6 +380,13 @@ do
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                
+                    -- Play first, seek to freeze point, then lock speed
+                    if cpTrack then
+                        cpTrack:Play()
+                        cpTrack.TimePosition = cpFreezeAt
+                        cpTrack:AdjustSpeed(0)
+                    end
                 end
 
                 pcall(function()
@@ -420,10 +427,8 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 2.5, 0)
                     else
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 2.2, 0.3)
                     end
 
