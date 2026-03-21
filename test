@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,15 +254,14 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- Trap
+-- e
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-
     local cpUp        =  0.4
-    local cpForward   =  -0.8
+    local cpForward   = -0.8
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
@@ -272,12 +271,28 @@ do
     local cpFreezeAt  = 0.08
     local cpAnimId    = 80120791952773
 
+    local function stiffenBody(myChar, stiff)
+        local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = stiff
+        end
+        if myChar then
+            for _, d in ipairs(myChar:GetDescendants()) do
+                if d:IsA("Motor6D") then
+                    d.MaxVelocity = stiff and 0 or 0.5
+                end
+            end
+        end
+    end
+
     MainTab:CreateToggle({
         Name         = "test",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
+                local myChar = weldLocal.Character
+                if myChar then stiffenBody(myChar, false) end
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 return
@@ -287,6 +302,8 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
+                    local myChar = weldLocal.Character
+                    if myChar then stiffenBody(myChar, false) end
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
@@ -301,6 +318,7 @@ do
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                    stiffenBody(myChar, true)
                 end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
