@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -266,10 +266,10 @@ do
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
-    local cpTiltZ     =  0
+    local cpTiltZ     =  180
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 0.07
+    local cpFreezeAt  = 0.08
     local cpAnimId    = 80120791952773
 
     MainTab:CreateToggle({
