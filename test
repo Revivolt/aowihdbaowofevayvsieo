@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -260,16 +260,16 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-    local cpUp        =  -0.7
-    local cpForward   = -0.92
-    local cpSide      =  0.05
+    local cpUp        =  4
+    local cpForward   = -0.8
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
-    local cpTiltZ     =  180
+    local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 0.07
-    local cpAnimId    = 80120791952773
+    local cpFreezeAt  = 1
+    local cpAnimId    = 73390669780316
 
     local function stiffenBody(myChar, stiff)
         local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
