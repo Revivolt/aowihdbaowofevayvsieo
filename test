@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1860,9 +1860,11 @@ NaNTab:CreateButton({
 })
 
 NaNTab:CreateButton({
-    Name = "silent tp",
+    Name = "test",
     Callback = function()
         if nanTarget == "" then return end
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
         local target
@@ -1877,16 +1879,53 @@ NaNTab:CreateButton({
         if not target or not target.Character then return end
 
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
+        local myHum   = myChar:WaitForChild("Humanoid")
 
-        -- kill momentum so you don't slide/bounce on arrival
-        myRoot.AssemblyLinearVelocity  = Vector3.zero
-        myRoot.AssemblyAngularVelocity = Vector3.zero
+        local tgtChar = target.Character
+        local tgtHum  = tgtChar:FindFirstChildOfClass("Humanoid")
+        local tgtRoot = tgtChar:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot or not tgtHum then return end
 
-        -- offset slightly so you don't clip inside them
-        myRoot.CFrame = tgtRoot.CFrame * CFrame.new(0, 0, 2.5)
+        local nan    = 0 / 0
+        local nanVec = Vector3.new(nan, nan, nan)
+
+        local savedPlatform = myHum.PlatformStand
+        myHum.PlatformStand = true
+
+        -- ghost yourself onto them first so the NaN originates from contact
+        myRoot.CFrame = tgtRoot.CFrame
+
+        local startTime = tick()
+        nanConn = nanRun.Heartbeat:Connect(function()
+            if nanCounter ~= localID then return end
+
+            if tick() - startTime >= 1.5 then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    myHum.PlatformStand            = savedPlatform
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                    pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+
+            -- you stay locked on them
+            myRoot.CFrame                  = tgtRoot.CFrame
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+
+            -- NaN bleeds into the target via PhysicsRepRootPart cross-link
+            pcall(sethiddenproperty, myRoot,  "PhysicsRepRootPart", tgtRoot)
+            pcall(sethiddenproperty, tgtRoot, "PhysicsRepRootPart", myRoot)
+
+            tgtHum.PlatformStand            = true
+            tgtRoot.AssemblyLinearVelocity  = nanVec
+            tgtRoot.AssemblyAngularVelocity = nanVec
+        end)
     end,
 })
