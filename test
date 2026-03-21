@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -268,7 +268,7 @@ do
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 0.08
+    local cpFreezeAt  = 0.06
     local cpAnimId    = 80120791952773
 
     local function stiffenBody(myChar, stiff)
