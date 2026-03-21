@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1859,62 +1859,62 @@ NaNTab:CreateButton({
     end,
 })
 
-NaNTab:CreateButton({
+local nanToggleActive = false
+
+NaNTab:CreateToggle({
     Name = "test",
-    Callback = function()
-        if nanTarget == "" then return end
+    CurrentValue = false,
+    Callback = function(state)
+        nanToggleActive = state
+
+        if not state then
+            -- Turning off: clean up connection
+            if nanConn then nanConn:Disconnect() nanConn = nil end
+            local myChar = nanLocal.Character
+            if myChar then
+                local myHum  = myChar:FindFirstChild("Humanoid")
+                local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                if myHum  then myHum.PlatformStand = false end
+                if myRoot then
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.RotVelocity             = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end
+            end
+            return
+        end
+
+        -- Turning on
         nanCounter = nanCounter + 1
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
-        local target
-        for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal
-            and (plr.Name:lower():find(nanTarget:lower())
-                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                target = plr
-                break
-            end
-        end
-        if not target or not target.Character then return end
+        local myChar = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum  = myChar:WaitForChild("Humanoid")
+        local myRoot = myChar:WaitForChild("HumanoidRootPart")
 
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
+        local nan    = 0 / 0
+        local nanVec = Vector3.new(nan, nan, nan)
 
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
-        local nan           = 0 / 0
-        local nanVec        = Vector3.new(-9999, -9999, -9999)
-
-        myHum.PlatformStand = true
-        local startTime = tick()
-
+        -- Do NOT set PlatformStand so the player can still walk freely
         nanConn = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then return end
-            if tick() - startTime >= 1.5 then
+            if nanCounter ~= localID or not nanToggleActive then
                 nanConn:Disconnect()
                 nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
                 return
             end
-            myRoot.CFrame                  = tgtRoot.CFrame
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+
+            -- Reacquire character parts safely in case of respawn
+            local char = nanLocal.Character
+            if not char then return end
+            local hum  = char:FindFirstChild("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root or not hum then return end
+
+            root.AssemblyLinearVelocity  = nanVec
+            root.AssemblyAngularVelocity = nanVec
+            pcall(sethiddenproperty, root, "PhysicsRepRootPart", root) -- self-ref keeps NaN local
         end)
     end,
 })
