@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,15 +254,15 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- test
+-- e
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  1.9
-    local cpForward   =  -0.8
+    local cpUp        =  2.4
+    local cpForward   =  -0.5
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
