@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -1868,7 +1868,6 @@ NaNTab:CreateToggle({
         nanToggleActive = state
 
         if not state then
-            -- Turning off: clean up connection
             if nanConn then nanConn:Disconnect() nanConn = nil end
             local myChar = nanLocal.Character
             if myChar then
@@ -1885,36 +1884,31 @@ NaNTab:CreateToggle({
             return
         end
 
-        -- Turning on
         nanCounter = nanCounter + 1
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
-        local myChar = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum  = myChar:WaitForChild("Humanoid")
-        local myRoot = myChar:WaitForChild("HumanoidRootPart")
-
         local nan    = 0 / 0
         local nanVec = Vector3.new(nan, nan, nan)
 
-        -- Do NOT set PlatformStand so the player can still walk freely
-        nanConn = nanRun.Heartbeat:Connect(function()
+        -- PostSimulation fires AFTER physics moves your character,
+        -- so walking velocity is already applied before we inject NaN.
+        -- The NaN then rides the next replication packet to other clients.
+        nanConn = nanRun.PostSimulation:Connect(function()
             if nanCounter ~= localID or not nanToggleActive then
                 nanConn:Disconnect()
                 nanConn = nil
                 return
             end
 
-            -- Reacquire character parts safely in case of respawn
             local char = nanLocal.Character
             if not char then return end
-            local hum  = char:FindFirstChild("Humanoid")
             local root = char:FindFirstChild("HumanoidRootPart")
-            if not root or not hum then return end
+            if not root then return end
 
             root.AssemblyLinearVelocity  = nanVec
             root.AssemblyAngularVelocity = nanVec
-            pcall(sethiddenproperty, root, "PhysicsRepRootPart", root) -- self-ref keeps NaN local
+            pcall(sethiddenproperty, root, "PhysicsRepRootPart", root)
         end)
     end,
 })
