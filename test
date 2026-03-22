@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -333,7 +333,7 @@ do
 
     local cpAnimId    = 136924276934156
     local cpFreezeAt  = 4.1
-    local MOVE_THRESH = 0.2
+    local MOVE_THRESH = 0.3
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -416,10 +416,10 @@ do
 
                         -- Both directions require same threshold so neither can
                         -- out-race the other from a brief push
-                        if backCounter >= 5 then
+                        if backCounter >= 8 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 5 then
+                        elseif frontCounter >= 8 then
                             lastState   = "front"
                             backCounter = 0
                         end
