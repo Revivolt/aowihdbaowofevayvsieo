@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -259,8 +259,8 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-    local cpUp        =  0
-    local cpForward   =  -1.5
+    local cpUp        =  -1
+    local cpForward   =  -3
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
@@ -423,10 +423,10 @@ do
                             frontCounter = 0
                         end
 
-                        if backCounter >= 1 then
+                        if backCounter >= 5 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 1 then
+                        elseif frontCounter >= 5 then
                             lastState   = "front"
                             backCounter = 0
                         end
@@ -543,10 +543,10 @@ do
                             frontCounter = 0
                         end
 
-                        if backCounter >= 1 then
+                        if backCounter >= 5 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 1 then
+                        elseif frontCounter >= 5 then
                             lastState   = "front"
                             backCounter = 0
                         end
