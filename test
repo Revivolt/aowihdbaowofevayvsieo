@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -350,7 +350,7 @@ do
 
                         -- Both directions require same threshold so neither can
                         -- out-race the other from a brief push
-                        if backCounter >= 10 then
+                        if backCounter >= 15 then
                             lastState    = "back"
                             frontCounter = 0
                         elseif frontCounter >= 7 then
@@ -361,7 +361,7 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        offsetCF = baseCF * CFrame.new(0, 2.2, -0.25)
+                        offsetCF = baseCF * CFrame.new(0, 2.2, -0.3)
                     else
                         offsetCF = baseCF * CFrame.new(0, 2.5, 0)
                     end
