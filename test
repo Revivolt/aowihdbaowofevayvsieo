@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -798,8 +798,8 @@ do
     local cpNoCollide = true
     local cpFreezeAt  = 0
     local cpAnimId    = 0
-    local SPIN_RADIUS = 10
-    local SPIN_SPEED  = 10
+    local SPIN_RADIUS = 15
+    local SPIN_SPEED  = 20
 
     MainTab:CreateToggle({
         Name         = "Fling Aura",
