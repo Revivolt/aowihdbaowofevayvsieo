@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -348,10 +348,10 @@ do
                             frontCounter = 0
                         end
 
-                        if backCounter >= 5 then
+                        if backCounter >= 1 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 5 then
+                        elseif frontCounter >= 1 then
                             lastState   = "front"
                             backCounter = 0
                         end
@@ -468,10 +468,10 @@ do
                             frontCounter = 0
                         end
 
-                        if backCounter >= 5 then
+                        if backCounter >= 1 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 5 then
+                        elseif frontCounter >= 1 then
                             lastState   = "front"
                             backCounter = 0
                         end
