@@ -273,7 +273,7 @@ do
     local cpAnimId    = 136924276934156
 
     MainTab:CreateToggle({
-        Name         = "ert",
+        Name         = "his",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -287,7 +287,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "ert")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "his")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -427,7 +427,7 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        offsetCF = baseCF * CFrame.new(0, 2.2, 0.3)
+                        offsetCF = baseCF * CFrame.new(0, 2.2, 0.2)
                     else
                         offsetCF = baseCF * CFrame.new(0, 2.5, 0)
                     end
