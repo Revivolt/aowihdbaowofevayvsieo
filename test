@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -419,7 +419,7 @@ do
                         if backCounter >= 25 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 15 then
+                        elseif frontCounter >= 10 then
                             lastState   = "front"
                             backCounter = 0
                         end
@@ -427,7 +427,7 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        offsetCF = baseCF * CFrame.new(0, 2.15, -0.3)
+                        offsetCF = baseCF * CFrame.new(0, 2.2, -0.3)
                     else
                         offsetCF = baseCF * CFrame.new(0, 2.5, 0)
                     end
