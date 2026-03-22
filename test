@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -479,9 +479,9 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.9)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, 0.85)
                     else
-                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.9)
+                        offsetCF = baseCF * CFrame.new(0, 0.7, -0.85)
                     end
 
                     myRoot.CFrame                  = offsetCF
