@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -390,7 +390,7 @@ do
     local MOVE_THRESH = 2
 
     MainTab:CreateToggle({
-        Name         = "Movement Breaker V2",
+        Name         = "test V2",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -411,7 +411,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, false, "Movement Breaker V2")
+                    cleanupToggle(cpConn, cpTrack, false, "test V2")
                     cpConn        = nil
                     cpTrack       = nil
                     lastChar      = nil
@@ -434,26 +434,33 @@ do
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+
+                    if cpTrack then
+                        cpTrack:Play()
+                        cpTrack.TimePosition = cpFreezeAt
+                        cpTrack:AdjustSpeed(0)
+                    end
                 end
 
                 pcall(function()
                     local vel        = tgtRoot.AssemblyLinearVelocity
-                    local horizV     = Vector3.new(vel.X, 0, vel.Z)
-                    local speed      = horizV.Magnitude
                     local tgtForward = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
-                    local dot        = horizV:Dot(tgtForward)
+                    local tgtHuman   = tgtChar:FindFirstChildOfClass("Humanoid")
+                    local moveDir    = tgtHuman and tgtHuman.MoveDirection or Vector3.zero
+                    local isMoving   = moveDir.Magnitude > 0.1
+
+                    local dot        = moveDir:Dot(tgtForward)
 
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local baseCF = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
 
                     local isAirborne = math.abs(vel.Y) > 15
 
-                    -- Both counters frozen while airborne, no state can change mid jump
                     if not isAirborne then
-                        if speed > MOVE_THRESH and dot < 0 then
+                        if isMoving and dot < 0 then
                             backCounter  = backCounter + 1
                             frontCounter = 0
-                        elseif speed > MOVE_THRESH and dot >= 0 then
+                        elseif isMoving and dot >= 0 then
                             frontCounter = frontCounter + 1
                             backCounter  = 0
                         else
@@ -461,8 +468,6 @@ do
                             frontCounter = 0
                         end
 
-                        -- Both directions require same threshold so neither can
-                        -- out-race the other from a brief push
                         if backCounter >= 30 then
                             lastState    = "back"
                             frontCounter = 0
@@ -474,10 +479,8 @@ do
 
                     local offsetCF
                     if lastState == "back" then
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, 0.9)
                     else
-                        if cpTrack then cpTrack:AdjustSpeed(0) cpTrack:Play() end
                         offsetCF = baseCF * CFrame.new(0, 0.7, -0.9)
                     end
 
