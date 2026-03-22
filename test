@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -270,7 +270,7 @@ do
     local MOVE_THRESH = 0.5
 
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Slow Down",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -291,7 +291,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, false, "test")
+                    cleanupToggle(cpConn, cpTrack, false, "Slow Down")
                     cpConn        = nil
                     cpTrack       = nil
                     lastChar      = nil
@@ -390,7 +390,7 @@ do
     local MOVE_THRESH = 0.5
 
     MainTab:CreateToggle({
-        Name         = "test V2",
+        Name         = "Movement Breaker",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -411,7 +411,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, false, "test V2")
+                    cleanupToggle(cpConn, cpTrack, false, "Movement Breaker")
                     cpConn        = nil
                     cpTrack       = nil
                     lastChar      = nil
@@ -1836,7 +1836,7 @@ do
     })
 end
 
--- Movement Breaker
+-- k
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1855,7 +1855,7 @@ do
     local cpAnimId    = 93193438936298
 
     MainTab:CreateToggle({
-        Name         = "Movement Breaker",
+        Name         = "Reverse",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -1869,7 +1869,7 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Movement Breaker")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Reverse")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
