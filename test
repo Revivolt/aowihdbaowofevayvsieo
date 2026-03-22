@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -260,7 +260,7 @@ do
     local cpTrack   = nil
     local lastChar  = nil
     local cpUp        =  -1
-    local cpForward   =  -3
+    local cpForward   =  -4
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
@@ -268,7 +268,7 @@ do
     local cpFaceBack  = false
     local cpNoCollide = false
     local cpFreezeAt  = 0
-    local cpAnimId    = 78141481814457
+    local cpAnimId    = 121107013783398
 
     -- oscillation settings
     local cpSwingAmp   = 3    -- how far forward/back (studs)
