@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -387,7 +387,7 @@ do
 
     local cpAnimId    = 75065228741970
     local cpFreezeAt  = 0
-    local MOVE_THRESH = 2
+    local MOVE_THRESH = 0.5
 
     MainTab:CreateToggle({
         Name         = "test V2",
@@ -468,10 +468,10 @@ do
                             frontCounter = 0
                         end
 
-                        if backCounter >= 30 then
+                        if backCounter >= 5 then
                             lastState    = "back"
                             frontCounter = 0
-                        elseif frontCounter >= 30 then
+                        elseif frontCounter >= 5 then
                             lastState   = "front"
                             backCounter = 0
                         end
