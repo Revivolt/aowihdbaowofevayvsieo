@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -313,7 +313,7 @@ do
         if not tgtRoot then return end
 
         -- Build cam model (same pattern as invisible script)
-        camModel    = Instance.new("Goober")
+        camModel    = Instance.new("Model")
         camPart     = Instance.new("Part")
         camHumanoid = Instance.new("Humanoid")
 
