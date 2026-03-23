@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -267,6 +267,7 @@ do
 
     local ghostModel    = nil
     local ghostRoot     = nil
+    local ghostHum      = nil
     local ghostConn     = nil
     local GHOST_BEHIND  = 5
 
@@ -277,86 +278,105 @@ do
 
     local function destroyGhost()
         if ghostConn then ghostConn:Disconnect() ghostConn = nil end
-        if ghostModel then ghostModel:Destroy() ghostModel = nil end
-        ghostRoot = nil
-        local myChar = weldLocal and weldLocal.Character
-        local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
-        local cam = workspace:FindFirstChildOfClass("Camera")
-        if cam and hum then
-            cam.CameraSubject = hum
-        end
+        if ghostModel and ghostModel.Parent then ghostModel:Destroy() end
+        ghostModel = nil
+        ghostRoot  = nil
+        ghostHum   = nil
+
+        -- Restore camera to real character
+        pcall(function()
+            local myChar = weldLocal.Character
+            local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            if hum then
+                workspace.CurrentCamera.CameraSubject = hum
+            end
+        end)
     end
 
     local function createGhost()
         destroyGhost()
 
         local myChar = weldLocal and weldLocal.Character
-        if not myChar then return end
+        if not myChar then warn("createGhost: no local character") return end
 
         local tgtChar = selectedTarget and selectedTarget.Character
         local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
+        if not tgtRoot then warn("createGhost: no target root") return end
 
-        local ok, err = pcall(function()
-            ghostModel = myChar:Clone()
-            ghostModel.Name = "GhostClone"
+        -- Build a fresh model to hold everything
+        ghostModel = Instance.new("Model")
+        ghostModel.Name = "GhostClone"
 
-            -- Collect and destroy scripts/humanoids after iteration, not during
-            local toDestroy = {}
-            for _, v in ipairs(ghostModel:GetDescendants()) do
-                if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("Humanoid") then
-                    table.insert(toDestroy, v)
+        -- Invisible anchor part that drives positions
+        ghostRoot = Instance.new("Part")
+        ghostRoot.Name = "HumanoidRootPart"
+        ghostRoot.Size = Vector3.new(2, 2, 1)
+        ghostRoot.Transparency = 1
+        ghostRoot.Anchored = true
+        ghostRoot.CanCollide = false
+        ghostRoot.CanTouch = false
+        ghostRoot.CastShadow = false
+        ghostRoot.CFrame = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+        ghostRoot.Parent = ghostModel
+
+        -- Humanoid REQUIRED so CameraSubject actually works
+        ghostHum = Instance.new("Humanoid")
+        ghostHum.MaxHealth = 0
+        ghostHum.Health = 0
+        ghostHum.Parent = ghostModel
+
+        ghostModel.PrimaryPart = ghostRoot
+        ghostModel.Parent = workspace
+
+        -- Try to copy character appearance on top
+        pcall(function()
+            local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then return end
+
+            for _, orig in ipairs(myChar:GetDescendants()) do
+                -- Only copy visual BaseParts (skip HRP itself, we have our anchor)
+                if orig:IsA("BasePart") and orig.Name ~= "HumanoidRootPart" then
+                    local copy = orig:Clone()
+                    copy.Anchored    = true
+                    copy.CanCollide  = false
+                    copy.CanTouch    = false
+                    copy.CastShadow  = false
+                    -- Ghost look: semi-transparent blue tint, capped at 0.7
+                    copy.Transparency = math.clamp(orig.Transparency + 0.4, 0, 0.7)
+                    copy.Color = Color3.fromRGB(180, 210, 255)
+                    -- Position relative to ghost anchor
+                    local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
+                    copy.CFrame = ghostRoot.CFrame * relCF
+                    copy.Parent = ghostModel
+                elseif orig:IsA("Accessory") or orig:IsA("SpecialMesh") then
+                    local copy = orig:Clone()
+                    copy.Parent = ghostModel
                 end
             end
-            for _, v in ipairs(toDestroy) do v:Destroy() end
-
-            for _, part in ipairs(ghostModel:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.Anchored     = true
-                    part.CanCollide   = false
-                    part.Massless     = true
-                    part.Transparency = math.min(1, part.Transparency + 0.45)
-                    part.Color        = Color3.fromRGB(180, 210, 255)
-                end
-            end
-
-            ghostModel.Parent = workspace
-            ghostRoot = ghostModel:FindFirstChild("HumanoidRootPart")
-            if not ghostRoot then return end
-
-            -- Set camera to ghost
-            local cam = workspace:FindFirstChildOfClass("Camera")
-            if cam then
-                cam.CameraSubject = ghostRoot
-            end
-
-            ghostConn = weldRun.Heartbeat:Connect(function()
-                if not cpEnabled then return end
-                if not ghostRoot or not ghostRoot.Parent then return end
-                local tChar = selectedTarget and selectedTarget.Character
-                local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
-                if not tRoot then return end
-
-                -- Place ghost 5 studs behind target's facing direction
-                local targetBehindCF = tRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
-
-                -- Move all parts relative to the HRP delta (excluding ghostRoot itself)
-                local hrpCF = ghostRoot.CFrame
-                local delta = targetBehindCF * hrpCF:Inverse()
-
-                for _, part in ipairs(ghostModel:GetDescendants()) do
-                    if part:IsA("BasePart") and part ~= ghostRoot then
-                        part.CFrame = delta * part.CFrame
-                    end
-                end
-                ghostRoot.CFrame = targetBehindCF
-            end)
         end)
 
-        if not ok then
-            warn("createGhost error:", err)
-            destroyGhost()
-        end
+        -- Hand camera to ghost
+        workspace.CurrentCamera.CameraSubject = ghostHum
+
+        -- Drive the ghost every frame
+        ghostConn = weldRun.Heartbeat:Connect(function()
+            if not cpEnabled then return end
+            if not ghostRoot or not ghostRoot.Parent then return end
+            local tChar = selectedTarget and selectedTarget.Character
+            local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+            if not tRoot then return end
+
+            local newCF  = tRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+            local delta  = newCF * ghostRoot.CFrame:Inverse()
+
+            -- Move every visual part by the same delta
+            for _, part in ipairs(ghostModel:GetDescendants()) do
+                if part:IsA("BasePart") and part ~= ghostRoot then
+                    part.CFrame = delta * part.CFrame
+                end
+            end
+            ghostRoot.CFrame = newCF
+        end)
     end
 
     local function findNearbyPlayer(tgtRoot)
