@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,23 +254,18 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- b
+-- r
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  2
-    local cpForward   =  0
-    local cpSide      =  0
-    local cpTiltX     =  0
-    local cpTiltY     =  -180
-    local cpTiltZ     =  0
-    local cpFaceBack  = false
     local cpNoCollide = true
     local cpFreezeAt  = 0
-    local cpAnimId    = 106081773696552
+    local cpAnimId    = 95106819404741
+    local SPIN_RADIUS = 8
+    local SPIN_SPEED  = 3
 
     MainTab:CreateToggle({
         Name         = "test",
@@ -278,15 +273,18 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
             if not selectedTarget then return end
+            activeFlingCount = activeFlingCount + 1
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
@@ -300,19 +298,20 @@ do
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
                 end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                     end
-                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(cpSide, cpUp, -cpForward)
-                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    local angle    = tick() * SPIN_SPEED
+                    local tgtPos   = tgtRoot.Position
+                    local worldPos = tgtPos + Vector3.new(
+                        math.cos(angle) * SPIN_RADIUS, 0, math.sin(angle) * SPIN_RADIUS)
+                    local lookAt = Vector3.new(tgtPos.X, worldPos.Y, tgtPos.Z)
+                    myRoot.CFrame      = CFrame.new(worldPos, lookAt)
+                    myRoot.Velocity    = Vector3.new(500, 500, 500)
+                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
                     sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                 end)
             end)
@@ -2194,66 +2193,6 @@ NaNTab:CreateButton({
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-        end)
-    end,
-})
-
-NaNTab:CreateButton({
-    Name = "test",
-    Callback = function()
-        if nanTarget == "" then return end
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
-        if nanConn then nanConn:Disconnect() nanConn = nil end
-        local target
-        for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal
-            and (plr.Name:lower():find(nanTarget:lower())
-                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                target = plr
-                break
-            end
-        end
-        if not target or not target.Character then return end
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
-        local SPEED         = 9999
-        local BELOW_OFFSET  = -5
-        local DURATION      = 1.5
-        myHum.PlatformStand = true
-        local startTime = tick()
-        nanConn = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then return end
-            local elapsed = tick() - startTime
-            if elapsed >= DURATION then
-                nanConn:Disconnect()
-                nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
-                end)
-                return
-            end
-            -- Lerp CFrame from below upward toward the target
-            local alpha     = elapsed / DURATION
-            local belowCF   = tgtRoot.CFrame * CFrame.new(0, BELOW_OFFSET, 0)
-            local currentCF = belowCF:Lerp(tgtRoot.CFrame, alpha)
-            -- Direction vector from current position toward target
-            local direction = (tgtRoot.Position - myRoot.Position).Unit
-            myRoot.CFrame                  = currentCF
-            myRoot.AssemblyLinearVelocity  = direction * SPEED
-            myRoot.AssemblyAngularVelocity = Vector3.zero
         end)
     end,
 })
