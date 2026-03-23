@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2157,53 +2157,55 @@ NaNTab:CreateButton({
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
-        local DIVE_HEIGHT = 2.5
+        local DIVE_HEIGHT   = 2.5
+        local HIT_THRESHOLD = 3  -- studs away from target to consider "arrived"
 
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
-
         local nan    = 0/0
         local nanVec = Vector3.new(0, -9999, 0)
 
         myHum.PlatformStand = true
 
-        local startTime = tick()
-        local teleported = false  -- flag so teleport only fires once inside heartbeat
+        local teleported = false
+        local diving     = true
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
 
-            if tick() - startTime >= 1.5 then
-                nanConn:Disconnect()
-                nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-                return
-            end
-
-            -- First frame: teleport above target and zero velocity before NaN kicks in
+            -- First frame: teleport above target
             if not teleported then
-                myRoot.CFrame                 = tgtRoot.CFrame + Vector3.new(0, DIVE_HEIGHT, 0)
+                myRoot.CFrame                  = tgtRoot.CFrame + Vector3.new(0, DIVE_HEIGHT, 0)
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
                 teleported = true
                 return
             end
 
-            -- Every frame after: apply NaN velocity downward onto target
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+            if diving then
+                local dist = (myRoot.Position - tgtRoot.Position).Magnitude
+                if dist <= HIT_THRESHOLD then
+                    -- Reached the target, stop diving and hand back to normal follow
+                    diving = false
+                    myHum.PlatformStand            = savedPlatform
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                    nanConn:Disconnect()
+                    nanConn = nil
+                    return
+                end
+
+                -- Track target's XZ while diving down so we don't miss if they move
+                myRoot.CFrame = CFrame.new(
+                    tgtRoot.Position.X,
+                    myRoot.Position.Y,
+                    tgtRoot.Position.Z
+                )
+                myRoot.AssemblyLinearVelocity  = nanVec
+                myRoot.AssemblyAngularVelocity = nanVec
+                pcall(function() myHum:Move(nanVec) end)
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+            end
         end)
     end,
 })
