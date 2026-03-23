@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -256,76 +256,75 @@ end
 
 -- c
 do
-    local cpConn          = nil
-    local cpEnabled       = false
-    local HOVER_UP        = -80
-    local CLOSE_DIST      = 25
-    local BELOW_OFF       = -1
+    local cpConn        = nil
+    local cpEnabled     = false
+    local HOVER_UP      = -80
+    local CLOSE_DIST    = 25
+    local BELOW_OFF     = -1
     local NEARBY_DURATION = 0.5
-    local GHOST_SPEED     = 16
-    local GHOST_OFFSET    = 5
 
-    local nearbyLatchRoot = nil
-    local nearbyLatchTime = 0
-    local lastChar        = nil
+    local nearbyLatchRoot  = nil
+    local nearbyLatchTime  = 0
 
-    local ghostModel = nil
-    local ghostRoot  = nil
-    local ghostHum   = nil
-    local UIS        = game:GetService("UserInputService")
-    local cam        = workspace.CurrentCamera
+    -- GHOST SYSTEM
+    local ghostChar = nil
+    local ghostConn = nil
+    local GHOST_OFFSET = 5
 
-    local function buildGhost(myChar, spawnCF)
-        if ghostModel then ghostModel:Destroy() end
-
-        local ghost = myChar:Clone()
-        ghost.Name  = "__GhostChar__"
-
-        for _, v in ipairs(ghost:GetDescendants()) do
-            if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("Animator") then
-                v:Destroy()
-            end
-        end
-
-        local gHum  = ghost:FindFirstChildOfClass("Humanoid")
-        local gRoot = ghost:FindFirstChild("HumanoidRootPart")
-        if not gRoot or not gHum then ghost:Destroy() return end
-
-        gHum.PlatformStand  = true
-        gHum.WalkSpeed      = 0
-        gHum.JumpPower      = 0
-        gHum.Health         = gHum.MaxHealth
-        gHum.AutoRotate     = false
-
-        gRoot.Anchored      = true
-        gRoot.CanCollide    = false
-        gRoot.Transparency  = 1
-        gRoot.CFrame        = spawnCF
-
-        for _, part in ipairs(ghost:GetDescendants()) do
-            if part:IsA("BasePart") and part ~= gRoot then
-                part.CanCollide   = false
-                part.Transparency = 0.5
-                part.CastShadow   = false
-                part.Anchored     = false
-                local w  = Instance.new("WeldConstraint")
-                w.Part0  = gRoot
-                w.Part1  = part
-                w.Parent = gRoot
-            end
-        end
-
-        ghost.Parent = workspace
-        ghostModel   = ghost
-        ghostRoot    = gRoot
-        ghostHum     = gHum
+    local function removeGhost()
+        if ghostConn then ghostConn:Disconnect() ghostConn = nil end
+        if ghostChar then ghostChar:Destroy() ghostChar = nil end
     end
 
-    local function destroyGhost()
-        if ghostModel then ghostModel:Destroy() ghostModel = nil ghostRoot = nil ghostHum = nil end
-        cam.CameraType = Enum.CameraType.Custom
-        local myHum = weldLocal.Character and weldLocal.Character:FindFirstChildOfClass("Humanoid")
-        if myHum then cam.CameraSubject = myHum end
+    local function createGhost(targetRoot)
+        removeGhost()
+
+        local myChar = weldLocal.Character
+        if not myChar then return end
+
+        ghostChar = myChar:Clone()
+        ghostChar.Name = "GhostCharacter"
+
+        for _, v in ipairs(ghostChar:GetDescendants()) do
+            if v:IsA("Script") or v:IsA("LocalScript") then
+                v:Destroy()
+            end
+            if v:IsA("Humanoid") then
+                v.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+            end
+            if v:IsA("BasePart") then
+                v.Transparency = 0.5
+                v.CanCollide = false
+            end
+        end
+
+        ghostChar.Parent = workspace
+
+        local ghostRoot = ghostChar:FindFirstChild("HumanoidRootPart")
+        if not ghostRoot then return end
+
+        ghostRoot.CFrame = targetRoot.CFrame * CFrame.new(GHOST_OFFSET, 0, 0)
+
+        ghostConn = weldRun.Heartbeat:Connect(function()
+            if not cpEnabled or not ghostChar then return end
+
+            local cam = workspace.CurrentCamera
+            local moveDir = Vector3.new()
+
+            local UIS = game:GetService("UserInputService")
+
+            if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir += cam.CFrame.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir -= cam.CFrame.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir -= cam.CFrame.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir += cam.CFrame.RightVector end
+
+            ghostRoot.CFrame = ghostRoot.CFrame + (moveDir * 1.5)
+        end)
+    end
+
+    local function stopConn()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
     end
 
     local function findNearbyPlayer(tgtRoot)
@@ -344,19 +343,13 @@ do
         return closest
     end
 
-    local function stopConn()
-        activeFlingCount = math.max(0, activeFlingCount - 1)
-        if cpConn then cpConn:Disconnect() cpConn = nil end
-    end
-
     local function startConn()
         if cpConn then cpConn:Disconnect() cpConn = nil end
         nearbyLatchRoot = nil
         nearbyLatchTime = 0
-        lastChar        = nil
         activeFlingCount = activeFlingCount + 1
 
-        cpConn = weldRun.Heartbeat:Connect(function(dt)
+        cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
             if not selectedTarget then return end
 
@@ -368,35 +361,6 @@ do
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- rebuild ghost if character changed
-            if myChar ~= lastChar then
-                lastChar = myChar
-                local spawnCF = tgtRoot.CFrame * CFrame.new(GHOST_OFFSET, 0, 0)
-                buildGhost(myChar, spawnCF)
-            end
-
-            -- force camera onto ghost every frame so game scripts can't steal it back
-            if ghostRoot and ghostHum then
-                cam.CameraType    = Enum.CameraType.Custom
-                cam.CameraSubject = ghostHum
-
-                -- WASD movement relative to camera yaw
-                local moveDir = Vector3.new(
-                    (UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0),
-                    0,
-                    (UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
-                )
-                local _, camYaw, _ = cam.CFrame:ToEulerAnglesYXZ()
-                if moveDir.Magnitude > 0 then
-                    local worldDir = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
-                    ghostRoot.CFrame = CFrame.new(ghostRoot.Position + worldDir * GHOST_SPEED * dt)
-                        * CFrame.Angles(0, camYaw, 0)
-                else
-                    ghostRoot.CFrame = CFrame.new(ghostRoot.Position) * CFrame.Angles(0, camYaw, 0)
-                end
-            end
-
-            -- real body logic
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then part.CanCollide = false end
@@ -441,16 +405,24 @@ do
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
+
             if not cpEnabled then
                 stopConn()
-                destroyGhost()
+                removeGhost()
                 nearbyLatchRoot = nil
                 nearbyLatchTime = 0
-                lastChar        = nil
                 return
             end
+
             if not selectedTarget then return end
+
             startConn()
+
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if tgtRoot then
+                createGhost(tgtRoot)
+            end
         end,
     })
 end
