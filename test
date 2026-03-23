@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -356,7 +356,7 @@ do
                 copy.CanCollide  = false
                 copy.CanTouch    = false
                 copy.CastShadow  = false
-                copy.Transparency = math.clamp(orig.Transparency + 0.5, 0.5, 0.5)
+                copy.Transparency = math.clamp(orig.Transparency + 0.8, 0.8, 0.8)
                 copy.Color = Color3.fromRGB(180, 210, 255)
                 local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
                 copy.CFrame = camPart.CFrame * relCF
