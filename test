@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -256,19 +256,70 @@ end
 
 -- c
 do
-    local cpConn        = nil
-    local cpEnabled     = false
-    local HOVER_UP      = -80
-    local CLOSE_DIST    = 25
-    local BELOW_OFF     = -1
+    local cpConn          = nil
+    local cpEnabled       = false
+    local HOVER_UP        = -80
+    local CLOSE_DIST      = 25
+    local BELOW_OFF       = -1
     local NEARBY_DURATION = 0.5
+    local GHOST_SPEED     = 16
 
-    local nearbyLatchRoot  = nil
-    local nearbyLatchTime  = 0
+    local nearbyLatchRoot = nil
+    local nearbyLatchTime = 0
+    local lastChar        = nil
 
-    local function stopConn()
-        activeFlingCount = math.max(0, activeFlingCount - 1)
-        if cpConn then cpConn:Disconnect() cpConn = nil end
+    local ghostChar  = nil
+    local ghostRoot  = nil
+    local UIS        = game:GetService("UserInputService")
+    local cam        = workspace.CurrentCamera
+
+    local function buildGhost(myChar)
+        if ghostChar then ghostChar:Destroy() end
+        local ghost = myChar:Clone()
+        ghost.Name = "__GhostChar__"
+
+        for _, v in ipairs(ghost:GetDescendants()) do
+            if v:IsA("Script") or v:IsA("LocalScript")
+            or v:IsA("Animator") or v:IsA("Humanoid")
+            or v:IsA("Motor6D") then
+                v:Destroy()
+            end
+        end
+
+        local gRoot = ghost:FindFirstChild("HumanoidRootPart")
+        if not gRoot then ghost:Destroy() return end
+
+        gRoot.Anchored    = true
+        gRoot.CanCollide  = false
+        gRoot.Transparency = 1
+
+        for _, part in ipairs(ghost:GetDescendants()) do
+            if part:IsA("BasePart") and part ~= gRoot then
+                part.CanCollide  = false
+                part.Transparency = 0.5
+                part.CastShadow  = false
+                part.Anchored    = false
+                local w  = Instance.new("WeldConstraint")
+                w.Part0  = gRoot
+                w.Part1  = part
+                w.Parent = gRoot
+            end
+        end
+
+        ghost.Parent = workspace
+        ghostChar = ghost
+        ghostRoot = gRoot
+
+        local realRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if realRoot then ghostRoot.CFrame = realRoot.CFrame end
+
+        cam.CameraSubject = ghostRoot
+    end
+
+    local function destroyGhost()
+        if ghostChar then ghostChar:Destroy() ghostChar = nil ghostRoot = nil end
+        local myHum = weldLocal.Character and weldLocal.Character:FindFirstChildOfClass("Humanoid")
+        if myHum then cam.CameraSubject = myHum end
     end
 
     local function findNearbyPlayer(tgtRoot)
@@ -287,20 +338,53 @@ do
         return closest
     end
 
+    local function stopConn()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+    end
+
     local function startConn()
         if cpConn then cpConn:Disconnect() cpConn = nil end
         nearbyLatchRoot = nil
         nearbyLatchTime = 0
+        lastChar        = nil
         activeFlingCount = activeFlingCount + 1
-        cpConn = weldRun.Heartbeat:Connect(function()
+
+        cpConn = weldRun.Heartbeat:Connect(function(dt)
             if not cpEnabled then return end
             if not selectedTarget then return end
+
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myChar or not myRoot then return end
+
+            -- rebuild ghost if character changed
+            if myChar ~= lastChar then
+                lastChar = myChar
+                buildGhost(myChar)
+            end
+
+            -- move ghost with WASD relative to camera yaw
+            if ghostRoot then
+                local moveDir = Vector3.new(
+                    (UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0),
+                    0,
+                    (UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
+                )
+                if moveDir.Magnitude > 0 then
+                    local _, camYaw, _ = cam.CFrame:ToEulerAnglesYXZ()
+                    local worldDir = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
+                    ghostRoot.CFrame = ghostRoot.CFrame + worldDir * GHOST_SPEED * dt
+                end
+                -- ghost faces camera direction
+                local _, camYaw, _ = cam.CFrame:ToEulerAnglesYXZ()
+                ghostRoot.CFrame = CFrame.new(ghostRoot.Position) * CFrame.Angles(0, camYaw, 0)
+            end
+
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
+
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then part.CanCollide = false end
@@ -308,7 +392,6 @@ do
 
                 local now = tick()
 
-                -- if we have an active latch, check if it has expired
                 if nearbyLatchRoot then
                     if (now - nearbyLatchTime) >= NEARBY_DURATION then
                         nearbyLatchRoot = nil
@@ -316,7 +399,6 @@ do
                     end
                 end
 
-                -- only look for a new nearby player if we're not already latched
                 if not nearbyLatchRoot then
                     local found = findNearbyPlayer(tgtRoot)
                     if found then
@@ -349,8 +431,10 @@ do
             cpEnabled = state
             if not cpEnabled then
                 stopConn()
+                destroyGhost()
                 nearbyLatchRoot = nil
                 nearbyLatchTime = 0
+                lastChar        = nil
                 return
             end
             if not selectedTarget then return end
