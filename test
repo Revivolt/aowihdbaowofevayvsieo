@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -266,65 +266,38 @@ do
     local nearbyLatchRoot  = nil
     local nearbyLatchTime  = 0
 
-    -- GHOST SYSTEM
-    local ghostChar = nil
-    local ghostConn = nil
-    local GHOST_OFFSET = 5
+    -- 👻 ghost vars
+    local ghostClone = nil
+    local GHOST_OFFSET = Vector3.new(5, 0, 0)
 
-    local function removeGhost()
-        if ghostConn then ghostConn:Disconnect() ghostConn = nil end
-        if ghostChar then ghostChar:Destroy() ghostChar = nil end
-    end
+    local function createGhost(char)
+        if ghostClone then ghostClone:Destroy() ghostClone = nil end
+        ghostClone = char:Clone()
+        ghostClone.Name = "GhostClone"
 
-    local function createGhost(targetRoot)
-        removeGhost()
-
-        local myChar = weldLocal.Character
-        if not myChar then return end
-
-        ghostChar = myChar:Clone()
-        ghostChar.Name = "GhostCharacter"
-
-        for _, v in ipairs(ghostChar:GetDescendants()) do
-            if v:IsA("Script") or v:IsA("LocalScript") then
-                v:Destroy()
-            end
-            if v:IsA("Humanoid") then
-                v.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-            end
+        for _, v in ipairs(ghostClone:GetDescendants()) do
             if v:IsA("BasePart") then
                 v.Transparency = 0.5
                 v.CanCollide = false
+            elseif v:IsA("Humanoid") then
+                v.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
             end
         end
 
-        ghostChar.Parent = workspace
+        ghostClone.Parent = workspace
+    end
 
-        local ghostRoot = ghostChar:FindFirstChild("HumanoidRootPart")
-        if not ghostRoot then return end
-
-        ghostRoot.CFrame = targetRoot.CFrame * CFrame.new(GHOST_OFFSET, 0, 0)
-
-        ghostConn = weldRun.Heartbeat:Connect(function()
-            if not cpEnabled or not ghostChar then return end
-
-            local cam = workspace.CurrentCamera
-            local moveDir = Vector3.new()
-
-            local UIS = game:GetService("UserInputService")
-
-            if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir += cam.CFrame.LookVector end
-            if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir -= cam.CFrame.LookVector end
-            if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir -= cam.CFrame.RightVector end
-            if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir += cam.CFrame.RightVector end
-
-            ghostRoot.CFrame = ghostRoot.CFrame + (moveDir * 1.5)
-        end)
+    local function removeGhost()
+        if ghostClone then
+            ghostClone:Destroy()
+            ghostClone = nil
+        end
     end
 
     local function stopConn()
         activeFlingCount = math.max(0, activeFlingCount - 1)
         if cpConn then cpConn:Disconnect() cpConn = nil end
+        removeGhost()
     end
 
     local function findNearbyPlayer(tgtRoot)
@@ -348,6 +321,12 @@ do
         nearbyLatchRoot = nil
         nearbyLatchTime = 0
         activeFlingCount = activeFlingCount + 1
+
+        -- 👻 create ghost when starting
+        local myChar = weldLocal.Character
+        if myChar then
+            createGhost(myChar)
+        end
 
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
@@ -392,10 +371,21 @@ do
                     offsetY    = HOVER_UP
                 end
 
+                -- 🧍 REAL BODY (unchanged)
                 myRoot.CFrame      = CFrame.new(anchorRoot.Position + Vector3.new(0, offsetY, 0))
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
                 myRoot.RotVelocity = Vector3.new(500, 500, 500)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", anchorRoot)
+
+                -- 👻 GHOST POSITION (5 studs from target)
+                if ghostClone then
+                    local ghostRoot = ghostClone:FindFirstChild("HumanoidRootPart")
+                    if ghostRoot then
+                        ghostRoot.CFrame = CFrame.new(
+                            tgtRoot.Position + GHOST_OFFSET
+                        )
+                    end
+                end
             end)
         end)
     end
@@ -405,24 +395,14 @@ do
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
-
             if not cpEnabled then
                 stopConn()
-                removeGhost()
                 nearbyLatchRoot = nil
                 nearbyLatchTime = 0
                 return
             end
-
             if not selectedTarget then return end
-
             startConn()
-
-            local tgtChar = selectedTarget.Character
-            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-            if tgtRoot then
-                createGhost(tgtRoot)
-            end
         end,
     })
 end
