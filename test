@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -259,7 +259,7 @@ do
     local cpConn        = nil
     local cpEnabled     = false
     local HOVER_UP      = -80
-    local CLOSE_DIST    = 50
+    local CLOSE_DIST    = 30
     local BELOW_OFF     = -1
     local NEARBY_DURATION = 0.5
 
