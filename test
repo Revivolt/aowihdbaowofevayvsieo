@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -263,42 +263,51 @@ do
     local BELOW_OFF       = -1
     local NEARBY_DURATION = 0.5
     local GHOST_SPEED     = 16
+    local GHOST_OFFSET    = 5   -- studs from target on spawn
 
     local nearbyLatchRoot = nil
     local nearbyLatchTime = 0
     local lastChar        = nil
 
-    local ghostChar  = nil
+    local ghostModel = nil
     local ghostRoot  = nil
+    local ghostHum   = nil
     local UIS        = game:GetService("UserInputService")
     local cam        = workspace.CurrentCamera
 
-    local function buildGhost(myChar)
-        if ghostChar then ghostChar:Destroy() end
-        local ghost = myChar:Clone()
-        ghost.Name = "__GhostChar__"
+    local function buildGhost(myChar, spawnCFrame)
+        if ghostModel then ghostModel:Destroy() end
 
+        local ghost = myChar:Clone()
+        ghost.Name  = "__GhostChar__"
+
+        -- remove scripts and animator, keep Humanoid
         for _, v in ipairs(ghost:GetDescendants()) do
-            if v:IsA("Script") or v:IsA("LocalScript")
-            or v:IsA("Animator") or v:IsA("Humanoid")
-            or v:IsA("Motor6D") then
+            if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("Animator") then
                 v:Destroy()
             end
         end
 
+        local gHum  = ghost:FindFirstChildOfClass("Humanoid")
         local gRoot = ghost:FindFirstChild("HumanoidRootPart")
-        if not gRoot then ghost:Destroy() return end
+        if not gRoot or not gHum then ghost:Destroy() return end
 
+        -- disable humanoid movement so it doesn't fight us
+        gHum.PlatformStand = true
+        gHum.WalkSpeed     = 0
+        gHum.JumpPower     = 0
+
+        -- style all parts
         gRoot.Anchored    = true
         gRoot.CanCollide  = false
         gRoot.Transparency = 1
 
         for _, part in ipairs(ghost:GetDescendants()) do
             if part:IsA("BasePart") and part ~= gRoot then
-                part.CanCollide  = false
+                part.CanCollide   = false
                 part.Transparency = 0.5
-                part.CastShadow  = false
-                part.Anchored    = false
+                part.CastShadow   = false
+                part.Anchored     = false
                 local w  = Instance.new("WeldConstraint")
                 w.Part0  = gRoot
                 w.Part1  = part
@@ -306,18 +315,18 @@ do
             end
         end
 
-        ghost.Parent = workspace
-        ghostChar = ghost
-        ghostRoot = gRoot
+        ghost.Parent   = workspace
+        ghostModel     = ghost
+        ghostRoot      = gRoot
+        ghostHum       = gHum
+        ghostRoot.CFrame = spawnCFrame
 
-        local realRoot = myChar:FindFirstChild("HumanoidRootPart")
-        if realRoot then ghostRoot.CFrame = realRoot.CFrame end
-
-        cam.CameraSubject = ghostRoot
+        -- Humanoid is required for CameraSubject to actually work
+        cam.CameraSubject = ghostHum
     end
 
     local function destroyGhost()
-        if ghostChar then ghostChar:Destroy() ghostChar = nil ghostRoot = nil end
+        if ghostModel then ghostModel:Destroy() ghostModel = nil ghostRoot = nil ghostHum = nil end
         local myHum = weldLocal.Character and weldLocal.Character:FindFirstChildOfClass("Humanoid")
         if myHum then cam.CameraSubject = myHum end
     end
@@ -358,10 +367,15 @@ do
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myChar or not myRoot then return end
 
-            -- rebuild ghost if character changed
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+
+            -- rebuild ghost if character changed, spawn it 5 studs from target
             if myChar ~= lastChar then
                 lastChar = myChar
-                buildGhost(myChar)
+                local spawnCF = tgtRoot.CFrame * CFrame.new(GHOST_OFFSET, 0, 0)
+                buildGhost(myChar, spawnCF)
             end
 
             -- move ghost with WASD relative to camera yaw
@@ -371,20 +385,17 @@ do
                     0,
                     (UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
                 )
-                if moveDir.Magnitude > 0 then
-                    local _, camYaw, _ = cam.CFrame:ToEulerAnglesYXZ()
-                    local worldDir = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
-                    ghostRoot.CFrame = ghostRoot.CFrame + worldDir * GHOST_SPEED * dt
-                end
-                -- ghost faces camera direction
                 local _, camYaw, _ = cam.CFrame:ToEulerAnglesYXZ()
-                ghostRoot.CFrame = CFrame.new(ghostRoot.Position) * CFrame.Angles(0, camYaw, 0)
+                if moveDir.Magnitude > 0 then
+                    local worldDir = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
+                    ghostRoot.CFrame = CFrame.new(ghostRoot.Position + worldDir * GHOST_SPEED * dt)
+                        * CFrame.Angles(0, camYaw, 0)
+                else
+                    ghostRoot.CFrame = CFrame.new(ghostRoot.Position) * CFrame.Angles(0, camYaw, 0)
+                end
             end
 
-            local tgtChar = selectedTarget.Character
-            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-            if not tgtChar or not tgtRoot then return end
-
+            -- real body logic
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then part.CanCollide = false end
