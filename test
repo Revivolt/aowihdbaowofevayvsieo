@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,6 +254,111 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
+-- c
+do
+    local cpConn        = nil
+    local cpEnabled     = false
+    local HOVER_UP      = 5
+    local CLOSE_DIST    = 10
+    local BELOW_OFF     = -1
+    local NEARBY_DURATION = 0.5
+
+    local nearbyLatchRoot  = nil
+    local nearbyLatchTime  = 0
+
+    local function stopConn()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+    end
+
+    local function findNearbyPlayer(tgtRoot)
+        local closest, closestDist = nil, CLOSE_DIST
+        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+            if plr == weldLocal or plr == selectedTarget then continue end
+            local char = plr.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then continue end
+            local dist = (root.Position - tgtRoot.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closest = root
+            end
+        end
+        return closest
+    end
+
+    local function startConn()
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+        nearbyLatchRoot = nil
+        nearbyLatchTime = 0
+        activeFlingCount = activeFlingCount + 1
+        cpConn = weldRun.Heartbeat:Connect(function()
+            if not cpEnabled then return end
+            if not selectedTarget then return end
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+
+                local now = tick()
+
+                -- if we have an active latch, check if it has expired
+                if nearbyLatchRoot then
+                    if (now - nearbyLatchTime) >= NEARBY_DURATION then
+                        nearbyLatchRoot = nil
+                        nearbyLatchTime = 0
+                    end
+                end
+
+                -- only look for a new nearby player if we're not already latched
+                if not nearbyLatchRoot then
+                    local found = findNearbyPlayer(tgtRoot)
+                    if found then
+                        nearbyLatchRoot = found
+                        nearbyLatchTime = now
+                    end
+                end
+
+                local anchorRoot, offsetY
+                if nearbyLatchRoot then
+                    anchorRoot = nearbyLatchRoot
+                    offsetY    = BELOW_OFF
+                else
+                    anchorRoot = tgtRoot
+                    offsetY    = HOVER_UP
+                end
+
+                myRoot.CFrame      = CFrame.new(anchorRoot.Position + Vector3.new(0, offsetY, 0))
+                myRoot.Velocity    = Vector3.new(500, 500, 500)
+                myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", anchorRoot)
+            end)
+        end)
+    end
+
+    MainTab:CreateToggle({
+        Name         = "test",
+        CurrentValue = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                stopConn()
+                nearbyLatchRoot = nil
+                nearbyLatchTime = 0
+                return
+            end
+            if not selectedTarget then return end
+            startConn()
+        end,
+    })
+end
+
 -- r
 do
     local cpConn    = nil
@@ -268,7 +373,7 @@ do
     local SPIN_SPEED  = 3
 
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Taunting Laugh",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
@@ -285,7 +390,7 @@ do
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     activeFlingCount = math.max(0, activeFlingCount - 1)
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Taunting Laugh")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -998,71 +1103,6 @@ do
                         task.wait(0.3)
                     end
                 end
-            end)
-        end,
-    })
-end
-
--- Fling Aura
-do
-    local cpConn    = nil
-    local cpEnabled = false
-    local cpTrack   = nil
-    local lastChar  = nil
-
-    local cpNoCollide = true
-    local cpFreezeAt  = 0
-    local cpAnimId    = 0
-    local SPIN_RADIUS = 15
-    local SPIN_SPEED  = 20
-
-    MainTab:CreateToggle({
-        Name         = "Fling Aura",
-        CurrentValue = false,
-        Callback = function(state)
-            cpEnabled = state
-            if not cpEnabled then
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-                cpConn = nil cpTrack = nil lastChar = nil
-                return
-            end
-            if not selectedTarget then return end
-            activeFlingCount = activeFlingCount + 1
-            cpConn = weldRun.Heartbeat:Connect(function()
-                if not cpEnabled then return end
-                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
-                    cpEnabled = false
-                    activeFlingCount = math.max(0, activeFlingCount - 1)
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Fling Aura")
-                    cpConn = nil cpTrack = nil lastChar = nil
-                    return
-                end
-                local myChar = weldLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if not myChar or not myRoot then return end
-                local tgtChar = selectedTarget.Character
-                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not tgtChar or not tgtRoot then return end
-                if myChar ~= lastChar then
-                    lastChar = myChar
-                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
-                end
-                pcall(function()
-                    for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
-                    end
-                    local angle    = tick() * SPIN_SPEED
-                    local tgtPos   = tgtRoot.Position
-                    local worldPos = tgtPos + Vector3.new(
-                        math.cos(angle) * SPIN_RADIUS, 0, math.sin(angle) * SPIN_RADIUS)
-                    local lookAt = Vector3.new(tgtPos.X, worldPos.Y, tgtPos.Z)
-                    myRoot.CFrame      = CFrame.new(worldPos, lookAt)
-                    myRoot.Velocity    = Vector3.new(500, 500, 500)
-                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
-                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-                end)
             end)
         end,
     })
