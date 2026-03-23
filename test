@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2157,9 +2157,8 @@ NaNTab:CreateButton({
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
-        local nan           = 0 / 0
-        local nanVec        = Vector3.new(0, 9999, 0)
-        local BELOW_OFFSET  = -5  -- how many studs below the target to start from
+        local SPEED         = 9999
+        local BELOW_OFFSET  = -5
         local DURATION      = 1.5
         myHum.PlatformStand = true
         local startTime = tick()
@@ -2177,19 +2176,18 @@ NaNTab:CreateButton({
                     myRoot.CFrame                     = savedCF
                     myRoot.Velocity                   = savedVel
                     myRoot.RotVelocity                = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
                 return
             end
-            -- Lerp from below the target upward to the target's position
-            local alpha      = elapsed / DURATION
-            local belowCF    = tgtRoot.CFrame * CFrame.new(0, BELOW_OFFSET, 0)
-            local currentCF  = belowCF:Lerp(tgtRoot.CFrame, alpha)
+            -- Lerp CFrame from below upward toward the target
+            local alpha     = elapsed / DURATION
+            local belowCF   = tgtRoot.CFrame * CFrame.new(0, BELOW_OFFSET, 0)
+            local currentCF = belowCF:Lerp(tgtRoot.CFrame, alpha)
+            -- Direction vector from current position toward target
+            local direction = (tgtRoot.Position - myRoot.Position).Unit
             myRoot.CFrame                  = currentCF
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+            myRoot.AssemblyLinearVelocity  = direction * SPEED
+            myRoot.AssemblyAngularVelocity = Vector3.zero
         end)
     end,
 })
