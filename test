@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -256,31 +256,35 @@ end
 
 -- c
 do
-    local cpConn           = nil
-    local cpEnabled        = false
-    local HOVER_UP         = -80
-    local CLOSE_DIST       = 25
-    local BELOW_OFF        = -1
-    local NEARBY_DURATION  = 0.5
+    local cpConn        = nil
+    local cpEnabled     = false
+    local HOVER_UP      = -80
+    local CLOSE_DIST    = 25
+    local BELOW_OFF     = -1
+    local NEARBY_DURATION = 0.5
     local nearbyLatchRoot  = nil
     local nearbyLatchTime  = 0
 
     -- Ghost clone state
-    local ghostModel       = nil
-    local ghostRoot        = nil
-    local origCamSubject   = nil
-    local GHOST_BEHIND     = 5  -- studs behind target
+    local ghostModel     = nil
+    local ghostRoot      = nil
+    local ghostConn      = nil
+    local GHOST_BEHIND   = 5  -- studs behind the target
+
+    local function stopConn()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+    end
 
     local function destroyGhost()
-        if ghostModel then
-            ghostModel:Destroy()
-            ghostModel = nil
-            ghostRoot  = nil
-        end
-        local cam = workspace.CurrentCamera
-        if cam and origCamSubject then
-            cam.CameraSubject = origCamSubject
-            origCamSubject = nil
+        if ghostConn then ghostConn:Disconnect() ghostConn = nil end
+        if ghostModel then ghostModel:Destroy() ghostModel = nil end
+        ghostRoot = nil
+        -- Restore camera subject back to local character
+        local myChar = weldLocal.Character
+        local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+        if hum then
+            workspace.CurrentCamera.CameraSubject = hum
         end
     end
 
@@ -289,59 +293,57 @@ do
         local myChar = weldLocal.Character
         if not myChar then return end
 
+        -- Deep-clone the character
         ghostModel = myChar:Clone()
-        ghostModel.Name = "GhostClone_CP"
+        ghostModel.Name = "GhostClone_" .. weldLocal.Name
 
-        -- Strip all scripts so it doesn't interfere
-        for _, obj in ipairs(ghostModel:GetDescendants()) do
-            if obj:IsA("BaseScript") or obj:IsA("ModuleScript") then
-                obj:Destroy()
+        -- Strip out scripts and humanoid so it doesn't interfere
+        for _, v in ipairs(ghostModel:GetDescendants()) do
+            if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("Humanoid") then
+                v:Destroy()
             end
         end
 
-        ghostRoot = ghostModel:FindFirstChild("HumanoidRootPart")
-        if not ghostRoot then
-            ghostModel:Destroy()
-            ghostModel = nil
-            return
-        end
-
-        -- Remove Motor6Ds (they'll fight with WeldConstraints)
-        for _, obj in ipairs(ghostModel:GetDescendants()) do
-            if obj:IsA("Motor6D") then obj:Destroy() end
-        end
-
-        -- Weld all parts to root so pose is frozen, make them ghostly
+        -- Anchor + ghost-ify every part
         for _, part in ipairs(ghostModel:GetDescendants()) do
             if part:IsA("BasePart") then
+                part.Anchored    = true
                 part.CanCollide  = false
-                part.Anchored    = false
-                part.Transparency = (part == ghostRoot) and 1 or 0.6
-                if part ~= ghostRoot then
-                    local wc  = Instance.new("WeldConstraint")
-                    wc.Part0  = ghostRoot
-                    wc.Part1  = part
-                    wc.Parent = ghostRoot
-                end
+                part.Massless    = true
+                part.Transparency = math.min(1, part.Transparency + 0.45)
+                -- Give it a subtle blue tint so it reads as a ghost
+                part.Color = Color3.fromRGB(180, 210, 255)
             end
         end
 
-        ghostRoot.Anchored = true
-        ghostModel.Parent  = workspace
+        ghostModel.Parent = workspace
+        ghostRoot = ghostModel:FindFirstChild("HumanoidRootPart")
 
-        -- Point camera at the ghost so you can look around freely near the target
-        local cam      = workspace.CurrentCamera
-        local humanoid = ghostModel:FindFirstChildOfClass("Humanoid")
-        if cam and humanoid then
-            origCamSubject    = cam.CameraSubject
-            cam.CameraSubject = humanoid
+        -- Redirect camera to follow the ghost
+        if ghostRoot then
+            workspace.CurrentCamera.CameraSubject = ghostRoot
         end
-    end
 
-    local function stopConn()
-        activeFlingCount = math.max(0, activeFlingCount - 1)
-        if cpConn then cpConn:Disconnect() cpConn = nil end
-        destroyGhost()
+        -- Update ghost position each heartbeat
+        ghostConn = weldRun.Heartbeat:Connect(function()
+            if not cpEnabled or not ghostRoot then return end
+            local tgtChar = selectedTarget and selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtRoot then return end
+
+            -- 5 studs behind = opposite of the target's look direction
+            local behindCF = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+
+            -- Move every part of the ghost relative to where HRP used to be vs where it is now
+            local oldHRPCF = ghostRoot.CFrame
+            local delta    = behindCF * oldHRPCF:Inverse()
+            for _, part in ipairs(ghostModel:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CFrame = delta * part.CFrame
+                end
+            end
+            ghostRoot.CFrame = behindCF
+        end)
     end
 
     local function findNearbyPlayer(tgtRoot)
@@ -354,7 +356,7 @@ do
             local dist = (root.Position - tgtRoot.Position).Magnitude
             if dist < closestDist then
                 closestDist = dist
-                closest     = root
+                closest = root
             end
         end
         return closest
@@ -365,7 +367,6 @@ do
         nearbyLatchRoot = nil
         nearbyLatchTime = 0
         activeFlingCount = activeFlingCount + 1
-        createGhost()
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
             if not selectedTarget then return end
@@ -405,11 +406,6 @@ do
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
                 myRoot.RotVelocity = Vector3.new(500, 500, 500)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", anchorRoot)
-
-                -- Ghost clone: 5 studs behind the target player, matching their orientation
-                if ghostRoot then
-                    ghostRoot.CFrame = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
-                end
             end)
         end)
     end
@@ -421,12 +417,14 @@ do
             cpEnabled = state
             if not cpEnabled then
                 stopConn()
+                destroyGhost()
                 nearbyLatchRoot = nil
                 nearbyLatchTime = 0
                 return
             end
             if not selectedTarget then return end
             startConn()
+            createGhost()  -- spawn ghost and hand off camera
         end,
     })
 end
