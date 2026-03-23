@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -263,7 +263,7 @@ do
 
     local cpNoCollide = true
     local cpFreezeAt  = 0
-    local cpAnimId    = 95106819404741
+    local cpAnimId    = 89619142317112
     local SPIN_RADIUS = 8
     local SPIN_SPEED  = 3
 
