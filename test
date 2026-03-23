@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2158,8 +2158,8 @@ NaNTab:CreateButton({
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
         local nan           = 0 / 0
-        local nanVec        = Vector3.new(nan, nan, nan)
-        local BELOW_OFFSET  = -3  -- how many studs below the target to start from
+        local nanVec        = Vector3.new(0, nan, 0)
+        local BELOW_OFFSET  = -5  -- how many studs below the target to start from
         local DURATION      = 1.5
         myHum.PlatformStand = true
         local startTime = tick()
