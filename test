@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -269,7 +269,12 @@ do
     local camPart       = nil
     local camHumanoid   = nil
     local ghostConn     = nil
-    local GHOST_BEHIND  = 5
+    local inputConn     = nil
+    local inputEndConn  = nil
+    local GHOST_SPEED   = 20
+
+    local ghostControl  = {F=0, B=0, R=0, L=0, U=0, D=0}
+    local UIS           = game:GetService("UserInputService")
 
     local function stopConn()
         activeFlingCount = math.max(0, activeFlingCount - 1)
@@ -277,15 +282,15 @@ do
     end
 
     local function destroyGhost()
-        if ghostConn then ghostConn:Disconnect() ghostConn = nil end
-        if camModel and camModel.Parent then
-            camModel:Destroy()
-        end
+        if ghostConn    then ghostConn:Disconnect()    ghostConn    = nil end
+        if inputConn    then inputConn:Disconnect()    inputConn    = nil end
+        if inputEndConn then inputEndConn:Disconnect() inputEndConn = nil end
+        if camModel and camModel.Parent then camModel:Destroy() end
         camModel    = nil
         camPart     = nil
         camHumanoid = nil
+        ghostControl = {F=0, B=0, R=0, L=0, U=0, D=0}
 
-        -- Restore camera back to real character humanoid
         pcall(function()
             local myChar = weldLocal and weldLocal.Character
             local hum = myChar and myChar:FindFirstChildWhichIsA("Humanoid")
@@ -300,45 +305,108 @@ do
 
         local myChar = weldLocal and weldLocal.Character
         if not myChar then return end
+        local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+        if not myHRP then return end
 
         local tgtChar = selectedTarget and selectedTarget.Character
         local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
-        -- Mirror exactly how the invisible script builds its cammodel
+        -- Build cam model (same pattern as invisible script)
         camModel    = Instance.new("Model")
         camPart     = Instance.new("Part")
         camHumanoid = Instance.new("Humanoid")
 
-        camPart.Name        = "HumanoidRootPart"  -- must be named this
-        camPart.Size        = Vector3.new(2, 2, 1)
-        camPart.Transparency = 0.5
-        camPart.BrickColor  = BrickColor.new("Cyan")
-        camPart.Material    = Enum.Material.ForceField
-        camPart.CanCollide  = false
-        camPart.Anchored    = true  -- we drive it manually, no BodyVelocity needed
-        camPart.CFrame      = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
-        camPart.Parent      = camModel
+        camPart.Name         = "HumanoidRootPart"
+        camPart.Size         = Vector3.new(2, 2, 1)
+        camPart.Transparency = 1        -- invisible anchor, body parts drawn on top
+        camPart.CanCollide   = false
+        camPart.Anchored     = false    -- NOT anchored so physics drive it
+        camPart.CFrame       = tgtRoot.CFrame * CFrame.new(0, 0, 5)
+        camPart.Parent       = camModel
 
         camHumanoid.MaxHealth = 0
         camHumanoid.Health    = 0
         camHumanoid.Parent    = camModel
 
-        camModel.Parent = workspace
+        -- BodyVelocity + BodyGyro so WASD moves the ghost (same as invisible script)
+        local bv = Instance.new("BodyVelocity")
+        local bg = Instance.new("BodyGyro")
+        bv.MaxForce  = Vector3.new(9e4, 9e4, 9e4)
+        bv.Velocity  = Vector3.new(0, 0, 0)
+        bg.CFrame    = camPart.CFrame
+        bg.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
+        bg.P         = 9e4
+        bv.Parent    = camPart
+        bg.Parent    = camPart
 
-        -- This works because camHumanoid is a real Humanoid inside a model
-        -- with a part named HumanoidRootPart — identical to the invisible script
+        -- Clone all visual body parts into camModel
+        local partMap = {}  -- maps ghost part -> real part name for pose mirroring
+        for _, orig in ipairs(myChar:GetDescendants()) do
+            if orig:IsA("BasePart") and orig.Name ~= "HumanoidRootPart" then
+                local copy = orig:Clone()
+                -- Strip any scripts/welds that came with the clone
+                for _, v in ipairs(copy:GetDescendants()) do
+                    if v:IsA("Script") or v:IsA("LocalScript")
+                    or v:IsA("Motor6D") or v:IsA("Weld") then
+                        v:Destroy()
+                    end
+                end
+                copy.Anchored    = true
+                copy.CanCollide  = false
+                copy.CanTouch    = false
+                copy.CastShadow  = false
+                copy.Transparency = math.clamp(orig.Transparency, 0, 0.4)
+                -- position relative to ghost HRP on spawn
+                local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
+                copy.CFrame = camPart.CFrame * relCF
+                copy.Parent = camModel
+                table.insert(partMap, {ghost = copy, name = orig.Name})
+            end
+        end
+
+        camModel.Parent = workspace
         workspace.CurrentCamera.CameraSubject = camHumanoid
 
-        -- Drive the ghost part to always sit 5 studs behind the target
+        -- WASD input for ghost movement
+        local keyMap = {
+            w = "F", s = "B", d = "R", a = "L",
+            space = "U", leftcontrol = "D"
+        }
+        inputConn = UIS.InputBegan:Connect(function(inp, gp)
+            if gp then return end
+            local k = inp.KeyCode.Name:lower()
+            if keyMap[k] then ghostControl[keyMap[k]] = 1 end
+        end)
+        inputEndConn = UIS.InputEnded:Connect(function(inp, gp)
+            if gp then return end
+            local k = inp.KeyCode.Name:lower()
+            if keyMap[k] then ghostControl[keyMap[k]] = 0 end
+        end)
+
+        -- Drive ghost each frame
         ghostConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
-            local tChar = selectedTarget and selectedTarget.Character
-            local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
-            if not tRoot then return end
             if not camPart or not camPart.Parent then return end
 
-            camPart.CFrame = tRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+            local cam = workspace.CurrentCamera
+            -- Move ghost with WASD relative to camera direction
+            bv.Velocity = (cam.CoordinateFrame.LookVector  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
+                        + (cam.CoordinateFrame.RightVector  * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
+                        + (cam.CoordinateFrame.UpVector     * ((ghostControl.U - ghostControl.D) * GHOST_SPEED))
+            bg.CFrame = cam.CoordinateFrame
+
+            -- Mirror real character's current pose onto ghost body parts
+            local realHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if realHRP then
+                for _, entry in ipairs(partMap) do
+                    local realPart = myChar:FindFirstChild(entry.name)
+                    if realPart and entry.ghost and entry.ghost.Parent then
+                        local relCF = realHRP.CFrame:ToObjectSpace(realPart.CFrame)
+                        entry.ghost.CFrame = camPart.CFrame * relCF
+                    end
+                end
+            end
         end)
     end
 
