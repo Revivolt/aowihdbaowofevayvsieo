@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -267,9 +267,14 @@ do
 
     local ghostModel    = nil
     local ghostRoot     = nil
-    local ghostHum      = nil
     local ghostConn     = nil
+    local mouseConn     = nil
     local GHOST_BEHIND  = 5
+    local CAM_DIST      = 12  -- how far back the camera sits from the ghost
+    local camPitch      = 0
+    local camYaw        = 0
+
+    local UIS = game:GetService("UserInputService")
 
     local function stopConn()
         activeFlingCount = math.max(0, activeFlingCount - 1)
@@ -277,17 +282,21 @@ do
     end
 
     local function destroyGhost()
+        if mouseConn then mouseConn:Disconnect() mouseConn = nil end
         if ghostConn then ghostConn:Disconnect() ghostConn = nil end
         if ghostModel and ghostModel.Parent then ghostModel:Destroy() end
         ghostModel = nil
         ghostRoot  = nil
-        ghostHum   = nil
 
-        -- Restore camera to real character
+        -- Restore camera to normal
         pcall(function()
-            local myChar = weldLocal.Character
+            local cam = workspace.CurrentCamera
+            if cam then
+                cam.CameraType = Enum.CameraType.Custom
+            end
+            local myChar = weldLocal and weldLocal.Character
             local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
-            if hum then
+            if hum and workspace.CurrentCamera then
                 workspace.CurrentCamera.CameraSubject = hum
             end
         end)
@@ -303,62 +312,62 @@ do
         local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then warn("createGhost: no target root") return end
 
-        -- Build a fresh model to hold everything
+        -- Build ghost model from scratch (no Clone, no Humanoid)
         ghostModel = Instance.new("Model")
         ghostModel.Name = "GhostClone"
 
-        -- Invisible anchor part that drives positions
         ghostRoot = Instance.new("Part")
-        ghostRoot.Name = "HumanoidRootPart"
-        ghostRoot.Size = Vector3.new(2, 2, 1)
+        ghostRoot.Name        = "HumanoidRootPart"
+        ghostRoot.Size        = Vector3.new(2, 2, 1)
         ghostRoot.Transparency = 1
-        ghostRoot.Anchored = true
-        ghostRoot.CanCollide = false
-        ghostRoot.CanTouch = false
-        ghostRoot.CastShadow = false
-        ghostRoot.CFrame = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
-        ghostRoot.Parent = ghostModel
-
-        -- Humanoid REQUIRED so CameraSubject actually works
-        ghostHum = Instance.new("Humanoid")
-        ghostHum.MaxHealth = 0
-        ghostHum.Health = 0
-        ghostHum.Parent = ghostModel
+        ghostRoot.Anchored    = true
+        ghostRoot.CanCollide  = false
+        ghostRoot.CanTouch    = false
+        ghostRoot.CastShadow  = false
+        ghostRoot.CFrame      = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+        ghostRoot.Parent      = ghostModel
 
         ghostModel.PrimaryPart = ghostRoot
-        ghostModel.Parent = workspace
+        ghostModel.Parent      = workspace
 
-        -- Try to copy character appearance on top
+        -- Copy visual parts relative to real HRP
         pcall(function()
             local myHRP = myChar:FindFirstChild("HumanoidRootPart")
             if not myHRP then return end
-
             for _, orig in ipairs(myChar:GetDescendants()) do
-                -- Only copy visual BaseParts (skip HRP itself, we have our anchor)
                 if orig:IsA("BasePart") and orig.Name ~= "HumanoidRootPart" then
                     local copy = orig:Clone()
-                    copy.Anchored    = true
-                    copy.CanCollide  = false
-                    copy.CanTouch    = false
-                    copy.CastShadow  = false
-                    -- Ghost look: semi-transparent blue tint, capped at 0.7
+                    copy.Anchored     = true
+                    copy.CanCollide   = false
+                    copy.CanTouch     = false
+                    copy.CastShadow   = false
                     copy.Transparency = math.clamp(orig.Transparency + 0.4, 0, 0.7)
-                    copy.Color = Color3.fromRGB(180, 210, 255)
-                    -- Position relative to ghost anchor
+                    copy.Color        = Color3.fromRGB(180, 210, 255)
+                    -- Preserve relative offset from real HRP
                     local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
                     copy.CFrame = ghostRoot.CFrame * relCF
-                    copy.Parent = ghostModel
-                elseif orig:IsA("Accessory") or orig:IsA("SpecialMesh") then
-                    local copy = orig:Clone()
                     copy.Parent = ghostModel
                 end
             end
         end)
 
-        -- Hand camera to ghost
-        workspace.CurrentCamera.CameraSubject = ghostHum
+        -- Seed yaw from target's facing so camera starts sensibly oriented
+        local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+        camYaw   = math.deg(tgtYaw)
+        camPitch = -15  -- slight downward angle
 
-        -- Drive the ghost every frame
+        -- Track mouse movement for free look (no CameraSubject change needed)
+        mouseConn = UIS.InputChanged:Connect(function(input, processed)
+            if input.UserInputType == Enum.UserInputType.MouseMovement then
+                camYaw   = camYaw   - input.Delta.X * 0.3
+                camPitch = math.clamp(camPitch - input.Delta.Y * 0.3, -80, 60)
+            end
+        end)
+
+        -- Switch camera to scriptable so WE drive it, not Roblox
+        -- This does NOT touch CameraSubject, so character controller keeps working
+        workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+
         ghostConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
             if not ghostRoot or not ghostRoot.Parent then return end
@@ -366,16 +375,27 @@ do
             local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
             if not tRoot then return end
 
-            local newCF  = tRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
-            local delta  = newCF * ghostRoot.CFrame:Inverse()
+            -- Move ghost to 5 studs behind target
+            local newCF = tRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+            local delta = newCF * ghostRoot.CFrame:Inverse()
 
-            -- Move every visual part by the same delta
             for _, part in ipairs(ghostModel:GetDescendants()) do
                 if part:IsA("BasePart") and part ~= ghostRoot then
                     part.CFrame = delta * part.CFrame
                 end
             end
             ghostRoot.CFrame = newCF
+
+            -- Drive camera to orbit the ghost using mouse-tracked angles
+            local cam = workspace.CurrentCamera
+            if cam then
+                local origin = ghostRoot.Position
+                local camCF  = CFrame.new(origin)
+                    * CFrame.Angles(0, math.rad(camYaw), 0)
+                    * CFrame.Angles(math.rad(camPitch), 0, 0)
+                    * CFrame.new(0, 0, CAM_DIST)
+                cam.CFrame = camCF
+            end
         end)
     end
 
