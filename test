@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -263,7 +263,7 @@ do
     local BELOW_OFF       = -1
     local NEARBY_DURATION = 0.5
     local GHOST_SPEED     = 16
-    local GHOST_OFFSET    = 5   -- studs from target on spawn
+    local GHOST_OFFSET    = 5
 
     local nearbyLatchRoot = nil
     local nearbyLatchTime = 0
@@ -275,13 +275,12 @@ do
     local UIS        = game:GetService("UserInputService")
     local cam        = workspace.CurrentCamera
 
-    local function buildGhost(myChar, spawnCFrame)
+    local function buildGhost(myChar, spawnCF)
         if ghostModel then ghostModel:Destroy() end
 
         local ghost = myChar:Clone()
         ghost.Name  = "__GhostChar__"
 
-        -- remove scripts and animator, keep Humanoid
         for _, v in ipairs(ghost:GetDescendants()) do
             if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("Animator") then
                 v:Destroy()
@@ -292,15 +291,16 @@ do
         local gRoot = ghost:FindFirstChild("HumanoidRootPart")
         if not gRoot or not gHum then ghost:Destroy() return end
 
-        -- disable humanoid movement so it doesn't fight us
-        gHum.PlatformStand = true
-        gHum.WalkSpeed     = 0
-        gHum.JumpPower     = 0
+        gHum.PlatformStand  = true
+        gHum.WalkSpeed      = 0
+        gHum.JumpPower      = 0
+        gHum.Health         = gHum.MaxHealth
+        gHum.AutoRotate     = false
 
-        -- style all parts
-        gRoot.Anchored    = true
-        gRoot.CanCollide  = false
-        gRoot.Transparency = 1
+        gRoot.Anchored      = true
+        gRoot.CanCollide    = false
+        gRoot.Transparency  = 1
+        gRoot.CFrame        = spawnCF
 
         for _, part in ipairs(ghost:GetDescendants()) do
             if part:IsA("BasePart") and part ~= gRoot then
@@ -315,18 +315,15 @@ do
             end
         end
 
-        ghost.Parent   = workspace
-        ghostModel     = ghost
-        ghostRoot      = gRoot
-        ghostHum       = gHum
-        ghostRoot.CFrame = spawnCFrame
-
-        -- Humanoid is required for CameraSubject to actually work
-        cam.CameraSubject = ghostHum
+        ghost.Parent = workspace
+        ghostModel   = ghost
+        ghostRoot    = gRoot
+        ghostHum     = gHum
     end
 
     local function destroyGhost()
         if ghostModel then ghostModel:Destroy() ghostModel = nil ghostRoot = nil ghostHum = nil end
+        cam.CameraType = Enum.CameraType.Custom
         local myHum = weldLocal.Character and weldLocal.Character:FindFirstChildOfClass("Humanoid")
         if myHum then cam.CameraSubject = myHum end
     end
@@ -371,15 +368,19 @@ do
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- rebuild ghost if character changed, spawn it 5 studs from target
+            -- rebuild ghost if character changed
             if myChar ~= lastChar then
                 lastChar = myChar
                 local spawnCF = tgtRoot.CFrame * CFrame.new(GHOST_OFFSET, 0, 0)
                 buildGhost(myChar, spawnCF)
             end
 
-            -- move ghost with WASD relative to camera yaw
-            if ghostRoot then
+            -- force camera onto ghost every frame so game scripts can't steal it back
+            if ghostRoot and ghostHum then
+                cam.CameraType    = Enum.CameraType.Custom
+                cam.CameraSubject = ghostHum
+
+                -- WASD movement relative to camera yaw
                 local moveDir = Vector3.new(
                     (UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0),
                     0,
