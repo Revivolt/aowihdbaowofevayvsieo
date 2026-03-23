@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2139,7 +2139,6 @@ NaNTab:CreateButton({
         nanCounter = nanCounter + 1
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
-
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
@@ -2150,29 +2149,42 @@ NaNTab:CreateButton({
             end
         end
         if not target or not target.Character then return end
-
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
-        local DIVE_HEIGHT   = 2.5
-        local HIT_THRESHOLD = 3  -- studs away from target to consider "arrived"
+        local DIVE_HEIGHT    = 2.5
+        local DIVE_DURATION  = 0.3   -- short, -9999 Y gets there almost instantly
 
+        local savedCF       = myRoot.CFrame
+        local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
-        local nan    = 0/0
-        local nanVec = Vector3.new(0, -9999, 0)
+        local nanVec        = Vector3.new(0, -9999, 0)
 
         myHum.PlatformStand = true
 
+        local startTime  = tick()
         local teleported = false
-        local diving     = true
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
 
-            -- First frame: teleport above target
+            if tick() - startTime >= DIVE_DURATION then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    myHum.PlatformStand               = savedPlatform
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.RotVelocity                = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+
             if not teleported then
                 myRoot.CFrame                  = tgtRoot.CFrame + Vector3.new(0, DIVE_HEIGHT, 0)
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
@@ -2181,31 +2193,20 @@ NaNTab:CreateButton({
                 return
             end
 
-            if diving then
-                local dist = (myRoot.Position - tgtRoot.Position).Magnitude
-                if dist <= HIT_THRESHOLD then
-                    -- Reached the target, stop diving and hand back to normal follow
-                    diving = false
-                    myHum.PlatformStand            = savedPlatform
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                    nanConn:Disconnect()
-                    nanConn = nil
-                    return
-                end
+            -- Track target XZ while slamming down on Y
+            local tgtPos = tgtRoot.Position
+            local myPos  = myRoot.Position
+            local xzDiff = Vector3.new(tgtPos.X - myPos.X, 0, tgtPos.Z - myPos.Z)
+            local trackVec = Vector3.new(
+                xzDiff.Magnitude > 0 and xzDiff.Unit.X * 9999 or 0,
+                -9999,
+                xzDiff.Magnitude > 0 and xzDiff.Unit.Z * 9999 or 0
+            )
 
-                -- Track target's XZ while diving down so we don't miss if they move
-                myRoot.CFrame = CFrame.new(
-                    tgtRoot.Position.X,
-                    myRoot.Position.Y,
-                    tgtRoot.Position.Z
-                )
-                myRoot.AssemblyLinearVelocity  = nanVec
-                myRoot.AssemblyAngularVelocity = nanVec
-                pcall(function() myHum:Move(nanVec) end)
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-            end
+            myRoot.AssemblyLinearVelocity  = trackVec
+            myRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(trackVec) end)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
     end,
 })
