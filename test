@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -313,7 +313,7 @@ do
         if not tgtRoot then return end
 
         -- Build cam model (same pattern as invisible script)
-        camModel    = Instance.new("Model")
+        camModel    = Instance.new("Goober")
         camPart     = Instance.new("Part")
         camHumanoid = Instance.new("Humanoid")
 
@@ -356,7 +356,7 @@ do
                 copy.CanCollide  = false
                 copy.CanTouch    = false
                 copy.CastShadow  = false
-                copy.Transparency = math.clamp(orig.Transparency + 0.4, 0, 0.7)
+                copy.Transparency = math.clamp(orig.Transparency + 0.1, 0, 0.2)
                 copy.Color = Color3.fromRGB(180, 210, 255)
                 local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
                 copy.CFrame = camPart.CFrame * relCF
