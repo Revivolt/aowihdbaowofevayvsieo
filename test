@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -256,83 +256,85 @@ end
 
 -- c
 do
-    local cpConn        = nil
-    local cpEnabled     = false
-    local HOVER_UP      = -80
-    local CLOSE_DIST    = 25
-    local BELOW_OFF     = -1
-    local NEARBY_DURATION = 0.5
+    local cpConn           = nil
+    local cpEnabled        = false
+    local HOVER_UP         = -80
+    local CLOSE_DIST       = 25
+    local BELOW_OFF        = -1
+    local NEARBY_DURATION  = 0.5
     local nearbyLatchRoot  = nil
     local nearbyLatchTime  = 0
 
     -- Ghost clone state
-    local ghostClone    = nil
-    local GHOST_BEHIND  = 5   -- studs behind the target
+    local ghostModel       = nil
+    local ghostRoot        = nil
+    local origCamSubject   = nil
+    local GHOST_BEHIND     = 5  -- studs behind target
 
     local function destroyGhost()
-        if ghostClone then
-            ghostClone:Destroy()
-            ghostClone = nil
+        if ghostModel then
+            ghostModel:Destroy()
+            ghostModel = nil
+            ghostRoot  = nil
+        end
+        local cam = workspace.CurrentCamera
+        if cam and origCamSubject then
+            cam.CameraSubject = origCamSubject
+            origCamSubject = nil
         end
     end
 
-    local function createGhostClone()
+    local function createGhost()
         destroyGhost()
         local myChar = weldLocal.Character
         if not myChar then return end
 
-        ghostClone = myChar:Clone()
+        ghostModel = myChar:Clone()
+        ghostModel.Name = "GhostClone_CP"
 
-        -- Strip all scripts so it doesn't run anything
-        for _, v in ipairs(ghostClone:GetDescendants()) do
-            if v:IsA("BaseScript") or v:IsA("ModuleScript") then
-                v:Destroy()
+        -- Strip all scripts so it doesn't interfere
+        for _, obj in ipairs(ghostModel:GetDescendants()) do
+            if obj:IsA("BaseScript") or obj:IsA("ModuleScript") then
+                obj:Destroy()
             end
         end
 
-        -- Disable the humanoid so it doesn't animate/fall
-        local hum = ghostClone:FindFirstChildOfClass("Humanoid")
-        if hum then hum:Destroy() end
+        ghostRoot = ghostModel:FindFirstChild("HumanoidRootPart")
+        if not ghostRoot then
+            ghostModel:Destroy()
+            ghostModel = nil
+            return
+        end
 
-        -- Ghost appearance: anchored, no collision, semi-transparent
-        for _, part in ipairs(ghostClone:GetDescendants()) do
+        -- Remove Motor6Ds (they'll fight with WeldConstraints)
+        for _, obj in ipairs(ghostModel:GetDescendants()) do
+            if obj:IsA("Motor6D") then obj:Destroy() end
+        end
+
+        -- Weld all parts to root so pose is frozen, make them ghostly
+        for _, part in ipairs(ghostModel:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.Anchored   = true
-                part.CanCollide = false
-                part.Transparency = math.min(part.Transparency + 0.5, 0.9)
-            end
-        end
-
-        ghostClone.Parent = workspace
-    end
-
-    -- Mirrors the real character's pose onto the clone, placed 5 studs behind tgtRoot
-    local function updateGhostClone(tgtRoot)
-        if not ghostClone or not ghostClone.Parent then
-            createGhostClone()
-            if not ghostClone then return end
-        end
-
-        local myChar   = weldLocal.Character
-        local myRoot   = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        local cloneRoot = ghostClone:FindFirstChild("HumanoidRootPart")
-        if not myRoot or not cloneRoot then return end
-
-        -- 5 studs behind the target (positive Z = behind in Roblox CFrame space)
-        local ghostRootCF = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
-
-        -- Transform: ghost space relative to real character space
-        local realRootCF  = myRoot.CFrame
-        local delta       = ghostRootCF * realRootCF:Inverse()
-
-        -- Move every BasePart in the clone to mirror the real character
-        for _, clonePart in ipairs(ghostClone:GetDescendants()) do
-            if clonePart:IsA("BasePart") then
-                local realPart = myChar:FindFirstChild(clonePart.Name)
-                if realPart and realPart:IsA("BasePart") then
-                    clonePart.CFrame = delta * realPart.CFrame
+                part.CanCollide  = false
+                part.Anchored    = false
+                part.Transparency = (part == ghostRoot) and 1 or 0.6
+                if part ~= ghostRoot then
+                    local wc  = Instance.new("WeldConstraint")
+                    wc.Part0  = ghostRoot
+                    wc.Part1  = part
+                    wc.Parent = ghostRoot
                 end
             end
+        end
+
+        ghostRoot.Anchored = true
+        ghostModel.Parent  = workspace
+
+        -- Point camera at the ghost so you can look around freely near the target
+        local cam      = workspace.CurrentCamera
+        local humanoid = ghostModel:FindFirstChildOfClass("Humanoid")
+        if cam and humanoid then
+            origCamSubject    = cam.CameraSubject
+            cam.CameraSubject = humanoid
         end
     end
 
@@ -352,7 +354,7 @@ do
             local dist = (root.Position - tgtRoot.Position).Magnitude
             if dist < closestDist then
                 closestDist = dist
-                closest = root
+                closest     = root
             end
         end
         return closest
@@ -363,9 +365,7 @@ do
         nearbyLatchRoot = nil
         nearbyLatchTime = 0
         activeFlingCount = activeFlingCount + 1
-
-        createGhostClone()
-
+        createGhost()
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
             if not selectedTarget then return end
@@ -375,21 +375,17 @@ do
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
-
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then part.CanCollide = false end
                 end
-
                 local now = tick()
-
                 if nearbyLatchRoot then
                     if (now - nearbyLatchTime) >= NEARBY_DURATION then
                         nearbyLatchRoot = nil
                         nearbyLatchTime = 0
                     end
                 end
-
                 if not nearbyLatchRoot then
                     local found = findNearbyPlayer(tgtRoot)
                     if found then
@@ -397,7 +393,6 @@ do
                         nearbyLatchTime = now
                     end
                 end
-
                 local anchorRoot, offsetY
                 if nearbyLatchRoot then
                     anchorRoot = nearbyLatchRoot
@@ -406,14 +401,15 @@ do
                     anchorRoot = tgtRoot
                     offsetY    = HOVER_UP
                 end
-
                 myRoot.CFrame      = CFrame.new(anchorRoot.Position + Vector3.new(0, offsetY, 0))
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
                 myRoot.RotVelocity = Vector3.new(500, 500, 500)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", anchorRoot)
 
-                -- Update the ghost clone every frame
-                updateGhostClone(tgtRoot)
+                -- Ghost clone: 5 studs behind the target player, matching their orientation
+                if ghostRoot then
+                    ghostRoot.CFrame = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+                end
             end)
         end)
     end
