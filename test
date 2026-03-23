@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,71 +254,92 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
+-- c
 do
-    local cpConn           = nil
-    local cpEnabled        = false
-    local HOVER_UP         = -80
-    local CLOSE_DIST       = 25
-    local BELOW_OFF        = -1
-    local NEARBY_DURATION  = 0.5
+    local cpConn        = nil
+    local cpEnabled     = false
+    local HOVER_UP      = -80
+    local CLOSE_DIST    = 25
+    local BELOW_OFF     = -1
+    local NEARBY_DURATION = 0.5
     local nearbyLatchRoot  = nil
     local nearbyLatchTime  = 0
-    local ghostClone       = nil
-    local GHOST_BEHIND     = 5  -- studs behind the target
 
-    local function destroyGhostClone()
+    -- Ghost clone state
+    local ghostClone    = nil
+    local GHOST_BEHIND  = 5   -- studs behind the target
+
+    local function destroyGhost()
         if ghostClone then
             ghostClone:Destroy()
             ghostClone = nil
         end
-        -- restore camera back to local character
-        local myChar = weldLocal.Character
-        if myChar then
-            local hum = myChar:FindFirstChildOfClass("Humanoid")
-            if hum then
-                workspace.CurrentCamera.CameraSubject = hum
-            end
-        end
     end
 
     local function createGhostClone()
-        destroyGhostClone()
+        destroyGhost()
         local myChar = weldLocal.Character
         if not myChar then return end
 
         ghostClone = myChar:Clone()
-        ghostClone.PrimaryPart = ghostClone:FindFirstChild("HumanoidRootPart")
 
-        -- strip all scripts so it doesn't interfere
+        -- Strip all scripts so it doesn't run anything
         for _, v in ipairs(ghostClone:GetDescendants()) do
-            if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("ModuleScript") then
+            if v:IsA("BaseScript") or v:IsA("ModuleScript") then
                 v:Destroy()
             end
         end
 
-        -- make it ghost-like
+        -- Disable the humanoid so it doesn't animate/fall
+        local hum = ghostClone:FindFirstChildOfClass("Humanoid")
+        if hum then hum:Destroy() end
+
+        -- Ghost appearance: anchored, no collision, semi-transparent
         for _, part in ipairs(ghostClone:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.Transparency = 0.6
-                part.CanCollide   = false
-                part.Anchored     = true
-                part.CastShadow   = false
+                part.Anchored   = true
+                part.CanCollide = false
+                part.Transparency = math.min(part.Transparency + 0.5, 0.9)
             end
         end
 
         ghostClone.Parent = workspace
+    end
 
-        -- point camera at the ghost so you can move/look freely from behind target
-        local ghostHum = ghostClone:FindFirstChildOfClass("Humanoid")
-        if ghostHum then
-            workspace.CurrentCamera.CameraSubject = ghostHum
+    -- Mirrors the real character's pose onto the clone, placed 5 studs behind tgtRoot
+    local function updateGhostClone(tgtRoot)
+        if not ghostClone or not ghostClone.Parent then
+            createGhostClone()
+            if not ghostClone then return end
+        end
+
+        local myChar   = weldLocal.Character
+        local myRoot   = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local cloneRoot = ghostClone:FindFirstChild("HumanoidRootPart")
+        if not myRoot or not cloneRoot then return end
+
+        -- 5 studs behind the target (positive Z = behind in Roblox CFrame space)
+        local ghostRootCF = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+
+        -- Transform: ghost space relative to real character space
+        local realRootCF  = myRoot.CFrame
+        local delta       = ghostRootCF * realRootCF:Inverse()
+
+        -- Move every BasePart in the clone to mirror the real character
+        for _, clonePart in ipairs(ghostClone:GetDescendants()) do
+            if clonePart:IsA("BasePart") then
+                local realPart = myChar:FindFirstChild(clonePart.Name)
+                if realPart and realPart:IsA("BasePart") then
+                    clonePart.CFrame = delta * realPart.CFrame
+                end
+            end
         end
     end
 
     local function stopConn()
         activeFlingCount = math.max(0, activeFlingCount - 1)
         if cpConn then cpConn:Disconnect() cpConn = nil end
-        destroyGhostClone()
+        destroyGhost()
     end
 
     local function findNearbyPlayer(tgtRoot)
@@ -342,7 +363,9 @@ do
         nearbyLatchRoot = nil
         nearbyLatchTime = 0
         activeFlingCount = activeFlingCount + 1
+
         createGhostClone()
+
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
             if not selectedTarget then return end
@@ -352,18 +375,21 @@ do
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
+
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then part.CanCollide = false end
                 end
 
                 local now = tick()
+
                 if nearbyLatchRoot then
                     if (now - nearbyLatchTime) >= NEARBY_DURATION then
                         nearbyLatchRoot = nil
                         nearbyLatchTime = 0
                     end
                 end
+
                 if not nearbyLatchRoot then
                     local found = findNearbyPlayer(tgtRoot)
                     if found then
@@ -381,17 +407,13 @@ do
                     offsetY    = HOVER_UP
                 end
 
-                -- main body stays below target as before
                 myRoot.CFrame      = CFrame.new(anchorRoot.Position + Vector3.new(0, offsetY, 0))
                 myRoot.Velocity    = Vector3.new(500, 500, 500)
                 myRoot.RotVelocity = Vector3.new(500, 500, 500)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", anchorRoot)
 
-                -- ghost clone sits 5 studs behind the target, facing the same direction
-                if ghostClone and ghostClone.PrimaryPart then
-                    local behindCF = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
-                    ghostClone:PivotTo(behindCF)
-                end
+                -- Update the ghost clone every frame
+                updateGhostClone(tgtRoot)
             end)
         end)
     end
