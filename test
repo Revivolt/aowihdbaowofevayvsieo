@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -258,7 +258,6 @@ end
 do
     local UIS = game:GetService("UserInputService")
 
-    -- ── Ghost Clone toggle ────────────────────────────────────────
     local ghostEnabled  = false
     local ghostFlying   = false
     local camModel      = nil
@@ -268,7 +267,7 @@ do
     local inputConn     = nil
     local inputEndConn  = nil
     local GHOST_BEHIND  = 5
-    local GHOST_SPEED   = 20
+    local GHOST_SPEED   = 50
     local GHOST_JUMP    = 55      -- upward impulse on jump
     local GHOST_GRAVITY = 120     -- studs/s^2 pull-down in walk mode
     local HRP_HEIGHT    = 3       -- studs from floor to HRP center
@@ -491,7 +490,7 @@ do
     end
 
     MainTab:CreateToggle({
-        Name         = "Ghost Clone",
+        Name         = "Ghost",
         CurrentValue = false,
         Callback = function(state)
             ghostEnabled = state
@@ -584,7 +583,7 @@ do
     end
 
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Fling Aura",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
