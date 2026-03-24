@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -262,7 +262,7 @@ do
     local lastChar  = nil
 
     local cpUp        =  -2
-    local cpForward   =  1.5
+    local cpForward   =  1.8
     local cpSide      =  0
     local cpTiltX     =  -180
     local cpTiltY     =  0
