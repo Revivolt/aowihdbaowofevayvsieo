@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -254,32 +254,21 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- c
+-- p
 do
-    local cpConn        = nil
-    local cpEnabled     = false
-    local HOVER_UP      = -80
-    local CLOSE_DIST    = 25
-    local BELOW_OFF     = -1
-    local NEARBY_DURATION = 0.5
-    local nearbyLatchRoot  = nil
-    local nearbyLatchTime  = 0
 
+    local UIS = game:GetService("UserInputService")
+
+    local ghostEnabled  = false
     local camModel      = nil
     local camPart       = nil
     local camHumanoid   = nil
     local ghostConn     = nil
     local inputConn     = nil
     local inputEndConn  = nil
+    local GHOST_BEHIND  = 5
     local GHOST_SPEED   = 20
-
     local ghostControl  = {F=0, B=0, R=0, L=0, U=0, D=0}
-    local UIS           = game:GetService("UserInputService")
-
-    local function stopConn()
-        activeFlingCount = math.max(0, activeFlingCount - 1)
-        if cpConn then cpConn:Disconnect() cpConn = nil end
-    end
 
     local function destroyGhost()
         if ghostConn    then ghostConn:Disconnect()    ghostConn    = nil end
@@ -312,24 +301,22 @@ do
         local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
-        -- Build cam model (same pattern as invisible script)
         camModel    = Instance.new("Model")
         camPart     = Instance.new("Part")
         camHumanoid = Instance.new("Humanoid")
 
         camPart.Name         = "HumanoidRootPart"
         camPart.Size         = Vector3.new(2, 2, 1)
-        camPart.Transparency = 1        -- invisible anchor, body parts drawn on top
+        camPart.Transparency = 1
         camPart.CanCollide   = false
-        camPart.Anchored     = false    -- NOT anchored so physics drive it
-        camPart.CFrame       = tgtRoot.CFrame * CFrame.new(0, 0, 5)
+        camPart.Anchored     = false
+        camPart.CFrame       = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
         camPart.Parent       = camModel
 
         camHumanoid.MaxHealth = 0
         camHumanoid.Health    = 0
         camHumanoid.Parent    = camModel
 
-        -- BodyVelocity + BodyGyro so WASD moves the ghost (same as invisible script)
         local bv = Instance.new("BodyVelocity")
         local bg = Instance.new("BodyGyro")
         bv.MaxForce  = Vector3.new(9e4, 9e4, 9e4)
@@ -340,24 +327,22 @@ do
         bv.Parent    = camPart
         bg.Parent    = camPart
 
-        -- Clone all visual body parts into camModel
-        local partMap = {}  -- maps ghost part -> real part name for pose mirroring
+        local partMap = {}
         for _, orig in ipairs(myChar:GetDescendants()) do
             if orig:IsA("BasePart") and orig.Name ~= "HumanoidRootPart" then
                 local copy = orig:Clone()
-                -- Strip any scripts/welds that came with the clone
                 for _, v in ipairs(copy:GetDescendants()) do
                     if v:IsA("Script") or v:IsA("LocalScript")
                     or v:IsA("Motor6D") or v:IsA("Weld") then
                         v:Destroy()
                     end
                 end
-                copy.Anchored    = true
-                copy.CanCollide  = false
-                copy.CanTouch    = false
-                copy.CastShadow  = false
-                copy.Transparency = math.clamp(orig.Transparency + 0.8, 0.8, 0.8)
-                copy.Color = Color3.fromRGB(180, 210, 255)
+                copy.Anchored     = true
+                copy.CanCollide   = false
+                copy.CanTouch     = false
+                copy.CastShadow   = false
+                copy.Transparency = math.clamp(orig.Transparency + 0.85, 0.85, 0.85)
+                copy.Color        = Color3.fromRGB(180, 210, 255)
                 local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
                 copy.CFrame = camPart.CFrame * relCF
                 copy.Parent = camModel
@@ -368,7 +353,6 @@ do
         camModel.Parent = workspace
         workspace.CurrentCamera.CameraSubject = camHumanoid
 
-        -- WASD input for ghost movement
         local keyMap = {
             w = "F", s = "B", d = "R", a = "L",
             space = "U", leftcontrol = "D"
@@ -384,19 +368,16 @@ do
             if keyMap[k] then ghostControl[keyMap[k]] = 0 end
         end)
 
-        -- Drive ghost each frame
         ghostConn = weldRun.Heartbeat:Connect(function()
-            if not cpEnabled then return end
+            if not ghostEnabled then return end
             if not camPart or not camPart.Parent then return end
 
             local cam = workspace.CurrentCamera
-            -- Move ghost with WASD relative to camera direction
             bv.Velocity = (cam.CoordinateFrame.LookVector  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
                         + (cam.CoordinateFrame.RightVector  * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
                         + (cam.CoordinateFrame.UpVector     * ((ghostControl.U - ghostControl.D) * GHOST_SPEED))
             bg.CFrame = cam.CoordinateFrame
 
-            -- Mirror real character's current pose onto ghost body parts
             local realHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if realHRP then
                 for _, entry in ipairs(partMap) do
@@ -408,6 +389,35 @@ do
                 end
             end
         end)
+    end
+
+    MainTab:CreateToggle({
+        Name         = "Ghost",
+        CurrentValue = false,
+        Callback = function(state)
+            ghostEnabled = state
+            if not ghostEnabled then
+                destroyGhost()
+                return
+            end
+            if not selectedTarget then return end
+            createGhost()
+        end,
+    })
+
+    -- c
+    local cpConn       = nil
+    local cpEnabled    = false
+    local HOVER_UP     = -80
+    local CLOSE_DIST   = 25
+    local BELOW_OFF    = -1
+    local NEARBY_DURATION = 0.5
+    local nearbyLatchRoot = nil
+    local nearbyLatchTime = 0
+
+    local function stopConn()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
     end
 
     local function findNearbyPlayer(tgtRoot)
@@ -475,20 +485,18 @@ do
     end
 
     MainTab:CreateToggle({
-        Name         = "Fling Aura",
+        Name         = "test",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
                 stopConn()
-                destroyGhost()
                 nearbyLatchRoot = nil
                 nearbyLatchTime = 0
                 return
             end
             if not selectedTarget then return end
             startConn()
-            createGhost()
         end,
     })
 end
