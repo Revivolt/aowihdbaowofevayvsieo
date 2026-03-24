@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -260,6 +260,7 @@ do
     local UIS = game:GetService("UserInputService")
 
     local ghostEnabled  = false
+    local ghostFlying   = false   -- L key toggles this
     local camModel      = nil
     local camPart       = nil
     local camHumanoid   = nil
@@ -275,9 +276,10 @@ do
         if inputConn    then inputConn:Disconnect()    inputConn    = nil end
         if inputEndConn then inputEndConn:Disconnect() inputEndConn = nil end
         if camModel and camModel.Parent then camModel:Destroy() end
-        camModel    = nil
-        camPart     = nil
-        camHumanoid = nil
+        camModel     = nil
+        camPart      = nil
+        camHumanoid  = nil
+        ghostFlying  = false
         ghostControl = {F=0, B=0, R=0, L=0, U=0, D=0}
 
         pcall(function()
@@ -319,7 +321,8 @@ do
 
         local bv = Instance.new("BodyVelocity")
         local bg = Instance.new("BodyGyro")
-        bv.MaxForce  = Vector3.new(9e4, 9e4, 9e4)
+        -- Walking mode by default: no Y force so gravity applies
+        bv.MaxForce  = Vector3.new(9e4, 0, 9e4)
         bv.Velocity  = Vector3.new(0, 0, 0)
         bg.CFrame    = camPart.CFrame
         bg.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
@@ -360,6 +363,20 @@ do
         inputConn = UIS.InputBegan:Connect(function(inp, gp)
             if gp then return end
             local k = inp.KeyCode.Name:lower()
+            -- L key: toggle fly/walk
+            if k == "l" then
+                ghostFlying = not ghostFlying
+                if ghostFlying then
+                    -- Fly: full 3D force
+                    bv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+                else
+                    -- Walk: drop Y force so gravity pulls ghost down naturally
+                    bv.MaxForce = Vector3.new(9e4, 0, 9e4)
+                    ghostControl.U = 0
+                    ghostControl.D = 0
+                end
+                return
+            end
             if keyMap[k] then ghostControl[keyMap[k]] = 1 end
         end)
         inputEndConn = UIS.InputEnded:Connect(function(inp, gp)
@@ -373,11 +390,28 @@ do
             if not camPart or not camPart.Parent then return end
 
             local cam = workspace.CurrentCamera
-            bv.Velocity = (cam.CoordinateFrame.LookVector  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
-                        + (cam.CoordinateFrame.RightVector  * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
-                        + (cam.CoordinateFrame.UpVector     * ((ghostControl.U - ghostControl.D) * GHOST_SPEED))
-            bg.CFrame = cam.CoordinateFrame
 
+            if ghostFlying then
+                -- Full 3D movement in camera direction
+                bv.Velocity = (cam.CoordinateFrame.LookVector  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
+                            + (cam.CoordinateFrame.RightVector  * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
+                            + (cam.CoordinateFrame.UpVector     * ((ghostControl.U - ghostControl.D) * GHOST_SPEED))
+                bg.CFrame = cam.CoordinateFrame
+            else
+                -- Walk: only horizontal movement, let gravity handle Y
+                local look  = cam.CoordinateFrame.LookVector
+                local right = cam.CoordinateFrame.RightVector
+                -- Flatten to XZ plane so walking doesn't float up/down with camera angle
+                local flatLook  = Vector3.new(look.X,  0, look.Z).Unit
+                local flatRight = Vector3.new(right.X, 0, right.Z).Unit
+                bv.Velocity = (flatLook  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
+                            + (flatRight * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
+                -- Only yaw so the ghost doesn't tilt when looking up/down
+                local _, yaw, _ = cam.CoordinateFrame:ToEulerAnglesYXZ()
+                bg.CFrame = CFrame.Angles(0, yaw, 0)
+            end
+
+            -- Mirror real character pose onto ghost body parts
             local realHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if realHRP then
                 for _, entry in ipairs(partMap) do
@@ -405,7 +439,7 @@ do
         end,
     })
 
-    -- c
+    -- ── CP / Hover toggle ─────────────────────────────────────────
     local cpConn       = nil
     local cpEnabled    = false
     local HOVER_UP     = -80
@@ -485,7 +519,7 @@ do
     end
 
     MainTab:CreateToggle({
-        Name         = "test",
+        Name         = "Fling Aura",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
