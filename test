@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -256,11 +256,11 @@ end
 
 -- p
 do
-
     local UIS = game:GetService("UserInputService")
 
+    -- ── Ghost Clone toggle ────────────────────────────────────────
     local ghostEnabled  = false
-    local ghostFlying   = false   -- L key toggles this
+    local ghostFlying   = false
     local camModel      = nil
     local camPart       = nil
     local camHumanoid   = nil
@@ -269,6 +269,11 @@ do
     local inputEndConn  = nil
     local GHOST_BEHIND  = 5
     local GHOST_SPEED   = 20
+    local GHOST_JUMP    = 55      -- upward impulse on jump
+    local GHOST_GRAVITY = 120     -- studs/s^2 pull-down in walk mode
+    local HRP_HEIGHT    = 3       -- studs from floor to HRP center
+    local ghostVelY     = 0       -- vertical velocity tracked manually
+    local ghostOnGround = false
     local ghostControl  = {F=0, B=0, R=0, L=0, U=0, D=0}
 
     local function destroyGhost()
@@ -280,6 +285,8 @@ do
         camPart      = nil
         camHumanoid  = nil
         ghostFlying  = false
+        ghostVelY    = 0
+        ghostOnGround = false
         ghostControl = {F=0, B=0, R=0, L=0, U=0, D=0}
 
         pcall(function()
@@ -319,16 +326,21 @@ do
         camHumanoid.Health    = 0
         camHumanoid.Parent    = camModel
 
+        -- Always full force — we control Y velocity manually in walk mode
         local bv = Instance.new("BodyVelocity")
         local bg = Instance.new("BodyGyro")
-        -- Walking mode by default: no Y force so gravity applies
-        bv.MaxForce  = Vector3.new(9e4, 0, 9e4)
+        bv.MaxForce  = Vector3.new(9e4, 9e4, 9e4)
         bv.Velocity  = Vector3.new(0, 0, 0)
         bg.CFrame    = camPart.CFrame
         bg.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
         bg.P         = 9e4
         bv.Parent    = camPart
         bg.Parent    = camPart
+
+        -- Raycast params: exclude ghost and real character so they don't self-hit
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        rayParams.FilterDescendantsInstances = {camModel, myChar}
 
         local partMap = {}
         for _, orig in ipairs(myChar:GetDescendants()) do
@@ -356,57 +368,110 @@ do
         camModel.Parent = workspace
         workspace.CurrentCamera.CameraSubject = camHumanoid
 
-        local keyMap = {
-            w = "F", s = "B", d = "R", a = "L",
-            space = "U", leftcontrol = "D"
-        }
         inputConn = UIS.InputBegan:Connect(function(inp, gp)
             if gp then return end
             local k = inp.KeyCode.Name:lower()
-            -- L key: toggle fly/walk
+
             if k == "l" then
                 ghostFlying = not ghostFlying
                 if ghostFlying then
-                    -- Fly: full 3D force
-                    bv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+                    -- Entering fly: carry current ghostVelY into flight naturally
                 else
-                    -- Walk: drop Y force so gravity pulls ghost down naturally
-                    bv.MaxForce = Vector3.new(9e4, 0, 9e4)
+                    -- Entering walk: zero out vertical so gravity takes over cleanly
+                    ghostVelY = 0
                     ghostControl.U = 0
                     ghostControl.D = 0
                 end
                 return
             end
+
+            -- Space: jump in walk mode, ascend in fly mode
+            if k == "space" then
+                if not ghostFlying then
+                    if ghostOnGround then
+                        ghostVelY    = GHOST_JUMP
+                        ghostOnGround = false
+                    end
+                else
+                    ghostControl.U = 1
+                end
+                return
+            end
+
+            local keyMap = {
+                w = "F", s = "B", d = "R", a = "L", leftcontrol = "D"
+            }
             if keyMap[k] then ghostControl[keyMap[k]] = 1 end
         end)
+
         inputEndConn = UIS.InputEnded:Connect(function(inp, gp)
             if gp then return end
             local k = inp.KeyCode.Name:lower()
+            if k == "space" and ghostFlying then
+                ghostControl.U = 0
+                return
+            end
+            local keyMap = {
+                w = "F", s = "B", d = "R", a = "L", leftcontrol = "D"
+            }
             if keyMap[k] then ghostControl[keyMap[k]] = 0 end
         end)
 
-        ghostConn = weldRun.Heartbeat:Connect(function()
+        ghostConn = weldRun.Heartbeat:Connect(function(dt)
             if not ghostEnabled then return end
             if not camPart or not camPart.Parent then return end
 
             local cam = workspace.CurrentCamera
 
             if ghostFlying then
-                -- Full 3D movement in camera direction
                 bv.Velocity = (cam.CoordinateFrame.LookVector  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
                             + (cam.CoordinateFrame.RightVector  * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
                             + (cam.CoordinateFrame.UpVector     * ((ghostControl.U - ghostControl.D) * GHOST_SPEED))
                 bg.CFrame = cam.CoordinateFrame
             else
-                -- Walk: only horizontal movement, let gravity handle Y
+                -- Raycast straight down from camPart to find the floor
+                local result = workspace:Raycast(
+                    camPart.Position,
+                    Vector3.new(0, -(HRP_HEIGHT + 2.5), 0),
+                    rayParams
+                )
+
+                if result then
+                    local targetY = result.Position.Y + HRP_HEIGHT
+                    if ghostVelY <= 0 then
+                        -- Planted: snap Y to floor and kill downward velocity
+                        ghostOnGround = true
+                        ghostVelY     = 0
+                        -- Directly correct the position so there's no sinking
+                        camPart.CFrame = CFrame.new(
+                            camPart.Position.X,
+                            targetY,
+                            camPart.Position.Z
+                        )
+                    end
+                else
+                    ghostOnGround = false
+                end
+
+                -- Apply gravity when airborne
+                if not ghostOnGround then
+                    ghostVelY = ghostVelY - GHOST_GRAVITY * dt
+                end
+
+                -- Flatten horizontal movement to XZ plane
                 local look  = cam.CoordinateFrame.LookVector
                 local right = cam.CoordinateFrame.RightVector
-                -- Flatten to XZ plane so walking doesn't float up/down with camera angle
-                local flatLook  = Vector3.new(look.X,  0, look.Z).Unit
-                local flatRight = Vector3.new(right.X, 0, right.Z).Unit
-                bv.Velocity = (flatLook  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
-                            + (flatRight * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
-                -- Only yaw so the ghost doesn't tilt when looking up/down
+                local flatLook  = Vector3.new(look.X,  0, look.Z)
+                local flatRight = Vector3.new(right.X, 0, right.Z)
+                if flatLook.Magnitude  > 0 then flatLook  = flatLook.Unit  end
+                if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end
+
+                local horizVel = (flatLook  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
+                               + (flatRight * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
+
+                bv.Velocity = Vector3.new(horizVel.X, ghostVelY, horizVel.Z)
+
+                -- Only yaw so ghost stays upright while walking
                 local _, yaw, _ = cam.CoordinateFrame:ToEulerAnglesYXZ()
                 bg.CFrame = CFrame.Angles(0, yaw, 0)
             end
@@ -426,7 +491,7 @@ do
     end
 
     MainTab:CreateToggle({
-        Name         = "Ghost",
+        Name         = "Ghost Clone",
         CurrentValue = false,
         Callback = function(state)
             ghostEnabled = state
@@ -519,7 +584,7 @@ do
     end
 
     MainTab:CreateToggle({
-        Name         = "Fling Aura",
+        Name         = "test",
         CurrentValue = false,
         Callback = function(state)
             cpEnabled = state
