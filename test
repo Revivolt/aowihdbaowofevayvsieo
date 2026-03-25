@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -333,7 +333,7 @@ do
     local inputConn     = nil
     local inputEndConn  = nil
     local GHOST_BEHIND  = 5
-    local GHOST_SPEED   = 50
+    local GHOST_SPEED   = 30
     local GHOST_JUMP    = 55      -- upward impulse on jump
     local GHOST_GRAVITY = 120     -- studs/s^2 pull-down in walk mode
     local HRP_HEIGHT    = 3       -- studs from floor to HRP center
