@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -300,7 +300,7 @@ do
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
