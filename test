@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2502,11 +2502,16 @@ NaNTab:CreateButton({
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
+        -- Save state BEFORE any movement
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.AssemblyLinearVelocity
         local savedPlatform = myHum.PlatformStand
 
+        local nan    = 0 / 0
+        local nanVec = Vector3.new(-9999, -9999, -9999)
+
         myHum.PlatformStand = true
+
         local startTime = tick()
 
         nanConn = nanRun.Heartbeat:Connect(function()
@@ -2515,25 +2520,34 @@ NaNTab:CreateButton({
             if tick() - startTime >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.AssemblyLinearVelocity     = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+
+                -- Snap back: lock to saved CFrame for ~0.5s to resist corrections
+                local returnID = nanCounter
+                local returnStart = tick()
+                local returnConn
+                returnConn = nanRun.Heartbeat:Connect(function()
+                    if nanCounter ~= returnID then
+                        returnConn:Disconnect()
+                        return
+                    end
+                    myRoot.CFrame                  = savedCF
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.RotVelocity             = Vector3.zero
+                    if tick() - returnStart >= 0.5 then
+                        returnConn:Disconnect()
+                        myHum.PlatformStand = savedPlatform
+                        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                    end
                 end)
                 return
             end
 
-            -- Zero velocity instead of NaN — suppresses local physics cleanly
-            myRoot.AssemblyLinearVelocity  = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
+            -- NaN teleport to target
             myRoot.CFrame                  = tgtRoot.CFrame
-
-            -- This is what actually grabs them
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(nanVec) end)
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
     end,
