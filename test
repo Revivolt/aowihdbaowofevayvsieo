@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2531,7 +2531,7 @@ NaNTab:CreateButton({
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
-            if tick() - startTime >= 1.5 then
+            if tick() - startTime >= 0.1 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
