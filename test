@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2479,83 +2479,90 @@ NaNTab:CreateButton({
 
 
 NaNTab:CreateButton({
-    Name = "test",
+
+    Name = "NaN Freeze Trap",
+
     Callback = function()
+
         if nanTarget == "" then return end
+
         nanCounter = nanCounter + 1
         local localID = nanCounter
+
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
             and (plr.Name:lower():find(nanTarget:lower())
-                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+            or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
                 target = plr
                 break
             end
         end
+
         if not target or not target.Character then return end
 
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
+        local tgtHum  = target.Character:FindFirstChild("Humanoid")
 
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
+        if not tgtRoot or not tgtHum then return end
+
+        local nan = 0/0
+        local nanVec = Vector3.new(nan, nan, nan)
+
+        local savedCF = myRoot.CFrame
         local savedPlatform = myHum.PlatformStand
-        local nan           = 0/0
-        local nanVec        = Vector3.new(nan, nan, nan)
-
-        -- Step 1: teleport onto target
-        pcall(function()
-            for _, part in ipairs(myChar:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
-            end
-            local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-            myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                * CFrame.Angles(0, tgtYaw, 0)
-            myRoot.AssemblyLinearVelocity  = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
-            sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-        end)
 
         myHum.PlatformStand = true
+
         local startTime = tick()
-        -- Phase 1: sit on target for 0.5s to let physics link establish
-        -- Phase 2: pull back to original position for remaining 1s
 
         nanConn = nanRun.Heartbeat:Connect(function()
+
             if nanCounter ~= localID then return end
-            local elapsed = tick() - startTime
-            if elapsed >= 1.5 then
+
+            if tick() - startTime >= 2 then
                 nanConn:Disconnect()
                 nanConn = nil
+
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
+
+                    myHum.PlatformStand = savedPlatform
+                    myRoot.CFrame = savedCF
+
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
+
                 return
             end
-            if elapsed < 0.4 then
-                -- Phase 1: stay on target, build up physics link
-                myRoot.CFrame = tgtRoot.CFrame
-            else
-                -- Phase 2: snap back, dragging target with us
-                myRoot.CFrame = savedCF
-            end
+
+            -- Stick to target
+            myRoot.CFrame = tgtRoot.CFrame
+
+            -- Inject NaN aggressively
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
+
+            -- Force weird replication ownership
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+
+            -- Extra instability (NEW)
+            pcall(function()
+                tgtHum:Move(nanVec)
+                tgtRoot.Velocity = nanVec
+                tgtRoot.RotVelocity = nanVec
+            end)
+
         end)
+
     end,
+
 })
