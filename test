@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2510,8 +2510,8 @@ NaNTab:CreateButton({
 
         if not tgtRoot then return end
 
-        local savedCF       = myRoot.CFrame
         local savedPlatform = myHum.PlatformStand
+        local savedCF       = myRoot.CFrame
 
         local nan = 0/0
         local nanVec = Vector3.new(nan, nan, nan)
@@ -2524,43 +2524,27 @@ NaNTab:CreateButton({
 
             if nanCounter ~= localID then return end
 
-            if tick() - startTime >= 2.5 then
+            if not target.Character or not tgtRoot.Parent then
                 nanConn:Disconnect()
                 nanConn = nil
-
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-
-                    myHum.PlatformStand = savedPlatform
-                    myRoot.CFrame = savedCF
-
-                    myRoot.AssemblyLinearVelocity = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-
                 return
             end
 
-            -- Stay inside target (IMPORTANT)
-            myRoot.CFrame = tgtRoot.CFrame
+            -- Position slightly in front of you (carry effect)
+            local offset = CFrame.new(0, 0, -2)
 
-            -- NaN ONLY on yourself
+            -- YOU control the position
+            myRoot.CFrame = tgtRoot.CFrame * offset
+
+            -- Break separation physics
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
 
-            -- Strong physical interference (THIS is the real freeze)
+            -- Mild force to keep them attached
             tgtRoot.AssemblyLinearVelocity =
-                (tgtRoot.Position - myRoot.Position).Unit * -200
+                (myRoot.Position - tgtRoot.Position) * 25
 
-            tgtRoot.AssemblyAngularVelocity = Vector3.new(
-                math.random(-500,500),
-                math.random(-500,500),
-                math.random(-500,500)
-            )
-
-            -- Force replication confusion
+            -- Replication confusion
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
 
         end)
