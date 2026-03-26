@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -297,8 +297,8 @@ do
                 myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
                     * CFrame.new(cpSide, cpUp, -cpForward)
                     * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.Velocity    = Vector3.new(0, 9999999, 0)
-                myRoot.RotVelocity = Vector3.new(0, 9999999, 0)
+                myRoot.Velocity    = Vector3.new(0, 89999, 0)
+                myRoot.RotVelocity = Vector3.new(0, 89999, 0)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end)
