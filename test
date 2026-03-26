@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2480,26 +2480,43 @@ NaNTab:CreateButton({
 
 NaNTab:CreateButton({
 
-    Name = "NaN Echo",
+    Name = "test",
 
     Callback = function()
 
-        nanCounter = nanCounter + 1
+        if nanTarget == "" then return end
+
+        nanCounter += 1
         local localID = nanCounter
 
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
-        local char = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local hum  = char:WaitForChild("Humanoid")
-        local root = char:WaitForChild("HumanoidRootPart")
+        local target
+        for _, plr in ipairs(nanPlayers:GetPlayers()) do
+            if plr ~= nanLocal
+            and (plr.Name:lower():find(nanTarget:lower())
+            or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                target = plr
+                break
+            end
+        end
 
-        local savedCF = root.CFrame
-        local savedPlatform = hum.PlatformStand
+        if not target or not target.Character then return end
+
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+
+        if not tgtRoot then return end
+
+        local savedCF       = myRoot.CFrame
+        local savedPlatform = myHum.PlatformStand
 
         local nan = 0/0
         local nanVec = Vector3.new(nan, nan, nan)
 
-        hum.PlatformStand = true
+        myHum.PlatformStand = true
 
         local startTime = tick()
 
@@ -2514,36 +2531,37 @@ NaNTab:CreateButton({
                 task.defer(function()
                     if nanCounter ~= localID then return end
 
-                    hum.PlatformStand = savedPlatform
-                    root.CFrame = savedCF
+                    myHum.PlatformStand = savedPlatform
+                    myRoot.CFrame = savedCF
 
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
 
-                    pcall(sethiddenproperty, root, "PhysicsRepRootPart", nil)
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
 
                 return
             end
 
-            -- Save slight offsets for "afterimage"
-            local offset = Vector3.new(
-                math.random(-5,5),
-                math.random(-2,2),
-                math.random(-5,5)
+            -- Stay inside target (IMPORTANT)
+            myRoot.CFrame = tgtRoot.CFrame
+
+            -- NaN ONLY on yourself
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+
+            -- Strong physical interference (THIS is the real freeze)
+            tgtRoot.AssemblyLinearVelocity =
+                (tgtRoot.Position - myRoot.Position).Unit * -200
+
+            tgtRoot.AssemblyAngularVelocity = Vector3.new(
+                math.random(-500,500),
+                math.random(-500,500),
+                math.random(-500,500)
             )
 
-            -- Rapid teleport flicker
-            root.CFrame = savedCF + offset
-
-            -- Break velocity consistency
-            root.AssemblyLinearVelocity  = nanVec
-            root.AssemblyAngularVelocity = nanVec
-
-            -- Movement corruption
-            pcall(function()
-                hum:Move(nanVec)
-            end)
+            -- Force replication confusion
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
 
         end)
 
