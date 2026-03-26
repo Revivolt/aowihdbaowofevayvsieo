@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2509,21 +2509,28 @@ NaNTab:CreateButton({
         local nan           = 0/0
         local nanVec        = Vector3.new(nan, nan, nan)
 
-        -- Disable collisions
+        -- Step 1: teleport onto target
         pcall(function()
             for _, part in ipairs(myChar:GetDescendants()) do
                 if part:IsA("BasePart") then part.CanCollide = false end
             end
+            local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+            myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                * CFrame.Angles(0, tgtYaw, 0)
+            myRoot.AssemblyLinearVelocity  = Vector3.zero
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+            sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
 
         myHum.PlatformStand = true
         local startTime = tick()
+        -- Phase 1: sit on target for 0.5s to let physics link establish
+        -- Phase 2: pull back to original position for remaining 1s
 
-        -- Immediately link and pump NaN from savedCF without moving at all
-        -- Server receives tgtRoot physics as if it's at savedCF
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
-            if tick() - startTime >= 1.5 then
+            local elapsed = tick() - startTime
+            if elapsed >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
@@ -2538,7 +2545,13 @@ NaNTab:CreateButton({
                 end)
                 return
             end
-            myRoot.CFrame                  = savedCF
+            if elapsed < 0.4 then
+                -- Phase 1: stay on target, build up physics link
+                myRoot.CFrame = tgtRoot.CFrame
+            else
+                -- Phase 2: snap back, dragging target with us
+                myRoot.CFrame = savedCF
+            end
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
