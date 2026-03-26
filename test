@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2508,7 +2508,7 @@ NaNTab:CreateButton({
         local savedPlatform = myHum.PlatformStand
 
         local nan    = 0 / 0
-        local nanVec = Vector3.new(0, nan, 0)
+        local nanVec = Vector3.new(0, 9e9, 0)
 
         myHum.PlatformStand = true
 
