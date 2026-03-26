@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2509,22 +2509,18 @@ NaNTab:CreateButton({
         local nan           = 0/0
         local nanVec        = Vector3.new(nan, nan, nan)
 
-        -- Teleport to target to establish physics link
+        -- Disable collisions
         pcall(function()
             for _, part in ipairs(myChar:GetDescendants()) do
                 if part:IsA("BasePart") then part.CanCollide = false end
             end
-            local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-            myRoot.CFrame = CFrame.new(tgtRoot.Position)
-                * CFrame.Angles(0, tgtYaw, 0)
-            myRoot.AssemblyLinearVelocity  = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
-            sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
 
         myHum.PlatformStand = true
         local startTime = tick()
 
+        -- Immediately link and pump NaN from savedCF without moving at all
+        -- Server receives tgtRoot physics as if it's at savedCF
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
             if tick() - startTime >= 1.5 then
@@ -2542,13 +2538,7 @@ NaNTab:CreateButton({
                 end)
                 return
             end
-            -- Force both roots to savedCF every frame
-            myRoot.CFrame  = savedCF
-            pcall(function()
-                tgtRoot.CFrame                  = savedCF
-                tgtRoot.AssemblyLinearVelocity  = nanVec
-                tgtRoot.AssemblyAngularVelocity = nanVec
-            end)
+            myRoot.CFrame                  = savedCF
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
