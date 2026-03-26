@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2545,7 +2545,7 @@ NaNTab:CreateButton({
                 end)
                 return
             end
-            if elapsed < 0.3 then
+            if elapsed < 0.4 then
                 -- Phase 1: stay on target, build up physics link
                 myRoot.CFrame = tgtRoot.CFrame
             else
