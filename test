@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2509,7 +2509,7 @@ NaNTab:CreateButton({
         local nan           = 0/0
         local nanVec        = Vector3.new(nan, nan, nan)
 
-        -- Step 1: teleport onto target
+        -- Teleport to target just long enough to establish the physics link
         pcall(function()
             for _, part in ipairs(myChar:GetDescendants()) do
                 if part:IsA("BasePart") then part.CanCollide = false end
@@ -2524,13 +2524,10 @@ NaNTab:CreateButton({
 
         myHum.PlatformStand = true
         local startTime = tick()
-        -- Phase 1: sit on target for 0.5s to let physics link establish
-        -- Phase 2: pull back to original position for remaining 1s
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
-            local elapsed = tick() - startTime
-            if elapsed >= 1.5 then
+            if tick() - startTime >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
@@ -2545,13 +2542,8 @@ NaNTab:CreateButton({
                 end)
                 return
             end
-            if elapsed < 0.4 then
-                -- Phase 1: stay on target, build up physics link
-                myRoot.CFrame = tgtRoot.CFrame
-            else
-                -- Phase 2: snap back, dragging target with us
-                myRoot.CFrame = savedCF
-            end
+            -- Stay at original position the entire time, link does the work
+            myRoot.CFrame                  = savedCF
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
