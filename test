@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -252,6 +252,72 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
         if freeze then track:AdjustSpeed(0) end
     end)
     return track
+end
+
+-- j
+do
+    local cpConn    = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+    local lastChar  = nil
+
+    local cpUp        =  0
+    local cpForward   =  0
+    local cpSide      =  4
+    local cpTiltX     =  0
+    local cpTiltY     =  0
+    local cpTiltZ     =  0
+    local cpFaceBack  = false
+    local cpNoCollide = true
+    local cpFreezeAt  = 0
+    local cpAnimId    = 0
+
+    MainTab:CreateToggle({
+        Name         = "test",
+        CurrentValue = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
+                return
+            end
+            if not selectedTarget then return end
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
 end
 
 -- p
@@ -2468,82 +2534,6 @@ NaNTab:CreateButton({
                 end)
                 return
             end
-            myRoot.CFrame                  = tgtRoot.CFrame
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-        end)
-    end,
-})
-
-NaNTab:CreateButton({
-    Name = "test",
-    Callback = function()
-        if nanTarget == "" then return end
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
-        if nanConn then nanConn:Disconnect() nanConn = nil end
-
-        local target
-        for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal
-            and (plr.Name:lower():find(nanTarget:lower())
-                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                target = plr
-                break
-            end
-        end
-        if not target or not target.Character then return end
-
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
-
-        -- Save state BEFORE any movement
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.AssemblyLinearVelocity
-        local savedPlatform = myHum.PlatformStand
-
-        local nan    = 0 / 0
-        local nanVec = Vector3.new(0, 0, 9e9)
-
-        myHum.PlatformStand = true
-
-        local startTime = tick()
-
-        nanConn = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then return end
-
-            if tick() - startTime >= 1.5 then
-                nanConn:Disconnect()
-                nanConn = nil
-
-                -- Snap back: lock to saved CFrame for ~0.5s to resist corrections
-                local returnID = nanCounter
-                local returnStart = tick()
-                local returnConn
-                returnConn = nanRun.Heartbeat:Connect(function()
-                    if nanCounter ~= returnID then
-                        returnConn:Disconnect()
-                        return
-                    end
-                    myRoot.CFrame                  = savedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    myRoot.RotVelocity             = Vector3.zero
-                    if tick() - returnStart >= 0.5 then
-                        returnConn:Disconnect()
-                        myHum.PlatformStand = savedPlatform
-                        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                    end
-                end)
-                return
-            end
-
-            -- NaN teleport to target
             myRoot.CFrame                  = tgtRoot.CFrame
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
