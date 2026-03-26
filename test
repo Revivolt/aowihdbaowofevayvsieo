@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2510,8 +2510,8 @@ NaNTab:CreateButton({
 
         if not tgtRoot then return end
 
-        local savedPlatform = myHum.PlatformStand
         local savedCF       = myRoot.CFrame
+        local savedPlatform = myHum.PlatformStand
 
         local nan = 0/0
         local nanVec = Vector3.new(nan, nan, nan)
@@ -2524,28 +2524,45 @@ NaNTab:CreateButton({
 
             if nanCounter ~= localID then return end
 
-            if not target.Character or not tgtRoot.Parent then
+            if tick() - startTime >= 5 then
                 nanConn:Disconnect()
                 nanConn = nil
+
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+
+                    myHum.PlatformStand = savedPlatform
+                    myRoot.CFrame = savedCF
+
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+
                 return
             end
 
-            -- Position slightly in front of you (carry effect)
-            local offset = CFrame.new(0, 0, -2)
+            -- Stay attached slightly in front
+            local grabOffset = CFrame.new(0, 0, -2)
+            myRoot.CFrame = tgtRoot.CFrame * grabOffset
 
-            -- YOU control the position
-            myRoot.CFrame = tgtRoot.CFrame * offset
-
-            -- Break separation physics
+            -- NaN destabilization (YOU only)
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
 
-            -- Mild force to keep them attached
-            tgtRoot.AssemblyLinearVelocity =
-                (myRoot.Position - tgtRoot.Position) * 25
-
-            -- Replication confusion
+            -- Force replication control
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+
+            -- Pull target toward you
+            local direction = (myRoot.Position - tgtRoot.Position)
+
+            if direction.Magnitude > 0 then
+                tgtRoot.AssemblyLinearVelocity = direction.Unit * 120
+            end
+
+            -- Add slight spin for control
+            tgtRoot.AssemblyAngularVelocity = Vector3.new(0, 25, 0)
 
         end)
 
