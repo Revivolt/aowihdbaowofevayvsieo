@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -263,9 +263,9 @@ do
 
     local cpUp        =  0
     local cpForward   =  0
-    local cpSide      =  3
+    local cpSide      =  1.5
     local cpTiltX     =  0
-    local cpTiltY     =  -90
+    local cpTiltY     =  90
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
