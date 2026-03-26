@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2503,6 +2503,7 @@ NaNTab:CreateButton({
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
+        -- Capture BEFORE teleport so it reflects original position
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
@@ -2522,7 +2523,7 @@ NaNTab:CreateButton({
             sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
 
-        -- Step 2: NaN attack
+        -- Step 2: pull both back to original position via physics link
         myHum.PlatformStand = true
         local startTime = tick()
 
@@ -2543,7 +2544,7 @@ NaNTab:CreateButton({
                 end)
                 return
             end
-            myRoot.CFrame                  = tgtRoot.CFrame
+            myRoot.CFrame                  = savedCF  -- pull to original position
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
