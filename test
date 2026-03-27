@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2478,25 +2478,29 @@ NaNTab:CreateButton({
 })
 
 
+-- These live OUTSIDE the button callback, at module scope
+local nanSavedCF       = nil
+local nanSavedPlatform = false
+
 NaNTab:CreateButton({
     Name = "test",
     Callback = function()
         if nanTarget == "" then return end
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
-
-        if nanConn then nanConn:Disconnect() nanConn = nil end
 
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
 
-        -- Always clean up any leftover state from a previous run before starting
-        myHum.PlatformStand               = false
-        myRoot.AssemblyLinearVelocity     = Vector3.zero
-        myRoot.AssemblyAngularVelocity    = Vector3.zero
-        myRoot.RotVelocity                = Vector3.zero
-        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+        -- Only snapshot when idle; re-pressing mid-run reuses the original snapshot
+        if not nanConn then
+            nanSavedCF       = myRoot.CFrame
+            nanSavedPlatform = myHum.PlatformStand -- should be false when idle
+        end
+
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+
+        if nanConn then nanConn:Disconnect() nanConn = nil end
 
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
@@ -2512,29 +2516,33 @@ NaNTab:CreateButton({
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
-        local savedCF = myRoot.CFrame   -- captured after cleanup, so velocity is clean
-
         local nan    = 0 / 0
         local nanVec = Vector3.new(nan, nan, nan)
-        myHum.PlatformStand = true
 
+        myHum.PlatformStand = true
         local startTime = tick()
+
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
+
             if tick() - startTime >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = false
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.RotVelocity                = Vector3.zero
-                    myRoot.CFrame                     = savedCF
+                    -- Clear NaN physics first, then teleport back
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.Velocity                = Vector3.zero   -- never restore captured vel
+                    myRoot.RotVelocity             = Vector3.zero
+                    myRoot.CFrame                  = nanSavedCF     -- original snapshot, not re-captured
+                    myHum.PlatformStand            = nanSavedPlatform
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                    nanSavedCF = nil  -- clear so next press snapshots fresh
                 end)
                 return
             end
+
             myRoot.CFrame                  = tgtRoot.CFrame
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
