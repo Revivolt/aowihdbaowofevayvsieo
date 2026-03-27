@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2486,6 +2486,15 @@ NaNTab:CreateButton({
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+
+        -- Kill any leftover velocity from the previous press before anything else
+        myRoot.AssemblyLinearVelocity  = Vector3.zero
+        myRoot.AssemblyAngularVelocity = Vector3.zero
+        myRoot.RotVelocity             = Vector3.zero
+
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
@@ -2497,9 +2506,6 @@ NaNTab:CreateButton({
         end
         if not target or not target.Character then return end
 
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
@@ -2522,7 +2528,6 @@ NaNTab:CreateButton({
                     if nanCounter ~= localID then return end
                     myHum.PlatformStand = savedPlatform
                     myRoot.CFrame       = savedCF
-                    -- velocities intentionally left alone so momentum carries over
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
                 return
