@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2479,12 +2479,10 @@ NaNTab:CreateButton({
 
 
 NaNTab:CreateButton({
-    Name = "NaN Freeze (Stable)",
+    Name = "test",
     Callback = function()
-
         if nanTarget == "" then return end
-
-        nanCounter += 1
+        nanCounter = nanCounter + 1
         local localID = nanCounter
 
         if nanConn then nanConn:Disconnect() nanConn = nil end
@@ -2493,82 +2491,55 @@ NaNTab:CreateButton({
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
 
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
+        -- Always clean up any leftover state from a previous run before starting
+        myHum.PlatformStand               = false
+        myRoot.AssemblyLinearVelocity     = Vector3.zero
+        myRoot.AssemblyAngularVelocity    = Vector3.zero
+        myRoot.RotVelocity                = Vector3.zero
+        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
 
-        local nan = 0/0
+        local target
+        for _, plr in ipairs(nanPlayers:GetPlayers()) do
+            if plr ~= nanLocal
+            and (plr.Name:lower():find(nanTarget:lower())
+                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                target = plr
+                break
+            end
+        end
+        if not target or not target.Character then return end
+
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
+
+        local savedCF = myRoot.CFrame   -- captured after cleanup, so velocity is clean
+
+        local nan    = 0 / 0
         local nanVec = Vector3.new(nan, nan, nan)
-
         myHum.PlatformStand = true
 
-        local duration = 2
-        local pulseDelay = 0.15 -- 🔥 key: spacing between pulses
         local startTime = tick()
-        local lastPulse = 0
-
         nanConn = nanRun.Heartbeat:Connect(function()
-
             if nanCounter ~= localID then return end
-
-            if tick() - startTime >= duration then
+            if tick() - startTime >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
-
                 task.defer(function()
                     if nanCounter ~= localID then return end
-
-                    myHum.PlatformStand            = savedPlatform
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    myRoot.CFrame                  = savedCF
-                    myRoot.Velocity                = savedVel
-                    myRoot.RotVelocity             = Vector3.zero
-
+                    myHum.PlatformStand               = false
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.RotVelocity                = Vector3.zero
+                    myRoot.CFrame                     = savedCF
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
-
                 return
             end
-
-            -- Find target
-            local target
-            for _, plr in ipairs(nanPlayers:GetPlayers()) do
-                if plr ~= nanLocal
-                and (plr.Name:lower():find(nanTarget:lower())
-                or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                    target = plr
-                    break
-                end
-            end
-
-            if not target or not target.Character then return end
-            local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tgtRoot then return end
-
-            -- 🔥 Pulse instead of constant spam
-            if tick() - lastPulse >= pulseDelay then
-                lastPulse = tick()
-
-                -- brief attach
-                myRoot.CFrame = tgtRoot.CFrame
-
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-
-                myRoot.AssemblyLinearVelocity  = nanVec
-                myRoot.AssemblyAngularVelocity = nanVec
-
-                pcall(function()
-                    myHum:Move(nanVec)
-                end)
-
-                -- detach shortly after
-                task.delay(0.05, function()
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-            end
-
+            myRoot.CFrame                  = tgtRoot.CFrame
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(nanVec) end)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
-
     end,
 })
