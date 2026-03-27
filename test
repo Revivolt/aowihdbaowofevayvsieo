@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2483,7 +2483,7 @@ NaNTab:CreateButton({
     Callback = function()
         if nanTarget == "" then return end
 
-        -- Freeze humanoid state machine (legs sink into ground effect)
+        -- Sink character into physics state (freezes up, legs sink into ground)
         local myChar = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum  = myChar:WaitForChild("Humanoid")
         myHum:ChangeState(Enum.HumanoidStateType.Physics)
@@ -2509,13 +2509,10 @@ NaNTab:CreateButton({
 
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
         local nan           = 0 / 0
         local nanVec        = Vector3.new(nan, nan, nan)
 
-        myHum.PlatformStand = true
         local startTime = tick()
-
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
             if tick() - startTime >= 1.5 then
@@ -2523,8 +2520,7 @@ NaNTab:CreateButton({
                 nanConn = nil
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                    myHum.PlatformStand               = savedPlatform
+                    myHum:ChangeState(Enum.HumanoidStateType.GettingUp)  -- restores normal state
                     myRoot.AssemblyLinearVelocity     = Vector3.zero
                     myRoot.AssemblyAngularVelocity    = Vector3.zero
                     myRoot.CFrame                     = savedCF
