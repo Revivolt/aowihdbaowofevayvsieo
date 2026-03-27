@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2479,7 +2479,7 @@ NaNTab:CreateButton({
 
 
 NaNTab:CreateButton({
-    Name = "NaN Freeze (Fixed)",
+    Name = "NaN Freeze (Stable)",
     Callback = function()
 
         if nanTarget == "" then return end
@@ -2502,27 +2502,14 @@ NaNTab:CreateButton({
 
         myHum.PlatformStand = true
 
-        local duration = 1.5
+        local duration = 2
+        local pulseDelay = 0.15 -- 🔥 key: spacing between pulses
         local startTime = tick()
+        local lastPulse = 0
 
         nanConn = nanRun.Heartbeat:Connect(function()
 
             if nanCounter ~= localID then return end
-
-            -- Re-find target every frame (important)
-            local target
-            for _, plr in ipairs(nanPlayers:GetPlayers()) do
-                if plr ~= nanLocal
-                and (plr.Name:lower():find(nanTarget:lower())
-                or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                    target = plr
-                    break
-                end
-            end
-
-            if not target or not target.Character then return end
-            local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-            if not tgtRoot then return end
 
             if tick() - startTime >= duration then
                 nanConn:Disconnect()
@@ -2544,24 +2531,42 @@ NaNTab:CreateButton({
                 return
             end
 
-            -- 🔥 KEY FIXES BELOW
+            -- Find target
+            local target
+            for _, plr in ipairs(nanPlayers:GetPlayers()) do
+                if plr ~= nanLocal
+                and (plr.Name:lower():find(nanTarget:lower())
+                or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                    target = plr
+                    break
+                end
+            end
 
-            -- Detach first (forces refresh)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+            if not target or not target.Character then return end
+            local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+            if not tgtRoot then return end
 
-            -- Slight jitter to force physics recalculation
-            myRoot.CFrame = tgtRoot.CFrame * CFrame.new(0, 0.1, 0)
+            -- 🔥 Pulse instead of constant spam
+            if tick() - lastPulse >= pulseDelay then
+                lastPulse = tick()
 
-            -- Reapply NaN
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
+                -- brief attach
+                myRoot.CFrame = tgtRoot.CFrame
 
-            pcall(function()
-                myHum:Move(nanVec)
-            end)
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
 
-            -- Reattach to target
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+                myRoot.AssemblyLinearVelocity  = nanVec
+                myRoot.AssemblyAngularVelocity = nanVec
+
+                pcall(function()
+                    myHum:Move(nanVec)
+                end)
+
+                -- detach shortly after
+                task.delay(0.05, function()
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+            end
 
         end)
 
