@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2518,7 +2518,7 @@ NaNTab:CreateButton({
 
                                     local savedCF = myRoot.CFrame
 
-                                    for i = 1, 3 do -- small burst (3 frames)
+                                    for i = 1, 1 do -- small burst (3 frames)
                                         myRoot.CFrame = tgtRoot.CFrame
                                         myRoot.AssemblyLinearVelocity  = nanVec
                                         myRoot.AssemblyAngularVelocity = nanVec
