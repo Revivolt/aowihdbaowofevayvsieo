@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2477,82 +2477,82 @@ NaNTab:CreateButton({
     end,
 })
 
+
+local trapEnabled = false
+local trapConn
+
 NaNTab:CreateButton({
-    Name = "test",
+    Name = "NaN Freeze Trap",
     Callback = function()
-        if nanTarget == "" then return end
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
 
-        if nanConn then nanConn:Disconnect() nanConn = nil end
-        if nanConn2 then nanConn2:Disconnect() nanConn2 = nil end
+        trapEnabled = not trapEnabled
 
-        local target
-        for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal
-            and (plr.Name:lower():find(nanTarget:lower())
-                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                target = plr
-                break
+        if trapEnabled then
+
+            local nan = 0/0
+            local nanVec = Vector3.new(nan, nan, nan)
+            local radius = 12
+
+            trapConn = nanRun.Heartbeat:Connect(function()
+
+                if not trapEnabled then return end
+
+                local myChar = nanLocal.Character
+                if not myChar then return end
+
+                local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot then return end
+
+                for _, plr in ipairs(nanPlayers:GetPlayers()) do
+                    if plr ~= nanLocal and plr.Character then
+
+                        local tgtRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+                        if tgtRoot then
+
+                            local dist = (myRoot.Position - tgtRoot.Position).Magnitude
+
+                            if dist <= radius then
+                                
+                                -- short burst freeze
+                                task.spawn(function()
+
+                                    local savedCF = myRoot.CFrame
+
+                                    for i = 1, 3 do -- small burst (3 frames)
+                                        myRoot.CFrame = tgtRoot.CFrame
+                                        myRoot.AssemblyLinearVelocity  = nanVec
+                                        myRoot.AssemblyAngularVelocity = nanVec
+
+                                        pcall(function()
+                                            nanLocal.Character.Humanoid:Move(nanVec)
+                                        end)
+
+                                        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+
+                                        nanRun.Heartbeat:Wait()
+                                    end
+
+                                    -- restore
+                                    myRoot.CFrame = savedCF
+                                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+
+                                end)
+
+                            end
+                        end
+                    end
+                end
+
+            end)
+
+        else
+            if trapConn then
+                trapConn:Disconnect()
+                trapConn = nil
             end
         end
-        if not target or not target.Character then return end
 
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
-
-        local savedCF       = myRoot.CFrame
-        local savedPlatform = myHum.PlatformStand
-
-        local nan    = 0 / 0
-        local nanVec = Vector3.new(nan, nan, nan)
-
-        local function applyNaN()
-            if not tgtRoot or not tgtRoot.Parent then return end
-            myRoot.CFrame                  = tgtRoot.CFrame
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-        end
-
-        local function doRestore()
-            if nanCounter ~= localID then return end
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-            myRoot.AssemblyLinearVelocity  = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
-            myRoot.Velocity                = Vector3.zero
-            myRoot.RotVelocity             = Vector3.zero
-            myRoot.CFrame                  = savedCF
-            myHum.PlatformStand            = savedPlatform
-        end
-
-        myHum.PlatformStand = true
-        local startTime = tick()
-
-        -- RenderStepped fires BEFORE physics simulation — crucial for corruption
-        nanConn = nanRun.RenderStepped:Connect(function()
-            if nanCounter ~= localID then return end
-            if tick() - startTime >= 0.2 then
-                nanConn:Disconnect() nanConn = nil
-                task.defer(doRestore)
-                return
-            end
-            -- Spam multiple times per render step to overwhelm the physics pipeline
-            for _ = 1, 3 do applyNaN() end
-        end)
-
-        -- Heartbeat runs AFTER physics — double coverage so no clean frame slips through
-        nanConn2 = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then return end
-            if tick() - startTime >= 0.2 then
-                nanConn2:Disconnect() nanConn2 = nil
-                return
-            end
-            for _ = 1, 3 do applyNaN() end
-        end)
     end,
 })
