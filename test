@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2504,7 +2504,6 @@ NaNTab:CreateButton({
         if not tgtRoot then return end
 
         local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
 
         local nan    = 0 / 0
@@ -2516,18 +2515,14 @@ NaNTab:CreateButton({
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
 
-            -- NaN corruption window: 0.4 seconds
             if tick() - startTime >= 0.4 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF  -- snap back to origin
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
+                    myHum.PlatformStand = savedPlatform
+                    myRoot.CFrame       = savedCF
+                    -- velocities intentionally left alone so momentum carries over
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
                 return
