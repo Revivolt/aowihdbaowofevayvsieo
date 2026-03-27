@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2512,7 +2512,7 @@ NaNTab:CreateButton({
         local nanVec = Vector3.new(nan, nan, nan)
 
         -- Orbit parameters
-        local radius   = 5   -- studs away from the target
+        local radius   = 2   -- studs away from the target
         local speed    = 2   -- radians per second
         local duration = 8   -- seconds before auto-cleanup
 
