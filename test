@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2479,7 +2479,7 @@ NaNTab:CreateButton({
 
 
 NaNTab:CreateButton({
-    Name = "NaN Freeze (Stable)",
+    Name = "NaN Freeze (Fast Hit)",
     Callback = function()
 
         if nanTarget == "" then return end
@@ -2502,10 +2502,8 @@ NaNTab:CreateButton({
 
         myHum.PlatformStand = true
 
-        local duration = 2
-        local pulseDelay = 0.15 -- 🔥 key: spacing between pulses
+        local duration = 1.5
         local startTime = tick()
-        local lastPulse = 0
 
         nanConn = nanRun.Heartbeat:Connect(function()
 
@@ -2546,27 +2544,23 @@ NaNTab:CreateButton({
             local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
             if not tgtRoot then return end
 
-            -- 🔥 Pulse instead of constant spam
-            if tick() - lastPulse >= pulseDelay then
-                lastPulse = tick()
+            -- 🔥 Predict movement (KEY FIX)
+            local predictedPos = tgtRoot.Position + (tgtRoot.AssemblyLinearVelocity * 0.1)
 
-                -- brief attach
-                myRoot.CFrame = tgtRoot.CFrame
+            -- 🔥 Ultra-fast hit (1 frame attach)
+            myRoot.CFrame = CFrame.new(predictedPos)
 
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
 
-                myRoot.AssemblyLinearVelocity  = nanVec
-                myRoot.AssemblyAngularVelocity = nanVec
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
 
-                pcall(function()
-                    myHum:Move(nanVec)
-                end)
+            pcall(function()
+                myHum:Move(nanVec)
+            end)
 
-                -- detach shortly after
-                task.delay(0.05, function()
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-            end
+            -- Immediate detach (no sticking)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
 
         end)
 
