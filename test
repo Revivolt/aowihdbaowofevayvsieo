@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2482,16 +2482,11 @@ NaNTab:CreateButton({
     Name = "test",
     Callback = function()
         if nanTarget == "" then return end
-
-        -- Sink character into physics state (freezes up, legs sink into ground)
-        local myChar = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum  = myChar:WaitForChild("Humanoid")
-        myHum:ChangeState(Enum.HumanoidStateType.Physics)
-
         nanCounter = nanCounter + 1
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
+        -- Find target the same way
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
@@ -2503,24 +2498,36 @@ NaNTab:CreateButton({
         end
         if not target or not target.Character then return end
 
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
-        local nan           = 0 / 0
-        local nanVec        = Vector3.new(nan, nan, nan)
+        local savedPlatform = myHum.PlatformStand
 
+        local nan    = 0 / 0
+        local nanVec = Vector3.new(nan, nan, nan)
+
+        -- Orbit parameters
+        local radius   = 5   -- studs away from the target
+        local speed    = 2   -- radians per second
+        local duration = 8   -- seconds before auto-cleanup
+
+        myHum.PlatformStand = true
         local startTime = tick()
+
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
-            if tick() - startTime >= 1.5 then
+
+            if tick() - startTime >= duration then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum:ChangeState(Enum.HumanoidStateType.GettingUp)  -- restores normal state
+                    myHum.PlatformStand               = savedPlatform
                     myRoot.AssemblyLinearVelocity     = Vector3.zero
                     myRoot.AssemblyAngularVelocity    = Vector3.zero
                     myRoot.CFrame                     = savedCF
@@ -2530,7 +2537,17 @@ NaNTab:CreateButton({
                 end)
                 return
             end
-            myRoot.CFrame                  = tgtRoot.CFrame
+
+            -- Compute circular offset around the target each heartbeat
+            local elapsed = tick() - startTime
+            local angle   = elapsed * speed
+            local offset  = Vector3.new(
+                math.cos(angle) * radius,
+                0,
+                math.sin(angle) * radius
+            )
+
+            myRoot.CFrame                  = CFrame.new(tgtRoot.Position + offset)
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
