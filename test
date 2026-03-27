@@ -1,5 +1,5 @@
 -- ============================================================
---   test
+--   test2
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2486,7 +2486,6 @@ NaNTab:CreateButton({
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
-        -- Find target the same way
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
@@ -2511,18 +2510,14 @@ NaNTab:CreateButton({
         local nan    = 0 / 0
         local nanVec = Vector3.new(nan, nan, nan)
 
-        -- Orbit parameters
-        local radius   = 2   -- studs away from the target
-        local speed    = 2   -- radians per second
-        local duration = 8   -- seconds before auto-cleanup
-
         myHum.PlatformStand = true
         local startTime = tick()
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
 
-            if tick() - startTime >= duration then
+            -- NaN corruption window: 0.4 seconds
+            if tick() - startTime >= 0.4 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
@@ -2530,7 +2525,7 @@ NaNTab:CreateButton({
                     myHum.PlatformStand               = savedPlatform
                     myRoot.AssemblyLinearVelocity     = Vector3.zero
                     myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
+                    myRoot.CFrame                     = savedCF  -- snap back to origin
                     myRoot.Velocity                   = savedVel
                     myRoot.RotVelocity                = Vector3.zero
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
@@ -2538,16 +2533,7 @@ NaNTab:CreateButton({
                 return
             end
 
-            -- Compute circular offset around the target each heartbeat
-            local elapsed = tick() - startTime
-            local angle   = elapsed * speed
-            local offset  = Vector3.new(
-                math.cos(angle) * radius,
-                0,
-                math.sin(angle) * radius
-            )
-
-            myRoot.CFrame                  = CFrame.new(tgtRoot.Position + offset)
+            myRoot.CFrame                  = tgtRoot.CFrame
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
