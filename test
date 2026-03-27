@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -2418,7 +2418,7 @@ NaNTab:CreateInput({
 })
 
 NaNTab:CreateButton({
-    Name = "test",
+    Name = "NaN Fling",
     Callback = function()
         if nanTarget == "" then return end
         nanCounter = nanCounter + 1
@@ -2478,7 +2478,7 @@ NaNTab:CreateButton({
 })
 
 NaNTab:CreateButton({
-    Name = "NaN Fling",
+    Name = "test",
     Callback = function()
         if nanTarget == "" then return end
         nanCounter = nanCounter + 1
@@ -2502,32 +2502,42 @@ NaNTab:CreateButton({
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
+        -- Save position BEFORE any NaN shenanigans
         local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
-        local nan           = 0 / 0
-        local nanVec        = Vector3.new(nan, nan, nan)
+
+        local nan    = 0 / 0
+        local nanVec = Vector3.new(nan, nan, nan)
 
         myHum.PlatformStand = true
         local startTime = tick()
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
+
             if tick() - startTime >= 0.2 then
                 nanConn:Disconnect()
                 nanConn = nil
+
+                -- Return to saved position
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+
+                    -- Zero out all velocity BEFORE setting CFrame so physics doesn't fight it
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.Velocity                = Vector3.zero
+                    myRoot.RotVelocity             = Vector3.zero
+
+                    myRoot.CFrame = savedCF
+
+                    myHum.PlatformStand = savedPlatform
                 end)
                 return
             end
+
+            -- NaN teleport to target each heartbeat
             myRoot.CFrame                  = tgtRoot.CFrame
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
