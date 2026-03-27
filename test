@@ -1,5 +1,5 @@
 -- ============================================================
---   test2
+--   test
 -- ============================================================
 
 -- Anti-fall / safety system
@@ -252,6 +252,72 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
         if freeze then track:AdjustSpeed(0) end
     end)
     return track
+end
+
+-- j
+do
+    local cpConn    = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+    local lastChar  = nil
+
+    local cpUp        =  6
+    local cpForward   =  0
+    local cpSide      =  0
+    local cpTiltX     =  0
+    local cpTiltY     =  0
+    local cpTiltZ     =  0
+    local cpFaceBack  = false
+    local cpNoCollide = true
+    local cpFreezeAt  = 4.1
+    local cpAnimId    = 135104443562041
+
+    MainTab:CreateToggle({
+        Name         = "test",
+        CurrentValue = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
+                return
+            end
+            if not selectedTarget then return end
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(cpSide, cpUp, -cpForward)
+                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
 end
 
 -- p
@@ -2475,97 +2541,4 @@ NaNTab:CreateButton({
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
     end,
-})
-
-
-NaNTab:CreateButton({
-
-    Name = "test",
-
-    Callback = function()
-
-        if nanTarget == "" then return end
-
-        nanCounter += 1
-        local localID = nanCounter
-
-        if nanConn then nanConn:Disconnect() nanConn = nil end
-
-        local target
-        for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal
-            and (plr.Name:lower():find(nanTarget:lower())
-            or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                target = plr
-                break
-            end
-        end
-
-        if not target or not target.Character then return end
-
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-
-        if not tgtRoot then return end
-
-        local savedCF       = myRoot.CFrame
-        local savedPlatform = myHum.PlatformStand
-
-        local nan = 0/0
-        local nanVec = Vector3.new(nan, nan, nan)
-
-        myHum.PlatformStand = true
-
-        local startTime = tick()
-
-        nanConn = nanRun.Heartbeat:Connect(function()
-
-            if nanCounter ~= localID then return end
-
-            if tick() - startTime >= 5 then
-                nanConn:Disconnect()
-                nanConn = nil
-
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-
-                    myHum.PlatformStand = savedPlatform
-                    myRoot.CFrame = savedCF
-
-                    myRoot.AssemblyLinearVelocity = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-
-                return
-            end
-
-            -- Stay attached slightly in front
-            local grabOffset = CFrame.new(0, 0, -2)
-            myRoot.CFrame = tgtRoot.CFrame * grabOffset
-
-            -- NaN destabilization (YOU only)
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-
-            -- Force replication control
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-
-            -- Pull target toward you
-            local direction = (myRoot.Position - tgtRoot.Position)
-
-            if direction.Magnitude > 0 then
-                tgtRoot.AssemblyLinearVelocity = direction.Unit * 120
-            end
-
-            -- Add slight spin for control
-            tgtRoot.AssemblyAngularVelocity = Vector3.new(0, 25, 0)
-
-        end)
-
-    end,
-
 })
