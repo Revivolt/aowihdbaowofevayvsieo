@@ -1,28 +1,142 @@
-local UILib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))()
+--[[
+    Nova UI Library — Example Usage
+    Place this in a LocalScript inside StarterPlayerScripts.
+    Make sure UILibrary.lua is a ModuleScript accessible via require().
+]]
 
-local myUI = UILib.new("My Script UI")
-local mainTab = myUI:newTab("Main")
+local Nova = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))()
 
-UI:addButton(tab1, "Click Me", function()
-    print("Button clicked!")
-end)
+-- ─── Create Window ────────────────────────────────────────────
+local Window = Nova:CreateWindow({
+    Title      = "Nova UI",
+    SubTitle   = "Example Script v1.0",
+    Size       = UDim2.new(0, 560, 0, 390),
+    ToggleKey  = Enum.KeyCode.RightShift,  -- press to hide/show
+})
 
-UI:addToggle(tab1, "Enable Feature", false, function(state)
-    print("Toggle state:", state)
-end)
+-- ─── Tab: Combat ──────────────────────────────────────────────
+local CombatTab = Window:AddTab("Combat")
 
-UI:addDropdown(tab1, "Choose Option", {"Option 1", "Option 2"}, "Option 1", function(option)
-    print("Selected:", option)
-end)
+CombatTab:AddSection("Movement")
 
-UI:addSlider(tab1, "Volume", 0, 100, 50, function(value)
-    print("Slider value:", value)
-end)
+local speedSlider = CombatTab:AddSlider({
+    Label    = "Walk Speed",
+    Min      = 16,
+    Max      = 100,
+    Default  = 16,
+    Step     = 2,
+    Suffix   = " st/s",
+    Callback = function(value)
+        game.Players.LocalPlayer.Character
+            and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+            and (game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = value)
+    end,
+})
 
-UI:addTextBox(tab1, "Name", "Player", function(text)
-    print("Text input:", text)
-end)
+local jumpSlider = CombatTab:AddSlider({
+    Label    = "Jump Power",
+    Min      = 0,
+    Max      = 200,
+    Default  = 50,
+    Step     = 5,
+    Callback = function(value)
+        game.Players.LocalPlayer.Character
+            and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+            and (game.Players.LocalPlayer.Character.Humanoid.JumpPower = value)
+    end,
+})
 
-UI:addKeybind(tab1, "Jump", "Space", function(key)
-    print("Keybind set to:", key)
-end)
+CombatTab:AddSeparator()
+CombatTab:AddSection("Abilities")
+
+local godToggle = CombatTab:AddToggle({
+    Label    = "God Mode",
+    Default  = false,
+    Callback = function(enabled)
+        -- your logic here
+        print("God Mode:", enabled)
+    end,
+})
+
+local infiniteJump = CombatTab:AddToggle({
+    Label    = "Infinite Jump",
+    Default  = false,
+    Callback = function(enabled)
+        print("Infinite Jump:", enabled)
+    end,
+})
+
+CombatTab:AddButton({
+    Label    = "Reset Character",
+    Desc     = "Respawns your character immediately",
+    Callback = function()
+        game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState(Enum.HumanoidStateType.Dead)
+    end,
+})
+
+-- ─── Tab: Players ─────────────────────────────────────────────
+local PlayersTab = Window:AddTab("Players")
+
+PlayersTab:AddSection("Target")
+
+local playerDropdown = PlayersTab:AddDropdown({
+    Label    = "Select Player",
+    Options  = (function()
+        local names = {}
+        for _, p in ipairs(game.Players:GetPlayers()) do
+            table.insert(names, p.Name)
+        end
+        return names
+    end)(),
+    Callback = function(name)
+        print("Selected player:", name)
+    end,
+})
+
+PlayersTab:AddSeparator()
+PlayersTab:AddSection("Teleport")
+
+local tpInput = PlayersTab:AddInput({
+    Label       = "Teleport To Player",
+    Placeholder = "Enter username...",
+    Callback    = function(text, entered)
+        if entered then
+            local target = game.Players:FindFirstChild(text)
+            if target and target.Character then
+                game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame =
+                    target.Character.HumanoidRootPart.CFrame * CFrame.new(3, 0, 0)
+                Window:Notify("Teleported to " .. text, 3)
+            else
+                Window:Notify("Player not found: " .. text, 3)
+            end
+        end
+    end,
+})
+
+-- ─── Tab: Settings ────────────────────────────────────────────
+local SettingsTab = Window:AddTab("Settings")
+
+SettingsTab:AddSection("Keybinds")
+
+local uiToggleBind = SettingsTab:AddKeybind({
+    Label    = "Toggle UI Visibility",
+    Default  = Enum.KeyCode.RightShift,
+    Callback = function(key)
+        print("UI toggle key set to:", key.Name)
+    end,
+})
+
+SettingsTab:AddSection("Display")
+
+local fpsToggle = SettingsTab:AddToggle({
+    Label    = "Show FPS Counter",
+    Default  = false,
+    Callback = function(v)
+        print("FPS counter:", v)
+    end,
+})
+
+SettingsTab:AddLabel("Nova UI Library — made with ♥", Color3.fromRGB(99, 102, 241))
+
+-- ─── Initial notification ─────────────────────────────────────
+Window:Notify("Nova UI loaded! Press RightShift to toggle.", 4)
