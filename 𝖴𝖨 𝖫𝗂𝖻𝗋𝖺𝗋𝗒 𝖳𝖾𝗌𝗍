@@ -455,7 +455,7 @@ function NovaUI:CreateWindow(cfg)
             })
 
             New("TextLabel", {
-                Text             = "⇨",
+                Text             = "⇌",
                 Font             = Enum.Font.GothamBold,
                 TextSize         = 11,
                 TextColor3       = Theme.Accent,
