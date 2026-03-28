@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  NovaUI — minimize replaced with floating draggable toggle
+--  test
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -661,24 +661,6 @@ function NovaUI:CreateWindow(cfg)
             ValStroke.Parent          = ValLbl
             Pad(0, 4, 0, 4, ValLbl)
 
-            -- Strip suffix on focus so the user edits a plain number
-            ValLbl.Focused:Connect(function()
-                ValLbl.Text = tostring(value)
-                Tween(ValLbl, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
-                ValStroke.Enabled = true
-            end)
-
-            ValLbl.FocusLost:Connect(function()
-                ValStroke.Enabled = false
-                Tween(ValLbl, { BackgroundTransparency = 1, TextColor3 = Theme.Accent })
-                local num = tonumber(ValLbl.Text)
-                if num then
-                    SetValue(num)   -- clamps + snaps internally
-                end
-                -- Always restore display to the confirmed value (rejects bad input)
-                ValLbl.Text = tostring(value) .. suffix
-            end)
-
             local Track = New("Frame", {
                 Size                   = UDim2.new(1, -24, 0, 4),
                 Position               = UDim2.new(0, 12, 0, 38),
@@ -720,6 +702,23 @@ function NovaUI:CreateWindow(cfg)
                 ValLbl.Text = tostring(v) .. suffix
                 task.spawn(callback, v)
             end
+
+            -- Wire up the editable value box now that SetValue exists
+            ValLbl.Focused:Connect(function()
+                ValLbl.Text = tostring(value)
+                Tween(ValLbl, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
+                ValStroke.Enabled = true
+            end)
+
+            ValLbl.FocusLost:Connect(function()
+                ValStroke.Enabled = false
+                Tween(ValLbl, { BackgroundTransparency = 1, TextColor3 = Theme.Accent })
+                local num = tonumber(ValLbl.Text)
+                if num then
+                    SetValue(num)
+                end
+                ValLbl.Text = tostring(value) .. suffix
+            end)
 
             local dragging = false
             local function Calc(inp)
