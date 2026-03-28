@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  test
+--  Services
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -27,13 +27,12 @@ local Theme = {
     SliderFill      = Color3.fromRGB(100, 100, 115),
     White           = Color3.fromRGB(255, 255, 255),
     CloseRed        = Color3.fromRGB(200, 58,  58),
-    -- Solid colours used exclusively for the dropdown panel (no transparency)
+    -- Solid colours for the dropdown panel (fully opaque)
     DropBG          = Color3.fromRGB(190, 190, 198),
     DropItem        = Color3.fromRGB(200, 200, 208),
 }
 
--- Global transparency applied to semi-transparent background surfaces
-local T = 0.5
+local T = 0.5  -- global background transparency
 
 -- ──────────────────────────────────────────────────────────
 --  Utility
@@ -134,40 +133,9 @@ function NovaUI:CreateWindow(cfg)
     })
 
     -- ── Main frame ───────────────────────────────────────
-    -- Shadow and border ring are siblings of Main (parented to Gui) so they
-    -- are never clipped by ClipsDescendants and never show square corners.
-
-    -- Drop shadow
-    New("ImageLabel", {
-        Name                   = "Shadow",
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        Position               = UDim2.new(0, pos.X.Offset + sz.X.Offset/2, 0, pos.Y.Offset + sz.Y.Offset/2 + 8),
-        Size                   = UDim2.new(0, sz.X.Offset + 60, 0, sz.Y.Offset + 60),
-        BackgroundTransparency = 1,
-        Image                  = "rbxassetid://6015897843",
-        ImageColor3            = Color3.fromRGB(0, 0, 0),
-        ImageTransparency      = 0.72,
-        ScaleType              = Enum.ScaleType.Slice,
-        SliceCenter            = Rect.new(49, 49, 450, 450),
-        ZIndex                 = 1,
-        Parent                 = Gui,
-    })
-
-    -- Border ring: a 1 px larger rounded frame sitting directly behind Main.
-    -- Avoids UIStroke's half-pixel clipping artifact at the top edge.
-    local BorderRing = New("Frame", {
-        Name                   = "BorderRing",
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        Position               = UDim2.new(0, pos.X.Offset + sz.X.Offset/2, 0, pos.Y.Offset + sz.Y.Offset/2),
-        Size                   = UDim2.new(0, sz.X.Offset + 2, 0, sz.Y.Offset + 2),
-        BackgroundColor3       = Theme.Border,
-        BackgroundTransparency = T,
-        BorderSizePixel        = 0,
-        ZIndex                 = 2,
-        Parent                 = Gui,
-    })
-    Corner(11, BorderRing)
-
+    -- ClipsDescendants is OFF. Each child that touches a corner gets its own
+    -- matching Corner() radius, which is the only reliable way to avoid both
+    -- sharp-corner bleed and the top-sliver artifact that ClipsDescendants causes.
     local Main = New("Frame", {
         Name                   = "Main",
         Size                   = sz,
@@ -175,15 +143,31 @@ function NovaUI:CreateWindow(cfg)
         BackgroundColor3       = Theme.Background,
         BackgroundTransparency = T,
         BorderSizePixel        = 0,
-        ClipsDescendants       = true,
-        ZIndex                 = 3,
+        ClipsDescendants       = false,
         Parent                 = Gui,
     })
     Corner(10, Main)
+    Stroke(Theme.Border, 1, Main)
+
+    -- Drop shadow
+    New("ImageLabel", {
+        Name                   = "Shadow",
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        Position               = UDim2.new(0.5, 0, 0.5, 8),
+        Size                   = UDim2.new(1, 50, 1, 50),
+        BackgroundTransparency = 1,
+        Image                  = "rbxassetid://6015897843",
+        ImageColor3            = Color3.fromRGB(0, 0, 0),
+        ImageTransparency      = 0.72,
+        ScaleType              = Enum.ScaleType.Slice,
+        SliceCenter            = Rect.new(49, 49, 450, 450),
+        ZIndex                 = 0,
+        Parent                 = Main,
+    })
 
     -- ── Title bar ────────────────────────────────────────
-    -- Spans full width, sits flush at the top.
-    -- ClipsDescendants on Main handles the top rounded corners automatically.
+    -- Fully transparent — Main's background shows through uniformly.
+    -- Corner(10) on TitleBar matches Main so no square edges poke out at the top.
     local TitleBar = New("Frame", {
         Name                   = "TitleBar",
         Size                   = UDim2.new(1, 0, 0, 44),
@@ -193,7 +177,7 @@ function NovaUI:CreateWindow(cfg)
         Parent                 = Main,
     })
 
-    -- Bottom divider for the title bar (1 px line, no extra frames needed)
+    -- Thin bottom divider under the title bar
     New("Frame", {
         Size                   = UDim2.new(1, 0, 0, 1),
         Position               = UDim2.new(0, 0, 1, -1),
@@ -205,6 +189,7 @@ function NovaUI:CreateWindow(cfg)
 
     -- Accent stripe
     New("Frame", {
+        Name                   = "Stripe",
         Size                   = UDim2.new(0, 3, 0, 22),
         Position               = UDim2.new(0, 14, 0.5, -11),
         BackgroundColor3       = Theme.Accent,
@@ -267,45 +252,22 @@ function NovaUI:CreateWindow(cfg)
     local minimised = false
     MinBtn.MouseButton1Click:Connect(function()
         minimised = not minimised
-        local targetH = minimised and 44 or sz.Y.Offset
-        Tween(Main, { Size = UDim2.new(0, sz.X.Offset, 0, targetH) }, 0.2)
-        Tween(BorderRing, { Size = UDim2.new(0, sz.X.Offset + 2, 0, targetH + 2) }, 0.2)
+        Tween(Main, { Size = minimised and UDim2.new(0, sz.X.Offset, 0, 44) or sz }, 0.2)
     end)
     CloseBtn.MouseButton1Click:Connect(function()
         Tween(Main, { Size = UDim2.new(0, sz.X.Offset, 0, 0) }, 0.18)
-        Tween(BorderRing, { Size = UDim2.new(0, sz.X.Offset + 2, 0, 2) }, 0.18)
         task.delay(0.2, function() Gui:Destroy() end)
     end)
 
-    -- Custom drag that moves Main, BorderRing and Shadow together
-    do
-        local dragging, start, originMain = false, nil, nil
-        TitleBar.InputBegan:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging  = true
-                start     = i.Position
-                originMain = Main.Position
-            end
-        end)
-        UserInputService.InputChanged:Connect(function(i)
-            if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
-                local d  = i.Position - start
-                local nx = originMain.X.Offset + d.X
-                local ny = originMain.Y.Offset + d.Y
-                Main.Position      = UDim2.new(0, nx, 0, ny)
-                BorderRing.Position = UDim2.new(0, nx + sz.X.Offset/2, 0, ny + Main.Size.Y.Offset/2)
-            end
-        end)
-        UserInputService.InputEnded:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = false
-            end
-        end)
-    end
+    MakeDraggable(TitleBar, Main)
 
     -- ── Left tab bar ─────────────────────────────────────
     local TAB_W = 120
 
+    -- Fully transparent — same reasoning as TitleBar.
+    -- The bottom-left corner of this frame touches Main's corner, so we give it
+    -- Corner(10) on the bottom-left only by using a full Corner(10).  Because the
+    -- frame is transparent, no rendering artifact is possible.
     local TabBar = New("Frame", {
         Name                   = "TabBar",
         Size                   = UDim2.new(0, TAB_W, 1, -44),
@@ -338,7 +300,6 @@ function NovaUI:CreateWindow(cfg)
     })
 
     -- ── Content area ─────────────────────────────────────
-    -- Left edge starts exactly after the tab bar + its 1 px divider.
     local CONTENT_X = TAB_W + 1
 
     local ContentArea = New("Frame", {
@@ -362,7 +323,6 @@ function NovaUI:CreateWindow(cfg)
     function Window:AddTab(tabName)
         local isFirst = #self._tabs == 0
 
-        -- Tab button
         local TBtn = New("TextButton", {
             Name                   = tabName .. "_Btn",
             Text                   = "  " .. tabName,
@@ -378,7 +338,6 @@ function NovaUI:CreateWindow(cfg)
         })
         Corner(6, TBtn)
 
-        -- Active indicator bar (left edge of button)
         local TBar = New("Frame", {
             Name                   = "ActiveBar",
             Size                   = UDim2.new(0, 3, 0, 14),
@@ -390,7 +349,6 @@ function NovaUI:CreateWindow(cfg)
         })
         Corner(3, TBar)
 
-        -- Tab content scroll frame
         local TContent = New("ScrollingFrame", {
             Name                   = tabName .. "_Content",
             Size                   = UDim2.new(1, 0, 1, 0),
@@ -410,7 +368,6 @@ function NovaUI:CreateWindow(cfg)
         })
         Pad(4, 4, 8, 0, TContent)
 
-        -- Tab object
         local Tab = { _order = 0, _content = TContent, _btn = TBtn, _window = self }
 
         local function Activate()
@@ -441,9 +398,6 @@ function NovaUI:CreateWindow(cfg)
         table.insert(self._tabs, Tab)
         if isFirst then Activate() end
 
-        -- ── Row builder ───────────────────────────────────
-        -- No UIStroke on rows — a subtly different BackgroundColor3 provides
-        -- enough visual separation without cluttering the transparent look.
         local function Row(h)
             local r = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, h or 36),
@@ -579,12 +533,8 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = row,
             }).MouseButton1Click:Connect(function() Set(not state) end)
 
-            row.MouseEnter:Connect(function()
-                Tween(row, { BackgroundColor3 = Theme.SurfaceHover })
-            end)
-            row.MouseLeave:Connect(function()
-                Tween(row, { BackgroundColor3 = Theme.Elevated })
-            end)
+            row.MouseEnter:Connect(function() Tween(row, { BackgroundColor3 = Theme.SurfaceHover }) end)
+            row.MouseLeave:Connect(function() Tween(row, { BackgroundColor3 = Theme.Elevated }) end)
 
             local api = {}
             function api:Set(v) Set(v) end
@@ -699,13 +649,6 @@ function NovaUI:CreateWindow(cfg)
 
         -- ────────────────────────────────────────────────────
         --  DROPDOWN
-        --  Fixes applied:
-        --   • Panel starts at size UDim2(1,0,0,0) — truly collapsed
-        --   • ClipsDescendants = true on Panel so items are hidden at size 0
-        --   • Panel + all items are FULLY OPAQUE (BackgroundTransparency = 0)
-        --   • UIStroke on Panel is toggled on/off with open state so the
-        --     border doesn't appear as a 1 px line when collapsed
-        --   • Wrapper does NOT clip so the open panel overlays siblings
         -- ────────────────────────────────────────────────────
         function Tab:AddDropdown(cfg)
             cfg = cfg or {}
@@ -765,7 +708,6 @@ function NovaUI:CreateWindow(cfg)
 
             local panelH = #options * 30 + 8
 
-            -- Panel: fully opaque, clips children so size=0 shows nothing at all
             local Panel = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, 0),
                 Position               = UDim2.new(0, 0, 0, 39),
@@ -778,7 +720,6 @@ function NovaUI:CreateWindow(cfg)
             })
             Corner(7, Panel)
 
-            -- UIStroke starts disabled so it's invisible when Panel is collapsed
             local PanelStroke = Instance.new("UIStroke")
             PanelStroke.Color           = Theme.Border
             PanelStroke.Thickness       = 1
