@@ -1,5 +1,140 @@
 
-    local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
+local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
+
+-- Anti-fall / safety system
+local floor = math.floor
+local random = math.random
+local tremove = table.remove
+local schar = string.char
+
+local seed = 0
+local stepA = 2
+local charMap = {}
+local encTable = {}
+
+local tempList = {}
+for i = 1, 256 do tempList[i] = i end
+repeat
+    local idx = random(1, #tempList)
+    local val = tremove(tempList, idx)
+    encTable[val] = schar(val - 1)
+until #tempList == 0
+
+local ibuf = {}
+
+local function nextByte()
+    if #ibuf == 0 then
+        seed = (seed * 14911595048824) % 35184372088832
+        repeat stepA = (stepA * 188) % 257 until stepA ~= 1
+        local E = stepA % 32
+        local M = (floor(seed / 2 ^ (13 - (stepA - E) / 32)) % 4294967296) / 2 ^ E
+        local C = floor((M % 1) * 4294967296) + floor(M)
+        local J = C % 65536
+        local F = (C - J) / 65536
+        local U = J % 256
+        local v = (J - U) / 256
+        local e = F % 256
+        local R = (F - e) / 256
+        ibuf = { U, v, e, R }
+    end
+    return table.remove(ibuf)
+end
+
+local cache = {}
+local encMeta = setmetatable({}, { __index = cache, __metatable = nil })
+
+local function encrypt(str, key)
+    if not cache[key] then
+        ibuf = {}
+        seed = key % 35184372088832
+        stepA = key % 257
+        local len = string.len(str)
+        cache[key] = ""
+        local U = 128
+        for i = 1, len do
+            U = ((string.byte(str, i) + nextByte()) + U) % 256
+            cache[key] = cache[key] .. encTable[U + 1]
+        end
+    end
+    return key
+end
+
+-- ============================================================
+--   Core services
+-- ============================================================
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local RootPart    = Character:WaitForChild("HumanoidRootPart")
+local Humanoid    = Character:WaitForChild("Humanoid")
+
+local killY           = -80
+local maxY            = 5000
+local speedThreshold  = 350
+local lastSafePos     = nil
+local antiMoveLock    = false
+local activeFlingCount = 0
+
+task.delay(1, function()
+    if RootPart then
+        lastSafePos = RootPart.Position
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not RootPart then return end
+    local pos = RootPart.Position
+    if pos.Y > -10 and pos.Y < maxY
+    and RootPart.AssemblyLinearVelocity.Magnitude < speedThreshold then
+        lastSafePos = pos
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if antiMoveLock then return end
+    if not lastSafePos then return end
+    if activeFlingCount > 0 then return end
+    antiMoveLock = true
+
+    local pos  = RootPart.Position
+    local vel  = RootPart.AssemblyLinearVelocity.Magnitude
+    local velY = RootPart.AssemblyLinearVelocity.Y
+
+    local function reset(target)
+        RootPart.CFrame                 = CFrame.new(target)
+        RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        Humanoid.Health                 = Humanoid.MaxHealth
+        antiMoveLock = false
+    end
+
+    if vel > speedThreshold or math.abs(velY) > 350 then
+        reset(lastSafePos)
+    elseif pos.Y > maxY then
+        reset(lastSafePos)
+    elseif pos.Y < killY then
+        RootPart.CFrame                 = CFrame.new(lastSafePos.X, math.max(lastSafePos.Y + 5, 10), lastSafePos.Z)
+        RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        Humanoid.Health                 = Humanoid.MaxHealth
+        antiMoveLock = false
+    else
+        antiMoveLock = false
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character    = newChar
+    RootPart     = Character:WaitForChild("HumanoidRootPart")
+    Humanoid     = Character:WaitForChild("Humanoid")
+    antiMoveLock = false
+    lastSafePos  = nil
+    task.delay(1, function()
+        if RootPart then
+            lastSafePos = RootPart.Position
+        end
+    end)
+end)
 
     local Window = NovaUI:CreateWindow({
         Title = "HappyTier",
@@ -8,43 +143,251 @@
 
     local Tab = Window:AddTab("Combat")
 
-    Tab:AddButton({
-        Label    = "Kill Aura",
-        Callback = function() print("Kill Aura activated!") end,
-    })
+-- p
+do
+    local UIS = game:GetService("UserInputService")
+
+    local ghostEnabled  = false
+    local ghostFlying   = false
+    local camModel      = nil
+    local camPart       = nil
+    local camHumanoid   = nil
+    local ghostConn     = nil
+    local inputConn     = nil
+    local inputEndConn  = nil
+    local GHOST_BEHIND  = 5
+    local GHOST_SPEED   = 30
+    local GHOST_JUMP    = 55      -- upward impulse on jump
+    local GHOST_GRAVITY = 120     -- studs/s^2 pull-down in walk mode
+    local HRP_HEIGHT    = 3       -- studs from floor to HRP center
+    local ghostVelY     = 0       -- vertical velocity tracked manually
+    local ghostOnGround = false
+    local ghostControl  = {F=0, B=0, R=0, L=0, U=0, D=0}
+
+    local function destroyGhost()
+        if ghostConn    then ghostConn:Disconnect()    ghostConn    = nil end
+        if inputConn    then inputConn:Disconnect()    inputConn    = nil end
+        if inputEndConn then inputEndConn:Disconnect() inputEndConn = nil end
+        if camModel and camModel.Parent then camModel:Destroy() end
+        camModel     = nil
+        camPart      = nil
+        camHumanoid  = nil
+        ghostFlying  = false
+        ghostVelY    = 0
+        ghostOnGround = false
+        ghostControl = {F=0, B=0, R=0, L=0, U=0, D=0}
+
+        pcall(function()
+            local myChar = weldLocal and weldLocal.Character
+            local hum = myChar and myChar:FindFirstChildWhichIsA("Humanoid")
+            if hum then
+                workspace.CurrentCamera.CameraSubject = hum
+            end
+        end)
+    end
+
+    local function createGhost()
+        destroyGhost()
+
+        local myChar = weldLocal and weldLocal.Character
+        if not myChar then return end
+        local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+        if not myHRP then return end
+
+        local tgtChar = selectedTarget and selectedTarget.Character
+        local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
+
+        camModel    = Instance.new("Model")
+        camPart     = Instance.new("Part")
+        camHumanoid = Instance.new("Humanoid")
+
+        camPart.Name         = "HumanoidRootPart"
+        camPart.Size         = Vector3.new(2, 2, 1)
+        camPart.Transparency = 1
+        camPart.CanCollide   = false
+        camPart.Anchored     = false
+        camPart.CFrame       = tgtRoot.CFrame * CFrame.new(0, 0, GHOST_BEHIND)
+        camPart.Parent       = camModel
+
+        camHumanoid.MaxHealth = 0
+        camHumanoid.Health    = 0
+        camHumanoid.Parent    = camModel
+
+        -- Always full force — we control Y velocity manually in walk mode
+        local bv = Instance.new("BodyVelocity")
+        local bg = Instance.new("BodyGyro")
+        bv.MaxForce  = Vector3.new(9e4, 9e4, 9e4)
+        bv.Velocity  = Vector3.new(0, 0, 0)
+        bg.CFrame    = camPart.CFrame
+        bg.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
+        bg.P         = 9e4
+        bv.Parent    = camPart
+        bg.Parent    = camPart
+
+        -- Raycast params: exclude ghost and real character so they don't self-hit
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        rayParams.FilterDescendantsInstances = {camModel, myChar}
+
+        local partMap = {}
+        for _, orig in ipairs(myChar:GetDescendants()) do
+            if orig:IsA("BasePart") and orig.Name ~= "HumanoidRootPart" then
+                local copy = orig:Clone()
+                for _, v in ipairs(copy:GetDescendants()) do
+                    if v:IsA("Script") or v:IsA("LocalScript")
+                    or v:IsA("Motor6D") or v:IsA("Weld") then
+                        v:Destroy()
+                    end
+                end
+                copy.Anchored     = true
+                copy.CanCollide   = false
+                copy.CanTouch     = false
+                copy.CastShadow   = false
+                copy.Transparency = math.clamp(orig.Transparency + 0.85, 0.85, 0.85)
+                copy.Color        = Color3.fromRGB(180, 210, 255)
+                local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
+                copy.CFrame = camPart.CFrame * relCF
+                copy.Parent = camModel
+                table.insert(partMap, {ghost = copy, name = orig.Name})
+            end
+        end
+
+        camModel.Parent = workspace
+        workspace.CurrentCamera.CameraSubject = camHumanoid
+
+        inputConn = UIS.InputBegan:Connect(function(inp, gp)
+            if gp then return end
+            local k = inp.KeyCode.Name:lower()
+
+            if k == "l" then
+                ghostFlying = not ghostFlying
+                if ghostFlying then
+                    -- Entering fly: carry current ghostVelY into flight naturally
+                else
+                    -- Entering walk: zero out vertical so gravity takes over cleanly
+                    ghostVelY = 0
+                    ghostControl.U = 0
+                    ghostControl.D = 0
+                end
+                return
+            end
+
+            -- Space: jump in walk mode, ascend in fly mode
+            if k == "space" then
+                if not ghostFlying then
+                    if ghostOnGround then
+                        ghostVelY    = GHOST_JUMP
+                        ghostOnGround = false
+                    end
+                else
+                    ghostControl.U = 1
+                end
+                return
+            end
+
+            local keyMap = {
+                w = "F", s = "B", d = "R", a = "L", leftcontrol = "D"
+            }
+            if keyMap[k] then ghostControl[keyMap[k]] = 1 end
+        end)
+
+        inputEndConn = UIS.InputEnded:Connect(function(inp, gp)
+            if gp then return end
+            local k = inp.KeyCode.Name:lower()
+            if k == "space" and ghostFlying then
+                ghostControl.U = 0
+                return
+            end
+            local keyMap = {
+                w = "F", s = "B", d = "R", a = "L", leftcontrol = "D"
+            }
+            if keyMap[k] then ghostControl[keyMap[k]] = 0 end
+        end)
+
+        ghostConn = weldRun.Heartbeat:Connect(function(dt)
+            if not ghostEnabled then return end
+            if not camPart or not camPart.Parent then return end
+
+            local cam = workspace.CurrentCamera
+
+            if ghostFlying then
+                bv.Velocity = (cam.CoordinateFrame.LookVector  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
+                            + (cam.CoordinateFrame.RightVector  * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
+                            + (cam.CoordinateFrame.UpVector     * ((ghostControl.U - ghostControl.D) * GHOST_SPEED))
+                bg.CFrame = cam.CoordinateFrame
+            else
+                -- Raycast straight down from camPart to find the floor
+                local result = workspace:Raycast(
+                    camPart.Position,
+                    Vector3.new(0, -(HRP_HEIGHT + 2.5), 0),
+                    rayParams
+                )
+
+                if result then
+                    local targetY = result.Position.Y + HRP_HEIGHT
+                    if ghostVelY <= 0 then
+                        -- Planted: snap Y to floor and kill downward velocity
+                        ghostOnGround = true
+                        ghostVelY     = 0
+                        -- Directly correct the position so there's no sinking
+                        camPart.CFrame = CFrame.new(
+                            camPart.Position.X,
+                            targetY,
+                            camPart.Position.Z
+                        )
+                    end
+                else
+                    ghostOnGround = false
+                end
+
+                -- Apply gravity when airborne
+                if not ghostOnGround then
+                    ghostVelY = ghostVelY - GHOST_GRAVITY * dt
+                end
+
+                -- Flatten horizontal movement to XZ plane
+                local look  = cam.CoordinateFrame.LookVector
+                local right = cam.CoordinateFrame.RightVector
+                local flatLook  = Vector3.new(look.X,  0, look.Z)
+                local flatRight = Vector3.new(right.X, 0, right.Z)
+                if flatLook.Magnitude  > 0 then flatLook  = flatLook.Unit  end
+                if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end
+
+                local horizVel = (flatLook  * ((ghostControl.F - ghostControl.B) * GHOST_SPEED))
+                               + (flatRight * ((ghostControl.R - ghostControl.L) * GHOST_SPEED))
+
+                bv.Velocity = Vector3.new(horizVel.X, ghostVelY, horizVel.Z)
+
+                -- Only yaw so ghost stays upright while walking
+                local _, yaw, _ = cam.CoordinateFrame:ToEulerAnglesYXZ()
+                bg.CFrame = CFrame.Angles(0, yaw, 0)
+            end
+
+            -- Mirror real character pose onto ghost body parts
+            local realHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if realHRP then
+                for _, entry in ipairs(partMap) do
+                    local realPart = myChar:FindFirstChild(entry.name)
+                    if realPart and entry.ghost and entry.ghost.Parent then
+                        local relCF = realHRP.CFrame:ToObjectSpace(realPart.CFrame)
+                        entry.ghost.CFrame = camPart.CFrame * relCF
+                    end
+                end
+            end
+        end)
+    end
 
     Tab:AddToggle({
-        Label    = "God Mode",
+        Label    = "Ghost",
         Default  = false,
-        Callback = function(value) print("God Mode:", value) end,
-    })
-
-    Tab:AddSlider({
-        Label    = "Walk Speed",
-        Min      = 16,
-        Max      = 250,
-        Default  = 16,
-        Suffix   = " stud/s",
-        Callback = function(value)
-            game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = value
+        Callback = function(state)
+            ghostEnabled = state
+            if not ghostEnabled then
+                destroyGhost()
+                return
+            end
+            if not selectedTarget then return end
+            createGhost()
         end,
-    })
-
-    Tab:AddDropdown({
-        Label    = "Team",
-        Options  = {"Red", "Blue", "Spectators"},
-        Default  = "Red",
-        Callback = function(value) print("Team:", value) end,
-    })
-
-    Tab:AddTextInput({
-        Label       = "Player Name",
-        Placeholder = "Enter player...",
-        Callback    = function(value) print("Name:", value) end,
-    })
-
-    Tab:AddKeybind({
-        Label    = "Toggle UI",
-        Default  = Enum.KeyCode.RightShift,
-        Callback = function(key) print("Keybind:", key.Name) end,
     })
