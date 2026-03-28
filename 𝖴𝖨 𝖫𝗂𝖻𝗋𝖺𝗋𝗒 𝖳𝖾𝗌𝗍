@@ -681,7 +681,7 @@ function NovaUI:CreateWindow(cfg)
             })
 
             local Arrow = New("TextLabel", {
-                Text             = "🡫",
+                Text             = "⏷",
                 Font             = Enum.Font.GothamBold,
                 TextSize         = 14,
                 TextColor3       = Theme.Accent,
