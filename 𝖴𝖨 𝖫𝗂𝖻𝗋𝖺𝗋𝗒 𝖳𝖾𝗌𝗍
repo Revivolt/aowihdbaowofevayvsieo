@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  NovaUI — minimize replaced with floating draggable toggle
+--  test
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -633,17 +633,53 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = row,
             })
 
-            local ValLbl = New("TextLabel", {
+            -- Editable value box — looks like a label at rest, becomes an
+            -- input field on click. Suffix is stripped while typing so the
+            -- user only deals with the raw number.
+            local ValLbl = New("TextBox", {
                 Text                   = tostring(value) .. suffix,
+                PlaceholderText        = tostring(value),
                 Font                   = Enum.Font.GothamBold,
                 TextSize               = 13,
                 TextColor3             = Theme.Accent,
+                PlaceholderColor3      = Theme.AccentDim,
                 TextXAlignment         = Enum.TextXAlignment.Right,
-                BackgroundTransparency = 1,
+                BackgroundColor3       = Theme.InputBG,
+                BackgroundTransparency = 1,   -- hidden until focused
+                BorderSizePixel        = 0,
+                ClearTextOnFocus       = false,
                 Size                   = UDim2.new(0.38, -12, 0, 26),
                 Position               = UDim2.new(0.62, 0, 0, 6),
                 Parent                 = row,
             })
+            Corner(5, ValLbl)
+            local ValStroke = Instance.new("UIStroke")
+            ValStroke.Color           = Theme.Accent
+            ValStroke.Thickness       = 1
+            ValStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            ValStroke.Enabled         = false
+            ValStroke.Parent          = ValLbl
+            Pad(0, 4, 0, 4, ValLbl)
+
+            -- Strip suffix on focus so the user edits a plain number
+            ValLbl.Focused:Connect(function()
+                ValLbl.Text = tostring(value)
+                Tween(ValLbl, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
+                ValStroke.Enabled = true
+            end)
+
+            ValLbl.FocusLost:Connect(function(enterPressed)
+                ValStroke.Enabled = false
+                Tween(ValLbl, { BackgroundTransparency = 1, TextColor3 = Theme.Accent })
+                if enterPressed then
+                    local num = tonumber(ValLbl.Text)
+                    if num then
+                        SetValue(num)   -- clamps + snaps internally
+                    end
+                end
+                -- Always restore display to the confirmed value (rejects bad input)
+                ValLbl.Text = tostring(value) .. suffix
+            end)
 
             local Track = New("Frame", {
                 Size                   = UDim2.new(1, -24, 0, 4),
