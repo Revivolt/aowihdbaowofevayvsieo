@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  Services
+--  test
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -134,8 +134,40 @@ function NovaUI:CreateWindow(cfg)
     })
 
     -- ── Main frame ───────────────────────────────────────
-    -- ClipsDescendants = true so child panels never bleed outside the rounded corners.
-    -- Only ONE UIStroke lives here (the outer window border). Inner panels have no strokes.
+    -- Shadow and border ring are siblings of Main (parented to Gui) so they
+    -- are never clipped by ClipsDescendants and never show square corners.
+
+    -- Drop shadow
+    New("ImageLabel", {
+        Name                   = "Shadow",
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        Position               = UDim2.new(0, pos.X.Offset + sz.X.Offset/2, 0, pos.Y.Offset + sz.Y.Offset/2 + 8),
+        Size                   = UDim2.new(0, sz.X.Offset + 60, 0, sz.Y.Offset + 60),
+        BackgroundTransparency = 1,
+        Image                  = "rbxassetid://6015897843",
+        ImageColor3            = Color3.fromRGB(0, 0, 0),
+        ImageTransparency      = 0.72,
+        ScaleType              = Enum.ScaleType.Slice,
+        SliceCenter            = Rect.new(49, 49, 450, 450),
+        ZIndex                 = 1,
+        Parent                 = Gui,
+    })
+
+    -- Border ring: a 1 px larger rounded frame sitting directly behind Main.
+    -- Avoids UIStroke's half-pixel clipping artifact at the top edge.
+    local BorderRing = New("Frame", {
+        Name                   = "BorderRing",
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        Position               = UDim2.new(0, pos.X.Offset + sz.X.Offset/2, 0, pos.Y.Offset + sz.Y.Offset/2),
+        Size                   = UDim2.new(0, sz.X.Offset + 2, 0, sz.Y.Offset + 2),
+        BackgroundColor3       = Theme.Border,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        ZIndex                 = 2,
+        Parent                 = Gui,
+    })
+    Corner(11, BorderRing)
+
     local Main = New("Frame", {
         Name                   = "Main",
         Size                   = sz,
@@ -144,26 +176,10 @@ function NovaUI:CreateWindow(cfg)
         BackgroundTransparency = T,
         BorderSizePixel        = 0,
         ClipsDescendants       = true,
+        ZIndex                 = 3,
         Parent                 = Gui,
     })
     Corner(10, Main)
-    Stroke(Theme.Border, 1, Main)
-
-    -- Drop shadow (rendered behind Main via ZIndex = 0)
-    New("ImageLabel", {
-        Name                   = "Shadow",
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        Position               = UDim2.new(0.5, 0, 0.5, 8),
-        Size                   = UDim2.new(1, 50, 1, 50),
-        BackgroundTransparency = 1,
-        Image                  = "rbxassetid://6015897843",
-        ImageColor3            = Color3.fromRGB(0, 0, 0),
-        ImageTransparency      = 0.72,
-        ScaleType              = Enum.ScaleType.Slice,
-        SliceCenter            = Rect.new(49, 49, 450, 450),
-        ZIndex                 = 0,
-        Parent                 = Main,
-    })
 
     -- ── Title bar ────────────────────────────────────────
     -- Spans full width, sits flush at the top.
@@ -251,14 +267,41 @@ function NovaUI:CreateWindow(cfg)
     local minimised = false
     MinBtn.MouseButton1Click:Connect(function()
         minimised = not minimised
-        Tween(Main, { Size = minimised and UDim2.new(0, sz.X.Offset, 0, 44) or sz }, 0.2)
+        local targetH = minimised and 44 or sz.Y.Offset
+        Tween(Main, { Size = UDim2.new(0, sz.X.Offset, 0, targetH) }, 0.2)
+        Tween(BorderRing, { Size = UDim2.new(0, sz.X.Offset + 2, 0, targetH + 2) }, 0.2)
     end)
     CloseBtn.MouseButton1Click:Connect(function()
         Tween(Main, { Size = UDim2.new(0, sz.X.Offset, 0, 0) }, 0.18)
+        Tween(BorderRing, { Size = UDim2.new(0, sz.X.Offset + 2, 0, 2) }, 0.18)
         task.delay(0.2, function() Gui:Destroy() end)
     end)
 
-    MakeDraggable(TitleBar, Main)
+    -- Custom drag that moves Main, BorderRing and Shadow together
+    do
+        local dragging, start, originMain = false, nil, nil
+        TitleBar.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging  = true
+                start     = i.Position
+                originMain = Main.Position
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(i)
+            if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+                local d  = i.Position - start
+                local nx = originMain.X.Offset + d.X
+                local ny = originMain.Y.Offset + d.Y
+                Main.Position      = UDim2.new(0, nx, 0, ny)
+                BorderRing.Position = UDim2.new(0, nx + sz.X.Offset/2, 0, ny + Main.Size.Y.Offset/2)
+            end
+        end)
+        UserInputService.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+    end
 
     -- ── Left tab bar ─────────────────────────────────────
     local TAB_W = 120
