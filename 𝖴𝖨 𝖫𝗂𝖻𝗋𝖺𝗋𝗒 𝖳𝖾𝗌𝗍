@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  test2
+--  NovaUI — minimize replaced with floating draggable toggle
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -26,7 +26,7 @@ local Theme = {
     InputBG         = Color3.fromRGB(230, 230, 235),
     SliderFill      = Color3.fromRGB(100, 100, 115),
     White           = Color3.fromRGB(255, 255, 255),
-    CloseRed        = Color3.fromRGB(200, 200, 208),
+    CloseRed        = Color3.fromRGB(230, 230, 235),
     DropBG          = Color3.fromRGB(190, 190, 198),
     DropItem        = Color3.fromRGB(200, 200, 208),
 }
@@ -320,8 +320,30 @@ function NovaUI:CreateWindow(cfg)
         Tween(CloseBtn, { BackgroundTransparency = 1, TextColor3 = Theme.TextSecondary })
     end)
     CloseBtn.MouseButton1Click:Connect(function()
-        Tween(Main, { Size = UDim2.new(0, sz.X.Offset, 0, 0) }, 0.18)
-        task.delay(0.2, function() Gui:Destroy() end)
+        -- UIScale lets us tween a clean uniform shrink without touching Size/Position
+        local scale = Instance.new("UIScale")
+        scale.Scale  = 1
+        scale.Parent = Main
+
+        local CLOSE_T    = 0.22
+        local CLOSE_INFO = TweenInfo.new(CLOSE_T, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+
+        -- Fade out all tinted surfaces (BackgroundTransparency only goes to 1)
+        TweenService:Create(scale, CLOSE_INFO, { Scale = 0.92 }):Play()
+        TweenService:Create(Main,  CLOSE_INFO, { BackgroundTransparency = 1 }):Play()
+
+        -- Also fade child frames that carry visible colour
+        for _, desc in ipairs(Main:GetDescendants()) do
+            if desc:IsA("Frame") or desc:IsA("TextLabel") or desc:IsA("TextButton")
+            or desc:IsA("ScrollingFrame") or desc:IsA("ImageLabel") then
+                local ok, _ = pcall(function()
+                    TweenService:Create(desc, CLOSE_INFO,
+                        { BackgroundTransparency = 1 }):Play()
+                end)
+            end
+        end
+
+        task.delay(CLOSE_T + 0.05, function() Gui:Destroy() end)
     end)
 
     MakeDraggable(TitleBar, Main)
