@@ -1,28 +1,3 @@
--- [[
-    ═══════════════════════════════════════════════════════════
-                    NOVA UI LIBRARY v1.0
-         A clean, modular local-player UI library for Roblox
-    ═══════════════════════════════════════════════════════════
-
-    QUICKSTART:
-        local Nova = loadstring(game:HttpGet("..."))()  -- or require(ModuleScript)
-
-        local Window = Nova:CreateWindow({
-            Title = "My Script",
-            SubTitle = "v1.0",
-            Size = UDim2.new(0, 550, 0, 380),
-        })
-
-        local Tab = Window:AddTab("Main", "rbxassetid://...")
-
-        Tab:AddButton({ Label = "Click Me", Callback = function() print("clicked!") end })
-        Tab:AddToggle({ Label = "God Mode", Default = false, Callback = function(v) print(v) end })
-        Tab:AddSlider({ Label = "Speed", Min = 0, Max = 100, Default = 16, Callback = function(v) print(v) end })
-        Tab:AddDropdown({ Label = "Team", Options = {"Red","Blue","Green"}, Callback = function(v) print(v) end })
-        Tab:AddInput({ Label = "Player Name", Placeholder = "Enter name...", Callback = function(v) print(v) end })
-        Tab:AddKeybind({ Label = "Toggle UI", Default = Enum.KeyCode.RightShift, Callback = function(k) print(k) end })
--- ]]
-
 -- ─── Services ────────────────────────────────────────────────
 local Players        = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
