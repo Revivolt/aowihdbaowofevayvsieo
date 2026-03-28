@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  Services
+--  test
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -18,19 +18,22 @@ local Theme = {
     Elevated        = Color3.fromRGB(210, 210, 218),
     Border          = Color3.fromRGB(160, 160, 172),
     Accent          = Color3.fromRGB(100, 100, 115),
-    AccentHover     = Color3.fromRGB(80, 80, 95),
+    AccentHover     = Color3.fromRGB(80,  80,  95),
     AccentDim       = Color3.fromRGB(170, 170, 180),
-    TextPrimary     = Color3.fromRGB(40, 40, 50),
-    TextSecondary   = Color3.fromRGB(90, 90, 105),
+    TextPrimary     = Color3.fromRGB(40,  40,  50),
+    TextSecondary   = Color3.fromRGB(90,  90,  105),
     TextDisabled    = Color3.fromRGB(150, 150, 162),
     InputBG         = Color3.fromRGB(230, 230, 235),
     SliderFill      = Color3.fromRGB(100, 100, 115),
     White           = Color3.fromRGB(255, 255, 255),
-    CloseRed        = Color3.fromRGB(200, 58, 58),
+    CloseRed        = Color3.fromRGB(200, 58,  58),
+    -- Solid colours used exclusively for the dropdown panel (no transparency)
+    DropBG          = Color3.fromRGB(215, 215, 222),
+    DropItem        = Color3.fromRGB(225, 225, 232),
 }
 
--- Base transparency for all background elements (0 = opaque, 1 = invisible)
-local BASE_TRANS = 0.5
+-- Global transparency applied to semi-transparent background surfaces
+local T = 0.5
 
 -- ──────────────────────────────────────────────────────────
 --  Utility
@@ -46,9 +49,7 @@ end
 local function New(class, props)
     local inst = Instance.new(class)
     for k, v in pairs(props) do
-        if k ~= "Parent" then
-            inst[k] = v
-        end
+        if k ~= "Parent" then inst[k] = v end
     end
     inst.Parent = props.Parent
     return inst
@@ -62,8 +63,8 @@ end
 
 local function Stroke(color, thick, p)
     local s = Instance.new("UIStroke")
-    s.Color     = color or Theme.Border
-    s.Thickness = thick or 1
+    s.Color           = color or Theme.Border
+    s.Thickness       = thick or 1
     s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     s.Parent = p
 end
@@ -102,7 +103,6 @@ local function MakeDraggable(handle, target)
     end)
 end
 
--- Resolve the best parent for the ScreenGui
 local function GetGuiParent()
     if RunService:IsStudio() then
         return LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -120,8 +120,8 @@ NovaUI.__index = NovaUI
 
 function NovaUI:CreateWindow(cfg)
     cfg = cfg or {}
-    local title = cfg.Title or "NovaUI"
-    local sz    = cfg.Size  or UDim2.new(0, 520, 0, 400)
+    local title = cfg.Title    or "NovaUI"
+    local sz    = cfg.Size     or UDim2.new(0, 520, 0, 400)
     local pos   = cfg.Position or UDim2.new(0.5, -(sz.X.Offset/2), 0.5, -(sz.Y.Offset/2))
 
     -- ── ScreenGui ────────────────────────────────────────
@@ -134,111 +134,115 @@ function NovaUI:CreateWindow(cfg)
     })
 
     -- ── Main frame ───────────────────────────────────────
+    -- ClipsDescendants = true so child panels never bleed outside the rounded corners.
+    -- Only ONE UIStroke lives here (the outer window border). Inner panels have no strokes.
     local Main = New("Frame", {
-        Name                  = "Main",
-        Size                  = sz,
-        Position              = pos,
-        BackgroundColor3      = Theme.Background,
-        BackgroundTransparency= BASE_TRANS,
-        BorderSizePixel       = 0,
-        ClipsDescendants      = false,
-        Parent                = Gui,
+        Name                   = "Main",
+        Size                   = sz,
+        Position               = pos,
+        BackgroundColor3       = Theme.Background,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        ClipsDescendants       = true,
+        Parent                 = Gui,
     })
     Corner(10, Main)
     Stroke(Theme.Border, 1, Main)
 
-    -- Drop shadow
+    -- Drop shadow (rendered behind Main via ZIndex = 0)
     New("ImageLabel", {
-        Name                  = "Shadow",
-        AnchorPoint           = Vector2.new(0.5, 0.5),
-        Position              = UDim2.new(0.5, 0, 0.5, 6),
-        Size                  = UDim2.new(1, 40, 1, 40),
-        BackgroundTransparency= 1,
-        Image                 = "rbxassetid://6015897843",
-        ImageColor3           = Color3.fromRGB(0, 0, 0),
-        ImageTransparency     = 0.75,
-        ScaleType             = Enum.ScaleType.Slice,
-        SliceCenter           = Rect.new(49, 49, 450, 450),
-        ZIndex                = 0,
-        Parent                = Main,
+        Name                   = "Shadow",
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        Position               = UDim2.new(0.5, 0, 0.5, 8),
+        Size                   = UDim2.new(1, 50, 1, 50),
+        BackgroundTransparency = 1,
+        Image                  = "rbxassetid://6015897843",
+        ImageColor3            = Color3.fromRGB(0, 0, 0),
+        ImageTransparency      = 0.72,
+        ScaleType              = Enum.ScaleType.Slice,
+        SliceCenter            = Rect.new(49, 49, 450, 450),
+        ZIndex                 = 0,
+        Parent                 = Main,
     })
 
     -- ── Title bar ────────────────────────────────────────
+    -- Spans full width, sits flush at the top.
+    -- ClipsDescendants on Main handles the top rounded corners automatically.
     local TitleBar = New("Frame", {
-        Name                  = "TitleBar",
-        Size                  = UDim2.new(1, 0, 0, 44),
-        BackgroundColor3      = Theme.Surface,
-        BackgroundTransparency= BASE_TRANS,
-        BorderSizePixel       = 0,
-        Parent                = Main,
+        Name                   = "TitleBar",
+        Size                   = UDim2.new(1, 0, 0, 44),
+        Position               = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3       = Theme.Surface,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        Parent                 = Main,
     })
-    Corner(10, TitleBar)
-    -- Cover bottom rounding
+
+    -- Bottom divider for the title bar (1 px line, no extra frames needed)
     New("Frame", {
-        Size                  = UDim2.new(1, 0, 0, 10),
-        Position              = UDim2.new(0, 0, 1, -10),
-        BackgroundColor3      = Theme.Surface,
-        BackgroundTransparency= BASE_TRANS,
-        BorderSizePixel       = 0,
-        Parent                = TitleBar,
+        Size                   = UDim2.new(1, 0, 0, 1),
+        Position               = UDim2.new(0, 0, 1, -1),
+        BackgroundColor3       = Theme.Border,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        Parent                 = TitleBar,
     })
 
     -- Accent stripe
-    local Stripe = New("Frame", {
-        Size                  = UDim2.new(0, 3, 0, 22),
-        Position              = UDim2.new(0, 14, 0.5, -11),
-        BackgroundColor3      = Theme.Accent,
-        BackgroundTransparency= BASE_TRANS,
-        BorderSizePixel       = 0,
-        Parent                = TitleBar,
+    New("Frame", {
+        Size                   = UDim2.new(0, 3, 0, 22),
+        Position               = UDim2.new(0, 14, 0.5, -11),
+        BackgroundColor3       = Theme.Accent,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        Parent                 = TitleBar,
     })
-    Corner(3, Stripe)
 
     New("TextLabel", {
-        Text                  = title,
-        Font                  = Enum.Font.GothamBold,
-        TextSize              = 14,
-        TextColor3            = Theme.TextPrimary,
-        TextXAlignment        = Enum.TextXAlignment.Left,
-        BackgroundTransparency= 1,
-        Size                  = UDim2.new(1, -110, 1, 0),
-        Position              = UDim2.new(0, 24, 0, 0),
-        Parent                = TitleBar,
+        Text                   = title,
+        Font                   = Enum.Font.GothamBold,
+        TextSize               = 14,
+        TextColor3             = Theme.TextPrimary,
+        TextXAlignment         = Enum.TextXAlignment.Left,
+        BackgroundTransparency = 1,
+        Size                   = UDim2.new(1, -110, 1, 0),
+        Position               = UDim2.new(0, 26, 0, 0),
+        Parent                 = TitleBar,
     })
 
     -- Minimise button
     local MinBtn = New("TextButton", {
-        Text                  = "─",
-        Font                  = Enum.Font.GothamBold,
-        TextSize              = 13,
-        TextColor3            = Theme.TextSecondary,
-        BackgroundColor3      = Theme.Elevated,
-        BackgroundTransparency= 1,
-        AutoButtonColor       = false,
-        Size                  = UDim2.new(0, 30, 0, 30),
-        Position              = UDim2.new(1, -72, 0.5, -15),
-        Parent                = TitleBar,
+        Text                   = "─",
+        Font                   = Enum.Font.GothamBold,
+        TextSize               = 13,
+        TextColor3             = Theme.TextSecondary,
+        BackgroundColor3       = Theme.Elevated,
+        BackgroundTransparency = 1,
+        AutoButtonColor        = false,
+        Size                   = UDim2.new(0, 28, 0, 28),
+        Position               = UDim2.new(1, -68, 0.5, -14),
+        Parent                 = TitleBar,
     })
     Corner(6, MinBtn)
 
     -- Close button
     local CloseBtn = New("TextButton", {
-        Text                  = "✖",
-        Font                  = Enum.Font.GothamBold,
-        TextSize              = 13,
-        TextColor3            = Theme.TextSecondary,
-        BackgroundColor3      = Theme.CloseRed,
-        BackgroundTransparency= 1,
-        AutoButtonColor       = false,
-        Size                  = UDim2.new(0, 30, 0, 30),
-        Position              = UDim2.new(1, -36, 0.5, -15),
-        Parent                = TitleBar,
+        Text                   = "✕",
+        Font                   = Enum.Font.GothamBold,
+        TextSize               = 12,
+        TextColor3             = Theme.TextSecondary,
+        BackgroundColor3       = Theme.CloseRed,
+        BackgroundTransparency = 1,
+        AutoButtonColor        = false,
+        Size                   = UDim2.new(0, 28, 0, 28),
+        Position               = UDim2.new(1, -34, 0.5, -14),
+        Parent                 = TitleBar,
     })
     Corner(6, CloseBtn)
 
     for _, btn in ipairs({ MinBtn, CloseBtn }) do
         btn.MouseEnter:Connect(function()
-            Tween(btn, { BackgroundTransparency = BASE_TRANS, TextColor3 = Theme.TextPrimary })
+            Tween(btn, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
         end)
         btn.MouseLeave:Connect(function()
             Tween(btn, { BackgroundTransparency = 1, TextColor3 = Theme.TextSecondary })
@@ -258,41 +262,33 @@ function NovaUI:CreateWindow(cfg)
     MakeDraggable(TitleBar, Main)
 
     -- ── Left tab bar ─────────────────────────────────────
+    local TAB_W = 120
+
     local TabBar = New("Frame", {
-        Name                  = "TabBar",
-        Size                  = UDim2.new(0, 128, 1, -44),
-        Position              = UDim2.new(0, 0, 0, 44),
-        BackgroundColor3      = Theme.Surface,
-        BackgroundTransparency= BASE_TRANS,
-        BorderSizePixel       = 0,
-        Parent                = Main,
-    })
-    Corner(10, TabBar)
-    -- Cover top-right and bottom-right rounded corners
-    New("Frame", {
-        Size                  = UDim2.new(0, 10, 1, 0),
-        Position              = UDim2.new(1, -10, 0, 0),
-        BackgroundColor3      = Theme.Surface,
-        BackgroundTransparency= BASE_TRANS,
-        BorderSizePixel       = 0,
-        Parent                = TabBar,
+        Name                   = "TabBar",
+        Size                   = UDim2.new(0, TAB_W, 1, -44),
+        Position               = UDim2.new(0, 0, 0, 44),
+        BackgroundColor3       = Theme.Surface,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        Parent                 = Main,
     })
 
-    -- Thin divider line
+    -- Right divider line between tab bar and content
     New("Frame", {
-        Size                  = UDim2.new(0, 1, 1, -50),
-        Position              = UDim2.new(0, 128, 0, 50),
-        BackgroundColor3      = Theme.Border,
-        BackgroundTransparency= BASE_TRANS,
-        BorderSizePixel       = 0,
-        Parent                = Main,
+        Size                   = UDim2.new(0, 1, 1, 0),
+        Position               = UDim2.new(1, 0, 0, 0),
+        BackgroundColor3       = Theme.Border,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        Parent                 = TabBar,
     })
 
     local TabBtnList = New("Frame", {
-        Size                  = UDim2.new(1, -12, 1, -14),
-        Position              = UDim2.new(0, 6, 0, 8),
-        BackgroundTransparency= 1,
-        Parent                = TabBar,
+        Size                   = UDim2.new(1, -10, 1, -10),
+        Position               = UDim2.new(0, 5, 0, 6),
+        BackgroundTransparency = 1,
+        Parent                 = TabBar,
     })
     New("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
@@ -301,12 +297,16 @@ function NovaUI:CreateWindow(cfg)
     })
 
     -- ── Content area ─────────────────────────────────────
+    -- Left edge starts exactly after the tab bar + its 1 px divider.
+    local CONTENT_X = TAB_W + 1
+
     local ContentArea = New("Frame", {
-        Name                  = "ContentArea",
-        Size                  = UDim2.new(1, -140, 1, -56),
-        Position              = UDim2.new(0, 136, 0, 50),
-        BackgroundTransparency= 1,
-        Parent                = Main,
+        Name                   = "ContentArea",
+        Size                   = UDim2.new(1, -CONTENT_X - 8, 1, -52),
+        Position               = UDim2.new(0, CONTENT_X + 6, 0, 48),
+        BackgroundTransparency = 1,
+        BorderSizePixel        = 0,
+        Parent                 = Main,
     })
 
     -- ── Window API ───────────────────────────────────────
@@ -323,50 +323,51 @@ function NovaUI:CreateWindow(cfg)
 
         -- Tab button
         local TBtn = New("TextButton", {
-            Name                  = tabName .. "_Btn",
-            Text                  = " " .. tabName,
-            Font                  = Enum.Font.GothamSemibold,
-            TextSize              = 13,
-            TextXAlignment        = Enum.TextXAlignment.Left,
-            TextColor3            = Theme.TextSecondary,
-            BackgroundColor3      = Theme.Surface,
-            BackgroundTransparency= 1,
-            AutoButtonColor       = false,
-            Size                  = UDim2.new(1, 0, 0, 32),
-            Parent                = TabBtnList,
+            Name                   = tabName .. "_Btn",
+            Text                   = "  " .. tabName,
+            Font                   = Enum.Font.GothamSemibold,
+            TextSize               = 12,
+            TextXAlignment         = Enum.TextXAlignment.Left,
+            TextColor3             = Theme.TextSecondary,
+            BackgroundColor3       = Theme.Elevated,
+            BackgroundTransparency = 1,
+            AutoButtonColor        = false,
+            Size                   = UDim2.new(1, 0, 0, 30),
+            Parent                 = TabBtnList,
         })
         Corner(6, TBtn)
-        Pad(0, 0, 0, 10, TBtn)
 
+        -- Active indicator bar (left edge of button)
         local TBar = New("Frame", {
-            Size                  = UDim2.new(0, 3, 0, 14),
-            Position              = UDim2.new(0, -1, 0.5, -7),
-            BackgroundColor3      = Theme.Accent,
-            BackgroundTransparency= 1,
-            BorderSizePixel       = 0,
-            Parent                = TBtn,
+            Name                   = "ActiveBar",
+            Size                   = UDim2.new(0, 3, 0, 14),
+            Position               = UDim2.new(0, 2, 0.5, -7),
+            BackgroundColor3       = Theme.Accent,
+            BackgroundTransparency = 1,
+            BorderSizePixel        = 0,
+            Parent                 = TBtn,
         })
         Corner(3, TBar)
 
-        -- Tab scroll frame (the content panel)
+        -- Tab content scroll frame
         local TContent = New("ScrollingFrame", {
-            Name                  = tabName .. "_Content",
-            Size                  = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency= 1,
-            BorderSizePixel       = 0,
-            ScrollBarThickness    = 3,
-            ScrollBarImageColor3  = Theme.Accent,
-            CanvasSize            = UDim2.new(0, 0, 0, 0),
-            AutomaticCanvasSize   = Enum.AutomaticSize.Y,
-            Visible               = false,
-            Parent                = ContentArea,
+            Name                   = tabName .. "_Content",
+            Size                   = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel        = 0,
+            ScrollBarThickness     = 3,
+            ScrollBarImageColor3   = Theme.Accent,
+            CanvasSize             = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+            Visible                = false,
+            Parent                 = ContentArea,
         })
         New("UIListLayout", {
             SortOrder = Enum.SortOrder.LayoutOrder,
             Padding   = UDim.new(0, 5),
             Parent    = TContent,
         })
-        Pad(6, 6, 10, 2, TContent)
+        Pad(4, 4, 8, 0, TContent)
 
         -- Tab object
         local Tab = { _order = 0, _content = TContent, _btn = TBtn, _window = self }
@@ -375,21 +376,19 @@ function NovaUI:CreateWindow(cfg)
             for _, t in ipairs(self._tabs) do
                 t._content.Visible = false
                 Tween(t._btn, { BackgroundTransparency = 1, TextColor3 = Theme.TextSecondary })
-                Tween(t._btn.ActiveBar or t._btn:FindFirstChildOfClass("Frame"),
-                    { BackgroundTransparency = 1 })
+                local ab = t._btn:FindFirstChild("ActiveBar")
+                if ab then Tween(ab, { BackgroundTransparency = 1 }) end
             end
             TContent.Visible = true
-            Tween(TBtn,  { BackgroundTransparency = 0.65, TextColor3 = Theme.TextPrimary })
-            Tween(TBar,  { BackgroundTransparency = BASE_TRANS })
+            Tween(TBtn, { BackgroundTransparency = 0.65, TextColor3 = Theme.TextPrimary })
+            Tween(TBar, { BackgroundTransparency = 0 })
             self._activeTab = Tab
         end
-
-        TBar.Name = "ActiveBar"
 
         TBtn.MouseButton1Click:Connect(Activate)
         TBtn.MouseEnter:Connect(function()
             if self._activeTab ~= Tab then
-                Tween(TBtn, { BackgroundTransparency = 0.75, TextColor3 = Theme.TextPrimary })
+                Tween(TBtn, { BackgroundTransparency = 0.78, TextColor3 = Theme.TextPrimary })
             end
         end)
         TBtn.MouseLeave:Connect(function()
@@ -401,33 +400,34 @@ function NovaUI:CreateWindow(cfg)
         table.insert(self._tabs, Tab)
         if isFirst then Activate() end
 
-        -- ── Internal helpers ────────────────────────────────
+        -- ── Row builder ───────────────────────────────────
+        -- No UIStroke on rows — a subtly different BackgroundColor3 provides
+        -- enough visual separation without cluttering the transparent look.
         local function Row(h)
             local r = New("Frame", {
-                Size                  = UDim2.new(1, 0, 0, h or 36),
-                BackgroundColor3      = Theme.Elevated,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                LayoutOrder           = Tab._order,
-                Parent                = TContent,
+                Size                   = UDim2.new(1, 0, 0, h or 36),
+                BackgroundColor3       = Theme.Elevated,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                LayoutOrder            = Tab._order,
+                Parent                 = TContent,
             })
             Tab._order += 1
             Corner(7, r)
-            Stroke(Theme.Border, 1, r)
             return r
         end
 
         local function RowLabel(text, parent)
             New("TextLabel", {
-                Text                  = text,
-                Font                  = Enum.Font.Gotham,
-                TextSize              = 13,
-                TextColor3            = Theme.TextPrimary,
-                TextXAlignment        = Enum.TextXAlignment.Left,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(0.55, 0, 1, 0),
-                Position              = UDim2.new(0, 12, 0, 0),
-                Parent                = parent,
+                Text                   = text,
+                Font                   = Enum.Font.Gotham,
+                TextSize               = 13,
+                TextColor3             = Theme.TextPrimary,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(0.55, -12, 1, 0),
+                Position               = UDim2.new(0, 12, 0, 0),
+                Parent                 = parent,
             })
         end
 
@@ -439,52 +439,51 @@ function NovaUI:CreateWindow(cfg)
             local callback = cfg.Callback or function() end
 
             local btn = New("TextButton", {
-                Text                  = "",
-                AutoButtonColor       = false,
-                Size                  = UDim2.new(1, 0, 0, 36),
-                BackgroundColor3      = Theme.Elevated,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                LayoutOrder           = Tab._order,
-                Parent                = TContent,
+                Text                   = "",
+                AutoButtonColor        = false,
+                Size                   = UDim2.new(1, 0, 0, 36),
+                BackgroundColor3       = Theme.Elevated,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                LayoutOrder            = Tab._order,
+                Parent                 = TContent,
             })
             Tab._order += 1
             Corner(7, btn)
-            Stroke(Theme.Border, 1, btn)
 
             New("TextLabel", {
-                Text                  = cfg.Label or "Button",
-                Font                  = Enum.Font.GothamSemibold,
-                TextSize              = 13,
-                TextColor3            = Theme.TextPrimary,
-                TextXAlignment        = Enum.TextXAlignment.Left,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(0.8, 0, 1, 0),
-                Position              = UDim2.new(0, 12, 0, 0),
-                Parent                = btn,
+                Text                   = cfg.Label or "Button",
+                Font                   = Enum.Font.GothamSemibold,
+                TextSize               = 13,
+                TextColor3             = Theme.TextPrimary,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(1, -40, 1, 0),
+                Position               = UDim2.new(0, 12, 0, 0),
+                Parent                 = btn,
             })
 
             New("TextLabel", {
-                Text                  = "⇌",
-                Font                  = Enum.Font.GothamBold,
-                TextSize              = 11,
-                TextColor3            = Theme.Accent,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(0, 18, 1, 0),
-                Position              = UDim2.new(1, -24, 0, 0),
-                Parent                = btn,
+                Text                   = "›",
+                Font                   = Enum.Font.GothamBold,
+                TextSize               = 18,
+                TextColor3             = Theme.Accent,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(0, 20, 1, 0),
+                Position               = UDim2.new(1, -28, 0, 0),
+                Parent                 = btn,
             })
 
             btn.MouseEnter:Connect(function()
-                Tween(btn, { BackgroundColor3 = Theme.SurfaceHover, BackgroundTransparency = BASE_TRANS })
+                Tween(btn, { BackgroundColor3 = Theme.SurfaceHover, BackgroundTransparency = T })
             end)
             btn.MouseLeave:Connect(function()
-                Tween(btn, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = BASE_TRANS })
+                Tween(btn, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = T })
             end)
             btn.MouseButton1Click:Connect(function()
-                Tween(btn, { BackgroundColor3 = Theme.AccentDim, BackgroundTransparency = BASE_TRANS }, 0.07)
+                Tween(btn, { BackgroundColor3 = Theme.AccentDim, BackgroundTransparency = T }, 0.07)
                 task.delay(0.13, function()
-                    Tween(btn, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = BASE_TRANS })
+                    Tween(btn, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = T })
                 end)
                 task.spawn(callback)
             end)
@@ -506,22 +505,22 @@ function NovaUI:CreateWindow(cfg)
             RowLabel(cfg.Label or "Toggle", row)
 
             local Pill = New("Frame", {
-                Size                  = UDim2.new(0, 44, 0, 22),
-                Position              = UDim2.new(1, -56, 0.5, -11),
-                BackgroundColor3      = state and Theme.Accent or Theme.Border,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                Parent                = row,
+                Size                   = UDim2.new(0, 44, 0, 22),
+                Position               = UDim2.new(1, -54, 0.5, -11),
+                BackgroundColor3       = state and Theme.Accent or Theme.Border,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                Parent                 = row,
             })
             Corner(11, Pill)
 
             local Knob = New("Frame", {
-                Size                  = UDim2.new(0, 16, 0, 16),
-                Position              = state and UDim2.new(0, 24, 0.5, -8) or UDim2.new(0, 4, 0.5, -8),
-                BackgroundColor3      = Theme.White,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                Parent                = Pill,
+                Size                   = UDim2.new(0, 16, 0, 16),
+                Position               = state and UDim2.new(0, 24, 0.5, -8) or UDim2.new(0, 4, 0.5, -8),
+                BackgroundColor3       = Theme.White,
+                BackgroundTransparency = 0.2,
+                BorderSizePixel        = 0,
+                Parent                 = Pill,
             })
             Corner(8, Knob)
 
@@ -533,10 +532,10 @@ function NovaUI:CreateWindow(cfg)
             end
 
             New("TextButton", {
-                Text                  = "",
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(1, 0, 1, 0),
-                Parent                = row,
+                Text                   = "",
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(1, 0, 1, 0),
+                Parent                 = row,
             }).MouseButton1Click:Connect(function() Set(not state) end)
 
             row.MouseEnter:Connect(function()
@@ -557,67 +556,67 @@ function NovaUI:CreateWindow(cfg)
         -- ────────────────────────────────────────────────────
         function Tab:AddSlider(cfg)
             cfg = cfg or {}
-            local min      = cfg.Min     or 0
-            local max      = cfg.Max     or 100
-            local step     = cfg.Step    or 1
-            local suffix   = cfg.Suffix  or ""
+            local min      = cfg.Min      or 0
+            local max      = cfg.Max      or 100
+            local step     = cfg.Step     or 1
+            local suffix   = cfg.Suffix   or ""
             local value    = math.clamp(cfg.Default or min, min, max)
             local callback = cfg.Callback or function() end
 
             local row = Row(52)
 
             New("TextLabel", {
-                Text                  = cfg.Label or "Slider",
-                Font                  = Enum.Font.GothamSemibold,
-                TextSize              = 13,
-                TextColor3            = Theme.TextPrimary,
-                TextXAlignment        = Enum.TextXAlignment.Left,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(0.6, 0, 0, 26),
-                Position              = UDim2.new(0, 12, 0, 0),
-                Parent                = row,
+                Text                   = cfg.Label or "Slider",
+                Font                   = Enum.Font.GothamSemibold,
+                TextSize               = 13,
+                TextColor3             = Theme.TextPrimary,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(0.6, -12, 0, 26),
+                Position               = UDim2.new(0, 12, 0, 6),
+                Parent                 = row,
             })
 
             local ValLbl = New("TextLabel", {
-                Text                  = tostring(value) .. suffix,
-                Font                  = Enum.Font.GothamBold,
-                TextSize              = 13,
-                TextColor3            = Theme.Accent,
-                TextXAlignment        = Enum.TextXAlignment.Right,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(0.35, 0, 0, 26),
-                Position              = UDim2.new(0.62, 0, 0, 0),
-                Parent                = row,
+                Text                   = tostring(value) .. suffix,
+                Font                   = Enum.Font.GothamBold,
+                TextSize               = 13,
+                TextColor3             = Theme.Accent,
+                TextXAlignment         = Enum.TextXAlignment.Right,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(0.38, -12, 0, 26),
+                Position               = UDim2.new(0.62, 0, 0, 6),
+                Parent                 = row,
             })
 
             local Track = New("Frame", {
-                Size                  = UDim2.new(1, -24, 0, 4),
-                Position              = UDim2.new(0, 12, 0, 38),
-                BackgroundColor3      = Theme.Border,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                Parent                = row,
+                Size                   = UDim2.new(1, -24, 0, 4),
+                Position               = UDim2.new(0, 12, 0, 38),
+                BackgroundColor3       = Theme.Border,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                Parent                 = row,
             })
             Corner(4, Track)
 
             local pct0 = (value - min) / (max - min)
 
             local Fill = New("Frame", {
-                Size                  = UDim2.new(pct0, 0, 1, 0),
-                BackgroundColor3      = Theme.SliderFill,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                Parent                = Track,
+                Size                   = UDim2.new(pct0, 0, 1, 0),
+                BackgroundColor3       = Theme.SliderFill,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                Parent                 = Track,
             })
             Corner(4, Fill)
 
             local Thumb = New("Frame", {
-                Size                  = UDim2.new(0, 14, 0, 14),
-                Position              = UDim2.new(pct0, -7, 0.5, -7),
-                BackgroundColor3      = Theme.White,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                Parent                = Track,
+                Size                   = UDim2.new(0, 14, 0, 14),
+                Position               = UDim2.new(pct0, -7, 0.5, -7),
+                BackgroundColor3       = Theme.White,
+                BackgroundTransparency = 0,
+                BorderSizePixel        = 0,
+                Parent                 = Track,
             })
             Corner(7, Thumb)
             Stroke(Theme.Accent, 2, Thumb)
@@ -626,8 +625,8 @@ function NovaUI:CreateWindow(cfg)
                 v = math.clamp(math.round(v / step) * step, min, max)
                 value = v
                 local p = (v - min) / (max - min)
-                Tween(Fill,  { Size     = UDim2.new(p, 0, 1, 0)      }, 0.05)
-                Tween(Thumb, { Position = UDim2.new(p, -7, 0.5, -7)  }, 0.05)
+                Tween(Fill,  { Size     = UDim2.new(p, 0, 1, 0)     }, 0.05)
+                Tween(Thumb, { Position = UDim2.new(p, -7, 0.5, -7) }, 0.05)
                 ValLbl.Text = tostring(v) .. suffix
                 task.spawn(callback, v)
             end
@@ -659,6 +658,13 @@ function NovaUI:CreateWindow(cfg)
 
         -- ────────────────────────────────────────────────────
         --  DROPDOWN
+        --  Fixes applied:
+        --   • Panel starts at size UDim2(1,0,0,0) — truly collapsed
+        --   • ClipsDescendants = true on Panel so items are hidden at size 0
+        --   • Panel + all items are FULLY OPAQUE (BackgroundTransparency = 0)
+        --   • UIStroke on Panel is toggled on/off with open state so the
+        --     border doesn't appear as a 1 px line when collapsed
+        --   • Wrapper does NOT clip so the open panel overlays siblings
         -- ────────────────────────────────────────────────────
         function Tab:AddDropdown(cfg)
             cfg = cfg or {}
@@ -668,106 +674,126 @@ function NovaUI:CreateWindow(cfg)
             local open     = false
 
             local Wrapper = New("Frame", {
-                Size                  = UDim2.new(1, 0, 0, 36),
-                BackgroundTransparency= 1,
-                ClipsDescendants      = false,
-                LayoutOrder           = Tab._order,
-                ZIndex                = 5,
-                Parent                = TContent,
+                Size                   = UDim2.new(1, 0, 0, 36),
+                BackgroundTransparency = 1,
+                ClipsDescendants       = false,
+                LayoutOrder            = Tab._order,
+                ZIndex                 = 5,
+                Parent                 = TContent,
             })
             Tab._order += 1
 
             local Header = New("TextButton", {
-                Text                  = "",
-                AutoButtonColor       = false,
-                Size                  = UDim2.new(1, 0, 0, 36),
-                BackgroundColor3      = Theme.Elevated,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                ZIndex                = 5,
-                Parent                = Wrapper,
+                Text                   = "",
+                AutoButtonColor        = false,
+                Size                   = UDim2.new(1, 0, 0, 36),
+                BackgroundColor3       = Theme.Elevated,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                ZIndex                 = 5,
+                Parent                 = Wrapper,
             })
             Corner(7, Header)
-            Stroke(Theme.Border, 1, Header)
 
             RowLabel(cfg.Label or "Dropdown", Header)
 
             local SelLbl = New("TextLabel", {
-                Text                  = selected,
-                Font                  = Enum.Font.Gotham,
-                TextSize              = 12,
-                TextColor3            = Theme.TextSecondary,
-                TextXAlignment        = Enum.TextXAlignment.Right,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(0.38, -26, 1, 0),
-                Position              = UDim2.new(0.57, 0, 0, 0),
-                ZIndex                = 5,
-                Parent                = Header,
+                Text                   = selected,
+                Font                   = Enum.Font.Gotham,
+                TextSize               = 12,
+                TextColor3             = Theme.TextSecondary,
+                TextXAlignment         = Enum.TextXAlignment.Right,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(0.38, -30, 1, 0),
+                Position               = UDim2.new(0.57, 0, 0, 0),
+                ZIndex                 = 5,
+                Parent                 = Header,
             })
 
             local Arrow = New("TextLabel", {
-                Text                  = "⇩",
-                Font                  = Enum.Font.GothamBold,
-                TextSize              = 14,
-                TextColor3            = Theme.Accent,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(0, 20, 1, 0),
-                Position              = UDim2.new(1, -26, 0, 0),
-                ZIndex                = 5,
-                Parent                = Header,
+                Text                   = "▾",
+                Font                   = Enum.Font.GothamBold,
+                TextSize               = 14,
+                TextColor3             = Theme.Accent,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(0, 20, 1, 0),
+                Position               = UDim2.new(1, -26, 0, 0),
+                ZIndex                 = 5,
+                Parent                 = Header,
             })
 
-            local panelH = #options * 30 + 10
+            local panelH = #options * 30 + 8
+
+            -- Panel: fully opaque, clips children so size=0 shows nothing at all
             local Panel = New("Frame", {
-                Size                  = UDim2.new(1, 0, 0, 0),
-                Position              = UDim2.new(0, 0, 0, 40),
-                BackgroundColor3      = Theme.Surface,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                ClipsDescendants      = true,
-                ZIndex                = 10,
-                Parent                = Wrapper,
+                Size                   = UDim2.new(1, 0, 0, 0),
+                Position               = UDim2.new(0, 0, 0, 39),
+                BackgroundColor3       = Theme.DropBG,
+                BackgroundTransparency = 0,
+                BorderSizePixel        = 0,
+                ClipsDescendants       = true,
+                ZIndex                 = 20,
+                Parent                 = Wrapper,
             })
             Corner(7, Panel)
-            Stroke(Theme.Border, 1, Panel)
-            Pad(4, 4, 4, 4, Panel)
 
-            New("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2), Parent = Panel })
+            -- UIStroke starts disabled so it's invisible when Panel is collapsed
+            local PanelStroke = Instance.new("UIStroke")
+            PanelStroke.Color           = Theme.Border
+            PanelStroke.Thickness       = 1
+            PanelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            PanelStroke.Enabled         = false
+            PanelStroke.Parent          = Panel
+
+            local ItemList = New("Frame", {
+                Size                   = UDim2.new(1, 0, 0, panelH),
+                BackgroundTransparency = 1,
+                BorderSizePixel        = 0,
+                ZIndex                 = 21,
+                Parent                 = Panel,
+            })
+            New("UIListLayout", {
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Padding   = UDim.new(0, 2),
+                Parent    = ItemList,
+            })
+            Pad(4, 4, 4, 4, ItemList)
 
             for i, opt in ipairs(options) do
                 local OBtn = New("TextButton", {
-                    Text                  = opt,
-                    Font                  = Enum.Font.Gotham,
-                    TextSize              = 13,
-                    TextColor3            = (opt == selected) and Theme.Accent or Theme.TextPrimary,
-                    TextXAlignment        = Enum.TextXAlignment.Left,
-                    BackgroundColor3      = Theme.Elevated,
-                    BackgroundTransparency= 1,
-                    AutoButtonColor       = false,
-                    Size                  = UDim2.new(1, 0, 0, 28),
-                    LayoutOrder           = i,
-                    ZIndex                = 11,
-                    Parent                = Panel,
+                    Text                   = opt,
+                    Font                   = Enum.Font.Gotham,
+                    TextSize               = 13,
+                    TextColor3             = (opt == selected) and Theme.Accent or Theme.TextPrimary,
+                    TextXAlignment         = Enum.TextXAlignment.Left,
+                    BackgroundColor3       = Theme.DropItem,
+                    BackgroundTransparency = 0,
+                    AutoButtonColor        = false,
+                    Size                   = UDim2.new(1, 0, 0, 28),
+                    LayoutOrder            = i,
+                    ZIndex                 = 22,
+                    Parent                 = ItemList,
                 })
                 Corner(5, OBtn)
                 Pad(0, 0, 0, 8, OBtn)
 
                 OBtn.MouseEnter:Connect(function()
-                    Tween(OBtn, { BackgroundTransparency = BASE_TRANS })
+                    Tween(OBtn, { BackgroundColor3 = Theme.SurfaceHover })
                 end)
                 OBtn.MouseLeave:Connect(function()
-                    Tween(OBtn, { BackgroundTransparency = 1 })
+                    Tween(OBtn, { BackgroundColor3 = Theme.DropItem })
                 end)
                 OBtn.MouseButton1Click:Connect(function()
-                    selected = opt
+                    selected    = opt
                     SelLbl.Text = opt
-                    for _, c in ipairs(Panel:GetChildren()) do
+                    for _, c in ipairs(ItemList:GetChildren()) do
                         if c:IsA("TextButton") then Tween(c, { TextColor3 = Theme.TextPrimary }) end
                     end
                     Tween(OBtn, { TextColor3 = Theme.Accent })
                     open = false
                     Tween(Panel, { Size = UDim2.new(1, 0, 0, 0) }, 0.14)
                     Tween(Arrow, { Rotation = 0 })
+                    task.delay(0.15, function() PanelStroke.Enabled = false end)
                     task.spawn(callback, opt)
                 end)
             end
@@ -775,12 +801,13 @@ function NovaUI:CreateWindow(cfg)
             Header.MouseButton1Click:Connect(function()
                 open = not open
                 if open then
-                    Panel.Size = UDim2.new(1, 0, 0, 0)
+                    PanelStroke.Enabled = true
                     Tween(Panel, { Size = UDim2.new(1, 0, 0, panelH) }, 0.16)
                     Tween(Arrow, { Rotation = 180 })
                 else
                     Tween(Panel, { Size = UDim2.new(1, 0, 0, 0) }, 0.14)
                     Tween(Arrow, { Rotation = 0 })
+                    task.delay(0.15, function() PanelStroke.Enabled = false end)
                 end
             end)
             Header.MouseEnter:Connect(function()
@@ -792,7 +819,8 @@ function NovaUI:CreateWindow(cfg)
 
             local api = {}
             function api:Set(v)
-                selected = v; SelLbl.Text = v
+                selected    = v
+                SelLbl.Text = v
                 task.spawn(callback, v)
             end
             function api:Get() return selected end
@@ -810,31 +838,31 @@ function NovaUI:CreateWindow(cfg)
             RowLabel(cfg.Label or "Input", row)
 
             local Box = New("TextBox", {
-                Text                  = cfg.Default     or "",
-                PlaceholderText       = cfg.Placeholder or "Type here...",
-                Font                  = Enum.Font.Gotham,
-                TextSize              = 12,
-                TextColor3            = Theme.TextPrimary,
-                PlaceholderColor3     = Theme.TextDisabled,
-                TextXAlignment        = Enum.TextXAlignment.Left,
-                BackgroundColor3      = Theme.InputBG,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                ClearTextOnFocus      = cfg.ClearOnFocus ~= false,
-                Size                  = UDim2.new(0, 140, 0, 24),
-                Position              = UDim2.new(1, -8, 0.5, -12),
-                AnchorPoint           = Vector2.new(1, 0),
-                Parent                = row,
+                Text                   = cfg.Default     or "",
+                PlaceholderText        = cfg.Placeholder or "Type here...",
+                Font                   = Enum.Font.Gotham,
+                TextSize               = 12,
+                TextColor3             = Theme.TextPrimary,
+                PlaceholderColor3      = Theme.TextDisabled,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                BackgroundColor3       = Theme.InputBG,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                ClearTextOnFocus       = cfg.ClearOnFocus ~= false,
+                Size                   = UDim2.new(0, 136, 0, 24),
+                Position               = UDim2.new(1, -8, 0.5, -12),
+                AnchorPoint            = Vector2.new(1, 0),
+                Parent                 = row,
             })
             Corner(5, Box)
             Stroke(Theme.Border, 1, Box)
             Pad(0, 6, 0, 6, Box)
 
             Box.Focused:Connect(function()
-                Tween(Box, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = BASE_TRANS })
+                Tween(Box, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = T })
             end)
             Box.FocusLost:Connect(function(enter)
-                Tween(Box, { BackgroundColor3 = Theme.InputBG, BackgroundTransparency = BASE_TRANS })
+                Tween(Box, { BackgroundColor3 = Theme.InputBG, BackgroundTransparency = T })
                 if enter then task.spawn(callback, Box.Text) end
             end)
             Box:GetPropertyChangedSignal("Text"):Connect(function()
@@ -852,7 +880,7 @@ function NovaUI:CreateWindow(cfg)
         -- ────────────────────────────────────────────────────
         function Tab:AddKeybind(cfg)
             cfg = cfg or {}
-            local currentKey = cfg.Default or Enum.KeyCode.Unknown
+            local currentKey = cfg.Default  or Enum.KeyCode.Unknown
             local callback   = cfg.Callback or function() end
             local listening  = false
 
@@ -860,17 +888,17 @@ function NovaUI:CreateWindow(cfg)
             RowLabel(cfg.Label or "Keybind", row)
 
             local KBtn = New("TextButton", {
-                Text                  = "[" .. currentKey.Name .. "]",
-                Font                  = Enum.Font.GothamBold,
-                TextSize              = 12,
-                TextColor3            = Theme.Accent,
-                BackgroundColor3      = Theme.InputBG,
-                BackgroundTransparency= BASE_TRANS,
-                AutoButtonColor       = false,
-                BorderSizePixel       = 0,
-                Size                  = UDim2.new(0, 100, 0, 24),
-                Position              = UDim2.new(1, -108, 0.5, -12),
-                Parent                = row,
+                Text                   = "[" .. currentKey.Name .. "]",
+                Font                   = Enum.Font.GothamBold,
+                TextSize               = 12,
+                TextColor3             = Theme.Accent,
+                BackgroundColor3       = Theme.InputBG,
+                BackgroundTransparency = T,
+                AutoButtonColor        = false,
+                BorderSizePixel        = 0,
+                Size                   = UDim2.new(0, 100, 0, 24),
+                Position               = UDim2.new(1, -108, 0.5, -12),
+                Parent                 = row,
             })
             Corner(5, KBtn)
             Stroke(Theme.Border, 1, KBtn)
@@ -878,17 +906,25 @@ function NovaUI:CreateWindow(cfg)
             local function StopListen()
                 listening = false
                 KBtn.Text = "[" .. currentKey.Name .. "]"
-                Tween(KBtn, { TextColor3 = Theme.Accent, BackgroundColor3 = Theme.InputBG, BackgroundTransparency = BASE_TRANS })
+                Tween(KBtn, {
+                    TextColor3             = Theme.Accent,
+                    BackgroundColor3       = Theme.InputBG,
+                    BackgroundTransparency = T,
+                })
             end
 
             KBtn.MouseButton1Click:Connect(function()
                 if listening then StopListen(); return end
                 listening = true
-                KBtn.Text = "[  ...  ]"
-                Tween(KBtn, { TextColor3 = Theme.TextPrimary, BackgroundColor3 = Theme.AccentDim, BackgroundTransparency = BASE_TRANS })
+                KBtn.Text = "[ ... ]"
+                Tween(KBtn, {
+                    TextColor3             = Theme.TextPrimary,
+                    BackgroundColor3       = Theme.AccentDim,
+                    BackgroundTransparency = T,
+                })
             end)
 
-            UserInputService.InputBegan:Connect(function(inp, gpe)
+            UserInputService.InputBegan:Connect(function(inp)
                 if listening and inp.UserInputType == Enum.UserInputType.Keyboard then
                     currentKey = inp.KeyCode
                     StopListen()
@@ -908,15 +944,15 @@ function NovaUI:CreateWindow(cfg)
         function Tab:AddLabel(text, style)
             style = style or "section"
             local lbl = New("TextLabel", {
-                Text                  = text,
-                Font                  = style == "section" and Enum.Font.GothamBold or Enum.Font.Gotham,
-                TextSize              = style == "section" and 11 or 12,
-                TextColor3            = style == "section" and Theme.TextDisabled or Theme.TextSecondary,
-                TextXAlignment        = Enum.TextXAlignment.Left,
-                BackgroundTransparency= 1,
-                Size                  = UDim2.new(1, 0, 0, style == "section" and 18 or 28),
-                LayoutOrder           = Tab._order,
-                Parent                = TContent,
+                Text                   = text,
+                Font                   = style == "section" and Enum.Font.GothamBold or Enum.Font.Gotham,
+                TextSize               = style == "section" and 10 or 12,
+                TextColor3             = style == "section" and Theme.TextDisabled or Theme.TextSecondary,
+                TextXAlignment         = Enum.TextXAlignment.Left,
+                BackgroundTransparency = 1,
+                Size                   = UDim2.new(1, 0, 0, style == "section" and 16 or 26),
+                LayoutOrder            = Tab._order,
+                Parent                 = TContent,
             })
             Tab._order += 1
             Pad(0, 0, 0, 4, lbl)
@@ -928,12 +964,12 @@ function NovaUI:CreateWindow(cfg)
         -- ────────────────────────────────────────────────────
         function Tab:AddSeparator()
             local sep = New("Frame", {
-                Size                  = UDim2.new(1, -4, 0, 1),
-                BackgroundColor3      = Theme.Border,
-                BackgroundTransparency= BASE_TRANS,
-                BorderSizePixel       = 0,
-                LayoutOrder           = Tab._order,
-                Parent                = TContent,
+                Size                   = UDim2.new(1, -4, 0, 1),
+                BackgroundColor3       = Theme.Border,
+                BackgroundTransparency = T,
+                BorderSizePixel        = 0,
+                LayoutOrder            = Tab._order,
+                Parent                 = TContent,
             })
             Tab._order += 1
             return sep
@@ -945,7 +981,5 @@ function NovaUI:CreateWindow(cfg)
     return Window
 end -- CreateWindow
 
--- Expose theme for external customisation
 NovaUI.Theme = Theme
-
 return NovaUI
