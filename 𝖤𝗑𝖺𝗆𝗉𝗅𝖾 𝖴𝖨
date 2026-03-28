@@ -1,0 +1,50 @@
+
+    local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
+
+    local Window = NovaUI:CreateWindow({
+        Title = "HappyTier",
+        Size  = UDim2.new(0, 420, 0, 300),
+    })
+
+    local Tab = Window:AddTab("Combat")
+
+    Tab:AddButton({
+        Label    = "Kill Aura",
+        Callback = function() print("Kill Aura activated!") end,
+    })
+
+    Tab:AddToggle({
+        Label    = "God Mode",
+        Default  = false,
+        Callback = function(value) print("God Mode:", value) end,
+    })
+
+    Tab:AddSlider({
+        Label    = "Walk Speed",
+        Min      = 16,
+        Max      = 250,
+        Default  = 16,
+        Suffix   = " stud/s",
+        Callback = function(value)
+            game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = value
+        end,
+    })
+
+    Tab:AddDropdown({
+        Label    = "Team",
+        Options  = {"Red", "Blue", "Spectators"},
+        Default  = "Red",
+        Callback = function(value) print("Team:", value) end,
+    })
+
+    Tab:AddTextInput({
+        Label       = "Player Name",
+        Placeholder = "Enter player...",
+        Callback    = function(value) print("Name:", value) end,
+    })
+
+    Tab:AddKeybind({
+        Label    = "Toggle UI",
+        Default  = Enum.KeyCode.RightShift,
+        Callback = function(key) print("Keybind:", key.Name) end,
+    })
