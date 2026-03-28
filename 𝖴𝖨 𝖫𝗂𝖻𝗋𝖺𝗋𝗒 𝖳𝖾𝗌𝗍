@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  test
+--  NovaUI — minimize replaced with floating draggable toggle
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -668,14 +668,12 @@ function NovaUI:CreateWindow(cfg)
                 ValStroke.Enabled = true
             end)
 
-            ValLbl.FocusLost:Connect(function(enterPressed)
+            ValLbl.FocusLost:Connect(function()
                 ValStroke.Enabled = false
                 Tween(ValLbl, { BackgroundTransparency = 1, TextColor3 = Theme.Accent })
-                if enterPressed then
-                    local num = tonumber(ValLbl.Text)
-                    if num then
-                        SetValue(num)   -- clamps + snaps internally
-                    end
+                local num = tonumber(ValLbl.Text)
+                if num then
+                    SetValue(num)   -- clamps + snaps internally
                 end
                 -- Always restore display to the confirmed value (rejects bad input)
                 ValLbl.Text = tostring(value) .. suffix
