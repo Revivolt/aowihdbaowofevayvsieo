@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -455,6 +455,103 @@ do
             end
             if not selectedTarget then return end
             createGhost()
+        end,
+    })
+end
+
+
+    -- ── CP / Hover toggle ─────────────────────────────────────────
+    local cpConn       = nil
+    local cpEnabled    = false
+    local HOVER_UP     = -80
+    local CLOSE_DIST   = 25
+    local BELOW_OFF    = -1
+    local NEARBY_DURATION = 0.5
+    local nearbyLatchRoot = nil
+    local nearbyLatchTime = 0
+
+    local function stopConn()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+    end
+
+    local function findNearbyPlayer(tgtRoot)
+        local closest, closestDist = nil, CLOSE_DIST
+        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+            if plr == weldLocal or plr == selectedTarget then continue end
+            local char = plr.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then continue end
+            local dist = (root.Position - tgtRoot.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closest = root
+            end
+        end
+        return closest
+    end
+
+    local function startConn()
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+        nearbyLatchRoot = nil
+        nearbyLatchTime = 0
+        activeFlingCount = activeFlingCount + 1
+        cpConn = weldRun.Heartbeat:Connect(function()
+            if not cpEnabled then return end
+            if not selectedTarget then return end
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+                local now = tick()
+                if nearbyLatchRoot then
+                    if (now - nearbyLatchTime) >= NEARBY_DURATION then
+                        nearbyLatchRoot = nil
+                        nearbyLatchTime = 0
+                    end
+                end
+                if not nearbyLatchRoot then
+                    local found = findNearbyPlayer(tgtRoot)
+                    if found then
+                        nearbyLatchRoot = found
+                        nearbyLatchTime = now
+                    end
+                end
+                local anchorRoot, offsetY
+                if nearbyLatchRoot then
+                    anchorRoot = nearbyLatchRoot
+                    offsetY    = BELOW_OFF
+                else
+                    anchorRoot = tgtRoot
+                    offsetY    = HOVER_UP
+                end
+                myRoot.CFrame      = CFrame.new(anchorRoot.Position + Vector3.new(0, offsetY, 0))
+                myRoot.Velocity    = Vector3.new(500, 500, 500)
+                myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", anchorRoot)
+            end)
+        end)
+    end
+
+    Tab:AddToggle({
+        Label    = "Fling Aura",
+        Default  = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                stopConn()
+                nearbyLatchRoot = nil
+                nearbyLatchTime = 0
+                return
+            end
+            if not selectedTarget then return end
+            startConn()
         end,
     })
 end
