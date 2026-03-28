@@ -145,6 +145,70 @@ end)
 
     local Tab = Window:AddTab("Combat")
 
+local weldPlayers    = game:GetService("Players")
+local weldRun        = game:GetService("RunService")
+local weldLocal      = weldPlayers.LocalPlayer
+local selectedTarget = nil
+local flingTargetAll = false
+
+Tab:AddTextInput({
+    Label       = "Player Name",
+    Placeholder = "Enter player/-",
+    Callback = function(input)
+        input = (tostring(input or "")):lower()
+        flingTargetAll = false
+        selectedTarget = nil
+        if input == "-" then
+            flingTargetAll = true
+            return
+        end
+        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+            local name    = plr.Name:lower()
+            local display = (plr.DisplayName or plr.Name):lower()
+            if name == input or display == input
+            or name:sub(1, #input) == input or display:sub(1, #input) == input then
+                selectedTarget = plr
+                break
+            end
+        end
+    end,
+})
+
+local function cleanupToggle(cpConn, cpTrack, cpNoCollide)
+    if cpConn then cpConn:Disconnect() end
+    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+    local mc = weldLocal.Character
+    if mc then
+        for _, part in ipairs(mc:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if cpNoCollide then part.CanCollide = true end
+            end
+        end
+        local mr = mc:FindFirstChild("HumanoidRootPart")
+        if mr then
+            mr.AssemblyLinearVelocity  = Vector3.zero
+            mr.AssemblyAngularVelocity = Vector3.zero
+            pcall(sethiddenproperty, mr, "PhysicsRepRootPart", mr)
+        end
+    end
+end
+
+local function loadAnim(myChar, animId, freezeAt, freeze)
+    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    if not myHum then return nil end
+    local track
+    pcall(function()
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://" .. tostring(animId)
+        track = myHum:LoadAnimation(anim)
+        track.Priority = Enum.AnimationPriority.Action4
+        track:Play()
+        track.TimePosition = freezeAt or 0
+        if freeze then track:AdjustSpeed(0) end
+    end)
+    return track
+end
+
 -- p
 do
     local UIS = game:GetService("UserInputService")
