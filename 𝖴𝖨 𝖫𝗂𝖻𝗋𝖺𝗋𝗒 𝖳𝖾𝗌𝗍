@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  test
+--  Services
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -28,8 +28,8 @@ local Theme = {
     White           = Color3.fromRGB(255, 255, 255),
     CloseRed        = Color3.fromRGB(200, 58,  58),
     -- Solid colours used exclusively for the dropdown panel (no transparency)
-    DropBG          = Color3.fromRGB(215, 215, 222),
-    DropItem        = Color3.fromRGB(225, 225, 232),
+    DropBG          = Color3.fromRGB(190, 190, 198),
+    DropItem        = Color3.fromRGB(200, 200, 208),
 }
 
 -- Global transparency applied to semi-transparent background surfaces
@@ -172,8 +172,7 @@ function NovaUI:CreateWindow(cfg)
         Name                   = "TitleBar",
         Size                   = UDim2.new(1, 0, 0, 44),
         Position               = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3       = Theme.Surface,
-        BackgroundTransparency = T,
+        BackgroundTransparency = 1,
         BorderSizePixel        = 0,
         Parent                 = Main,
     })
@@ -268,8 +267,7 @@ function NovaUI:CreateWindow(cfg)
         Name                   = "TabBar",
         Size                   = UDim2.new(0, TAB_W, 1, -44),
         Position               = UDim2.new(0, 0, 0, 44),
-        BackgroundColor3       = Theme.Surface,
-        BackgroundTransparency = T,
+        BackgroundTransparency = 1,
         BorderSizePixel        = 0,
         Parent                 = Main,
     })
