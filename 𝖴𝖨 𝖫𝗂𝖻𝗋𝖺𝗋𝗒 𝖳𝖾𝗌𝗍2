@@ -3,7 +3,7 @@
 
     local Window = NovaUI:CreateWindow({
         Title = "My Script",
-        Size  = UDim2.new(0, 520, 0, 400),
+        Size  = UDim2.new(0, 320, 0, 200),
     })
 
     local Tab = Window:AddTab("Combat")
