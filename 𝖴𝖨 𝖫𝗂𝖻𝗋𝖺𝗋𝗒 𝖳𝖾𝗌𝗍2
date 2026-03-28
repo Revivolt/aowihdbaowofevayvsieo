@@ -1,0 +1,26 @@
+local UI = loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-op-158938"))()
+local tab1 = UI:newTab("Main")
+
+UI:addButton(tab1, "Click Me", function()
+    print("Button clicked!")
+end)
+
+UI:addToggle(tab1, "Enable Feature", false, function(state)
+    print("Toggle state:", state)
+end)
+
+UI:addDropdown(tab1, "Choose Option", {"Option 1", "Option 2"}, "Option 1", function(option)
+    print("Selected:", option)
+end)
+
+UI:addSlider(tab1, "Volume", 0, 100, 50, function(value)
+    print("Slider value:", value)
+end)
+
+UI:addTextBox(tab1, "Name", "Player", function(text)
+    print("Text input:", text)
+end)
+
+UI:addKeybind(tab1, "Jump", "Space", function(key)
+    print("Keybind set to:", key)
+end)
