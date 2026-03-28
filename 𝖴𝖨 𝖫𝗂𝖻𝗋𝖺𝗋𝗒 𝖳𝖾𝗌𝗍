@@ -1,0 +1,323 @@
+-- Roblox Lua UI Library
+local UILib = {}
+UILib.__index = UILib
+
+-- Create main container
+function UILib.new(title)
+    local self = setmetatable({}, UILib)
+
+    -- Main ScreenGui
+    self.ScreenGui = Instance.new("ScreenGui")
+    self.ScreenGui.Name = "UILib"
+    self.ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    -- Main Frame
+    self.MainFrame = Instance.new("Frame")
+    self.MainFrame.Size = UDim2.new(0, 600, 0, 400)
+    self.MainFrame.Position = UDim2.new(0.5, -300, 0.5, -200)
+    self.MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    self.MainFrame.Parent = self.ScreenGui
+
+    -- Title
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Text = title or "UI Library"
+    titleLabel.Size = UDim2.new(1, 0, 0, 30)
+    titleLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    titleLabel.TextColor3 = Color3.new(1, 1, 1)
+    titleLabel.Parent = self.MainFrame
+
+    -- Tabs Container
+    self.Tabs = {}
+    self.CurrentTab = nil
+
+    -- Tabs Frame
+    self.TabsFrame = Instance.new("Frame")
+    self.TabsFrame.Size = UDim2.new(1, 0, 0, 30)
+    self.TabsFrame.Position = UDim2.new(0, 0, 0, 30)
+    self.TabsFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    self.TabsFrame.Parent = self.MainFrame
+
+    -- Content Container
+    self.ContentFrame = Instance.new("Frame")
+    self.ContentFrame.Size = UDim2.new(1, 0, 1, -30)
+    self.ContentFrame.Position = UDim2.new(0, 0, 0, 60)
+    self.ContentFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    self.ContentFrame.Parent = self.MainFrame
+
+    return self
+end
+
+-- Helper to create a new tab
+function UILib:newTab(name)
+    local tab = {}
+    setmetatable(tab, {__index = self})
+
+    -- Create Tab Button
+    local button = Instance.new("TextButton")
+    button.Text = name
+    button.Size = UDim2.new(0, 100, 1, 0)
+    button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.Parent = self.TabsFrame
+
+    -- Create Tab Content Frame
+    local tabContent = Instance.new("Frame")
+    tabContent.Size = UDim2.new(1, 0, 1, 0)
+    tabContent.Position = UDim2.new(0, 0, 0, 0)
+    tabContent.Visible = false
+    tabContent.Parent = self.ContentFrame
+
+    -- Tab switch function
+    button.MouseButton1Click:Connect(function()
+        for _, v in pairs(self.ContentFrame:GetChildren()) do
+            v.Visible = false
+        end
+        tabContent.Visible = true
+        self.CurrentTab = tabContent
+    end)
+
+    -- Store references
+    tab.Name = name
+    tab.Button = button
+    tab.Content = tabContent
+    self.Tabs[name] = tab
+
+    -- Activate first tab by default
+    if not self.CurrentTab then
+        button.MouseButton1Click:Fire()
+    end
+
+    return tab
+end
+
+-- Utility functions for controls
+local function createControl(parent)
+    local control = {}
+    control.Instance = Instance.new("Frame")
+    control.Instance.Size = UDim2.new(1, -20, 0, 30)
+    control.Instance.BackgroundTransparency = 1
+    control.Instance.Parent = parent
+
+    local label = Instance.new("TextLabel")
+    label.TextColor3 = Color3.new(1,1,1)
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = control.Instance
+    control.Label = label
+
+    return control
+end
+
+-- Add Button
+function UILib:addButton(tab, text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Text = text
+    btn.Size = UDim2.new(0, 100, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Parent = tab.Content
+
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
+
+-- Add Toggle
+function UILib:addToggle(tab, text, default, callback)
+    local control = createControl(tab.Content)
+    control.Label.Text = text
+
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(0, 50, 1, 0)
+    toggle.Position = UDim2.new(0.4, 0, 0, 0)
+    toggle.BackgroundColor3 = default and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+    toggle.TextColor3 = Color3.new(1, 1, 1)
+    toggle.Text = default and "ON" or "OFF"
+    toggle.Parent = control.Instance
+
+    local state = default
+
+    toggle.MouseButton1Click:Connect(function()
+        state = not state
+        toggle.Text = state and "ON" or "OFF"
+        toggle.BackgroundColor3 = state and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+        callback(state)
+    end)
+
+    return {toggle = toggle, get = function() return state end}
+end
+
+-- Add Dropdown
+function UILib:addDropdown(tab, text, options, default, callback)
+    local control = createControl(tab.Content)
+    control.Label.Text = text
+
+    local dropdownButton = Instance.new("TextButton")
+    dropdownButton.Size = UDim2.new(0, 100, 1, 0)
+    dropdownButton.Position = UDim2.new(0.4, 0, 0, 0)
+    dropdownButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    dropdownButton.TextColor3 = Color3.new(1, 1, 1)
+    dropdownButton.Text = default or options[1]
+    dropdownButton.Parent = control.Instance
+
+    local dropdownFrame = Instance.new("Frame")
+    dropdownFrame.Size = UDim2.new(0, 100, 0, #options * 30)
+    dropdownFrame.Position = UDim2.new(0.4, 0, 0, 30)
+    dropdownFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    dropdownFrame.Visible = false
+    dropdownFrame.Parent = control.Instance
+
+    local function selectOption(option)
+        dropdownButton.Text = option
+        dropdownFrame.Visible = false
+        callback(option)
+    end
+
+    for i, option in ipairs(options) do
+        local optionBtn = Instance.new("TextButton")
+        optionBtn.Size = UDim2.new(1, 0, 0, 30)
+        optionBtn.Position = UDim2.new(0, 0, 0, (i-1)*30)
+        optionBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+        optionBtn.TextColor3 = Color3.new(1, 1, 1)
+        optionBtn.Text = option
+        optionBtn.Parent = dropdownFrame
+
+        optionBtn.MouseButton1Click:Connect(function()
+            selectOption(option)
+        end)
+    end
+
+    dropdownButton.MouseButton1Click:Connect(function()
+        dropdownFrame.Visible = not dropdownFrame.Visible
+    end)
+
+    return {button = dropdownButton, options = options, selected = default}
+end
+
+-- Add Slider
+function UILib:addSlider(tab, text, min, max, default, callback)
+    local control = createControl(tab.Content)
+    control.Label.Text = text
+
+    local slider = Instance.new("Frame")
+    slider.Size = UDim2.new(0, 200, 0, 20)
+    slider.Parent = control.Instance
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(1, 0, 0, 4)
+    track.Position = UDim2.new(0, 0, 0.5, -2)
+    track.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+    track.Parent = slider
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    fill.Parent = track
+
+    local thumb = Instance.new("Frame")
+    thumb.Size = UDim2.new(0, 10, 1, 0)
+    thumb.Position = UDim2.new((default - min) / (max - min), -5, 0, 0)
+    thumb.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    thumb.Parent = track
+
+    local dragging = false
+
+    thumb.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+
+    thumb.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mouseX = game:GetService("UserInputService"):GetMouseLocation().X
+            local sliderPos = slider.AbsolutePosition.X
+            local sliderWidth = slider.AbsoluteSize.X
+            local newPos = math.clamp(mouseX - sliderPos, 0, sliderWidth)
+            local percent = newPos / sliderWidth
+            local value = min + percent * (max - min)
+            value = math.round(value)
+            fill.Size = UDim2.new(percent, 0, 1, 0)
+            thumb.Position = UDim2.new(percent, -5, 0, 0)
+            callback(value)
+        end
+    end)
+
+    -- Initialize value
+    callback(default)
+
+    return {Slider = slider, get = function() 
+        local percent = fill.Size.X.Scale
+        return math.round(min + percent * (max - min))
+    end}
+end
+
+-- Add Text Input
+function UILib:addTextBox(tab, text, default, callback)
+    local control = createControl(tab.Content)
+    control.Label.Text = text
+
+    local textbox = Instance.new("TextBox")
+    textbox.Size = UDim2.new(0, 200, 1, 0)
+    textbox.Position = UDim2.new(0.4, 0, 0, 0)
+    textbox.Text = default or ""
+    textbox.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    textbox.TextColor3 = Color3.new(1,1,1)
+    textbox.Parent = control.Instance
+
+    textbox.FocusLost:Connect(function()
+        callback(textbox.Text)
+    end)
+
+    return textbox
+end
+
+-- Add Keybind
+function UILib:addKeybind(tab, text, defaultKey, callback)
+    local control = createControl(tab.Content)
+    control.Label.Text = text
+
+    local keybindButton = Instance.new("TextButton")
+    keybindButton.Size = UDim2.new(0, 100, 1, 0)
+    keybindButton.Position = UDim2.new(0.4, 0, 0, 0)
+    keybindButton.Text = defaultKey or "None"
+    keybindButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    keybindButton.TextColor3 = Color3.new(1,1,1)
+    keybindButton.Parent = control.Instance
+
+    local currentKey = defaultKey
+
+    local listening = false
+
+    keybindButton.MouseButton1Click:Connect(function()
+        listening = true
+        keybindButton.Text = "Press a key..."
+    end)
+
+    game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+        if listening and not gameProcessed then
+            local keyName = input.KeyCode.Name
+            currentKey = keyName
+            keybindButton.Text = keyName
+            listening = false
+            callback(keyName)
+        end
+    end)
+
+    return {Key = currentKey}
+end
+
+-- Usage:
+-- local UI = UILib.new("My UI")
+-- local tab1 = UI:newTab("Main")
+-- UI:addButton(tab1, "Click Me", function() print("Button clicked!") end)
+-- UI:addToggle(tab1, "Enable Feature", false, function(state) print("Toggle:", state) end)
+
+return UILib
