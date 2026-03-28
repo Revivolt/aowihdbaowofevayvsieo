@@ -26,7 +26,7 @@ local Theme = {
     InputBG         = Color3.fromRGB(230, 230, 235),
     SliderFill      = Color3.fromRGB(100, 100, 115),
     White           = Color3.fromRGB(255, 255, 255),
-    CloseRed        = Color3.fromRGB(255, 0,   0),
+    CloseRed        = Color3.fromRGB(170, 170, 180),
     DropBG          = Color3.fromRGB(190, 190, 198),
     DropItem        = Color3.fromRGB(200, 200, 208),
 }
