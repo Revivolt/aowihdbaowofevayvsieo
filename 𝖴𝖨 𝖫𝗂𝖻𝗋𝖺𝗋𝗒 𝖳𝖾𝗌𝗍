@@ -1,4 +1,4 @@
---[[
+-- [[
     ═══════════════════════════════════════════════════════════
                     NOVA UI LIBRARY v1.0
          A clean, modular local-player UI library for Roblox
@@ -21,7 +21,7 @@
         Tab:AddDropdown({ Label = "Team", Options = {"Red","Blue","Green"}, Callback = function(v) print(v) end })
         Tab:AddInput({ Label = "Player Name", Placeholder = "Enter name...", Callback = function(v) print(v) end })
         Tab:AddKeybind({ Label = "Toggle UI", Default = Enum.KeyCode.RightShift, Callback = function(k) print(k) end })
-]]
+-- ]]
 
 -- ─── Services ────────────────────────────────────────────────
 local Players        = game:GetService("Players")
