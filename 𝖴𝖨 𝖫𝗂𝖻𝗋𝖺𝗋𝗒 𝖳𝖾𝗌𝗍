@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  test
+--  NovaUI — minimize replaced with floating draggable toggle
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -26,8 +26,7 @@ local Theme = {
     InputBG         = Color3.fromRGB(230, 230, 235),
     SliderFill      = Color3.fromRGB(100, 100, 115),
     White           = Color3.fromRGB(255, 255, 255),
-    CloseRed        = Color3.fromRGB(255, 0,  0),
-    -- Solid colours for the dropdown panel (fully opaque)
+    CloseRed        = Color3.fromRGB(255, 0,   0),
     DropBG          = Color3.fromRGB(190, 190, 198),
     DropItem        = Color3.fromRGB(200, 200, 208),
 }
@@ -117,6 +116,116 @@ end
 local NovaUI = {}
 NovaUI.__index = NovaUI
 
+-- ──────────────────────────────────────────────────────────
+--  Floating toggle button
+--  • Draggable (threshold 6 px) — drag moves it, click toggles
+--  • Styled to match NovaUI theme
+--  • Destroyed automatically when the main Gui is destroyed
+-- ──────────────────────────────────────────────────────────
+local TOGGLE_ICON = "rbxassetid://82814787677913"  -- swap as needed
+local TOGGLE_SIZE = 30  -- px — compact to match the UI scale
+
+local function CreateToggleButton(mainGui, mainFrame, visible)
+    local ToggleGui = New("ScreenGui", {
+        Name           = "NovaUI_Toggle",
+        ResetOnSpawn   = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Global,
+        DisplayOrder   = 1000,
+        Parent         = GetGuiParent(),
+    })
+
+    local Btn = New("ImageButton", {
+        Name                   = "ToggleBtn",
+        Size                   = UDim2.fromOffset(TOGGLE_SIZE, TOGGLE_SIZE),
+        Position               = UDim2.fromOffset(10, 10),
+        BackgroundColor3       = Theme.Background,
+        BackgroundTransparency = T,
+        BorderSizePixel        = 0,
+        Image                  = TOGGLE_ICON,
+        ScaleType              = Enum.ScaleType.Fit,
+        ImageColor3            = Theme.Accent,
+        AutoButtonColor        = false,
+        Parent                 = ToggleGui,
+    })
+    Corner(8, Btn)
+    Stroke(Theme.Border, 1, Btn)
+
+    -- Hover highlight
+    Btn.MouseEnter:Connect(function()
+        Tween(Btn, { BackgroundColor3 = Theme.SurfaceHover, BackgroundTransparency = T * 0.7 })
+    end)
+    Btn.MouseLeave:Connect(function()
+        Tween(Btn, { BackgroundColor3 = Theme.Background, BackgroundTransparency = T })
+    end)
+
+    -- Drag-vs-click logic
+    local dragging   = false
+    local moved      = false
+    local dragStart  = nil
+    local startPos   = nil
+    local THRESHOLD  = 6
+
+    Btn.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging  = true
+            moved     = false
+            dragStart = inp.Position
+            startPos  = Btn.Position
+        end
+    end)
+
+    Btn.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+            if not moved then
+                -- Toggle visibility with a small scale tween for feedback
+                visible = not visible
+                if visible then
+                    mainFrame.Visible = true
+                    Tween(mainFrame, { Size = mainFrame.Size }, 0.18)
+                else
+                    Tween(mainFrame, { BackgroundTransparency = T + 0.1 }, 0.1)
+                    task.delay(0.12, function()
+                        mainFrame.Visible = false
+                        Tween(mainFrame, { BackgroundTransparency = T })
+                    end)
+                end
+                -- Pulse the button icon on click
+                Tween(Btn, { ImageColor3 = Theme.TextPrimary }, 0.07)
+                task.delay(0.15, function()
+                    Tween(Btn, { ImageColor3 = Theme.Accent })
+                end)
+            end
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(inp)
+        if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = inp.Position - dragStart
+            if math.abs(delta.X) > THRESHOLD or math.abs(delta.Y) > THRESHOLD then
+                moved = true
+            end
+            if moved then
+                Btn.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+            end
+        end
+    end)
+
+    -- Auto-destroy when the main ScreenGui is removed
+    mainGui.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then
+            ToggleGui:Destroy()
+        end
+    end)
+
+    return ToggleGui
+end
+
+-- ══════════════════════════════════════════════════════════
+
 function NovaUI:CreateWindow(cfg)
     cfg = cfg or {}
     local title = cfg.Title    or "NovaUI"
@@ -133,9 +242,6 @@ function NovaUI:CreateWindow(cfg)
     })
 
     -- ── Main frame ───────────────────────────────────────
-    -- ClipsDescendants is OFF. Each child that touches a corner gets its own
-    -- matching Corner() radius, which is the only reliable way to avoid both
-    -- sharp-corner bleed and the top-sliver artifact that ClipsDescendants causes.
     local Main = New("Frame", {
         Name                   = "Main",
         Size                   = sz,
@@ -148,13 +254,8 @@ function NovaUI:CreateWindow(cfg)
     })
     Corner(10, Main)
     Stroke(Theme.Border, 1, Main)
-    
-    -- Match rounded corners EXACTLY
-    Corner(10, Shadow)
 
     -- ── Title bar ────────────────────────────────────────
-    -- Fully transparent — Main's background shows through uniformly.
-    -- Corner(10) on TitleBar matches Main so no square edges poke out at the top.
     local TitleBar = New("Frame", {
         Name                   = "TitleBar",
         Size                   = UDim2.new(1, 0, 0, 44),
@@ -164,7 +265,7 @@ function NovaUI:CreateWindow(cfg)
         Parent                 = Main,
     })
 
-    -- Thin bottom divider under the title bar
+    -- Thin bottom divider
     New("Frame", {
         Size                   = UDim2.new(1, 0, 0, 1),
         Position               = UDim2.new(0, 0, 1, -1),
@@ -192,27 +293,12 @@ function NovaUI:CreateWindow(cfg)
         TextColor3             = Theme.TextPrimary,
         TextXAlignment         = Enum.TextXAlignment.Left,
         BackgroundTransparency = 1,
-        Size                   = UDim2.new(1, -110, 1, 0),
+        Size                   = UDim2.new(1, -60, 1, 0),  -- wider now (no MinBtn)
         Position               = UDim2.new(0, 26, 0, 0),
         Parent                 = TitleBar,
     })
 
-    -- Minimise button
-    local MinBtn = New("TextButton", {
-        Text                   = "─",
-        Font                   = Enum.Font.GothamBold,
-        TextSize               = 13,
-        TextColor3             = Theme.TextSecondary,
-        BackgroundColor3       = Theme.Elevated,
-        BackgroundTransparency = 1,
-        AutoButtonColor        = false,
-        Size                   = UDim2.new(0, 28, 0, 28),
-        Position               = UDim2.new(1, -68, 0.5, -14),
-        Parent                 = TitleBar,
-    })
-    Corner(6, MinBtn)
-
-    -- Close button
+    -- ── Close button only (MinBtn removed) ───────────────
     local CloseBtn = New("TextButton", {
         Text                   = "✖",
         Font                   = Enum.Font.GothamBold,
@@ -227,19 +313,11 @@ function NovaUI:CreateWindow(cfg)
     })
     Corner(6, CloseBtn)
 
-    for _, btn in ipairs({ MinBtn, CloseBtn }) do
-        btn.MouseEnter:Connect(function()
-            Tween(btn, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
-        end)
-        btn.MouseLeave:Connect(function()
-            Tween(btn, { BackgroundTransparency = 1, TextColor3 = Theme.TextSecondary })
-        end)
-    end
-
-    local minimised = false
-    MinBtn.MouseButton1Click:Connect(function()
-        minimised = not minimised
-        Tween(Main, { Size = minimised and UDim2.new(0, sz.X.Offset, 0, 44) or sz }, 0.2)
+    CloseBtn.MouseEnter:Connect(function()
+        Tween(CloseBtn, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
+    end)
+    CloseBtn.MouseLeave:Connect(function()
+        Tween(CloseBtn, { BackgroundTransparency = 1, TextColor3 = Theme.TextSecondary })
     end)
     CloseBtn.MouseButton1Click:Connect(function()
         Tween(Main, { Size = UDim2.new(0, sz.X.Offset, 0, 0) }, 0.18)
@@ -248,13 +326,14 @@ function NovaUI:CreateWindow(cfg)
 
     MakeDraggable(TitleBar, Main)
 
+    -- ── Floating toggle button ────────────────────────────
+    --  Created here so it has a reference to Gui and Main.
+    --  Starts with the window visible (true).
+    CreateToggleButton(Gui, Main, true)
+
     -- ── Left tab bar ─────────────────────────────────────
     local TAB_W = 120
 
-    -- Fully transparent — same reasoning as TitleBar.
-    -- The bottom-left corner of this frame touches Main's corner, so we give it
-    -- Corner(10) on the bottom-left only by using a full Corner(10).  Because the
-    -- frame is transparent, no rendering artifact is possible.
     local TabBar = New("Frame", {
         Name                   = "TabBar",
         Size                   = UDim2.new(0, TAB_W, 1, -44),
@@ -264,7 +343,6 @@ function NovaUI:CreateWindow(cfg)
         Parent                 = Main,
     })
 
-    -- Right divider line between tab bar and content
     New("Frame", {
         Size                   = UDim2.new(0, 1, 1, 0),
         Position               = UDim2.new(1, 0, 0, 0),
