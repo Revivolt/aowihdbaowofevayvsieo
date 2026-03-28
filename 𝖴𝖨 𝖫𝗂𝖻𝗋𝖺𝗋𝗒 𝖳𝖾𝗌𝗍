@@ -1,5 +1,5 @@
 -- ──────────────────────────────────────────────────────────
---  test
+--  test2
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
@@ -148,22 +148,6 @@ function NovaUI:CreateWindow(cfg)
     })
     Corner(10, Main)
     Stroke(Theme.Border, 1, Main)
-
-    -- Drop shadow (FIXED)
-    local Shadow = New("ImageLabel", {
-        Name                   = "Shadow",
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        Position               = UDim2.new(0.5, 0, 0.5, 0), -- perfectly centered
-        Size                   = UDim2.new(1, 40, 1, 40),   -- tighter spread (adjust if needed)
-        BackgroundTransparency = 1,
-        Image                  = "rbxassetid://6015897843",
-        ImageColor3            = Color3.fromRGB(0, 0, 0),
-        ImageTransparency      = 0.7,
-        ScaleType              = Enum.ScaleType.Slice,
-        SliceCenter            = Rect.new(49, 49, 450, 450),
-        ZIndex                 = 0,
-        Parent                 = Main,
-    })
     
     -- Match rounded corners EXACTLY
     Corner(10, Shadow)
