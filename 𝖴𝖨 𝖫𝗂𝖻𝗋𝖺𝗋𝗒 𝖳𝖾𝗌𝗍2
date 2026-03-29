@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2268,7 +2268,7 @@ Tab:AddToggle({
                         pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
                     end)
 
-                    task.wait(1.6)
+                    task.wait(0.1)
                 end
 
                 task.wait(0.1)
@@ -2281,7 +2281,7 @@ Tab:AddToggle({
                     if not nanLoopEnabled then break end
                     if not target.Character then continue end
                     doNan(target, 1.5)
-                    task.wait(1.6)
+                    task.wait(0.1)
                 end
                 task.wait(0.1)
             end
