@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2097,7 +2097,7 @@ Tab:AddTextInput({
 
 
 Tab:AddToggle({
-    Label    = "Loop Kill",
+    Label    = "Safe Loop",
     Default  = false,
     Callback = function(state)
         nanLoopEnabled = state
@@ -2127,66 +2127,33 @@ Tab:AddToggle({
                 return targets
             end
 
-            local function fireTwice(target)
+            local function doNan(target, duration)
                 local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
                 local myHum   = myChar:WaitForChild("Humanoid")
                 local myRoot  = myChar:WaitForChild("HumanoidRootPart")
                 local tgtRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
                 if not tgtRoot then return end
-            
+
+                nanCounter = nanCounter + 1
+                local localID = nanCounter
+                if nanConn then nanConn:Disconnect() nanConn = nil end
+
                 local nan    = 0 / 0
                 local nanVec = Vector3.new(nan, nan, nan)
-            
-                -- First trigger
-                nanCounter = nanCounter + 1
-                local id1 = nanCounter
-                if nanConn then nanConn:Disconnect() nanConn = nil end
-                local savedCF       = myRoot.CFrame
-                local savedVel      = myRoot.Velocity
-                local savedPlatform = myHum.PlatformStand
+
                 myHum.PlatformStand = true
-                local startTime1 = tick()
+                local startTime = tick()
+
                 nanConn = nanRun.Heartbeat:Connect(function()
-                    if nanCounter ~= id1 then return end
-                    if tick() - startTime1 >= 1.5 then
-                        nanConn:Disconnect() nanConn = nil
+                    if nanCounter ~= localID then return end
+                    if tick() - startTime >= duration then
+                        nanConn:Disconnect()
+                        nanConn = nil
                         task.defer(function()
-                            if nanCounter ~= id1 then return end
-                            myHum.PlatformStand            = savedPlatform
+                            if nanCounter ~= localID then return end
+                            myHum.PlatformStand            = false
                             myRoot.AssemblyLinearVelocity  = Vector3.zero
                             myRoot.AssemblyAngularVelocity = Vector3.zero
-                            myRoot.CFrame                  = savedCF
-                            myRoot.Velocity                = savedVel
-                            myRoot.RotVelocity             = Vector3.zero
-                            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                        end)
-                        return
-                    end
-                    myRoot.CFrame                  = tgtRoot.CFrame
-                    myRoot.AssemblyLinearVelocity  = nanVec
-                    myRoot.AssemblyAngularVelocity = nanVec
-                    pcall(function() myHum:Move(nanVec) end)
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-                end)
-            
-                -- Second trigger immediately after, no yield
-                nanCounter = nanCounter + 1
-                local id2 = nanCounter
-                if nanConn then nanConn:Disconnect() nanConn = nil end
-                myHum.PlatformStand = true
-                local startTime2 = tick()
-                nanConn = nanRun.Heartbeat:Connect(function()
-                    if nanCounter ~= id2 then return end
-                    if tick() - startTime2 >= 1.5 then
-                        nanConn:Disconnect() nanConn = nil
-                        task.defer(function()
-                            if nanCounter ~= id2 then return end
-                            myHum.PlatformStand            = savedPlatform
-                            myRoot.AssemblyLinearVelocity  = Vector3.zero
-                            myRoot.AssemblyAngularVelocity = Vector3.zero
-                            myRoot.CFrame                  = savedCF
-                            myRoot.Velocity                = savedVel
-                            myRoot.RotVelocity             = Vector3.zero
                             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                         end)
                         return
@@ -2199,13 +2166,56 @@ Tab:AddToggle({
                 end)
             end
 
-            -- Step 1: trigger twice fast on first player to enter safe state
-            local targets = getTargets()
-            local firstTarget = targets[1]
-            if firstTarget and firstTarget.Character then
-                fireTwice(firstTarget)
-                task.wait(1.6)
-            end
+              -- Step 1: trigger full test22 logic twice instantly
+                local targets = getTargets()
+                local firstTarget = targets[1]
+                if firstTarget and firstTarget.Character then
+                    for _ = 1, 2 do
+                        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+                        local myHum   = myChar:WaitForChild("Humanoid")
+                        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+                        local tgtRoot = firstTarget.Character and firstTarget.Character:FindFirstChild("HumanoidRootPart")
+                        if not tgtRoot then break end
+    
+                        local savedCF       = myRoot.CFrame
+                        local savedVel      = myRoot.Velocity
+                        local savedPlatform = myHum.PlatformStand
+                        local nan           = 0 / 0
+                        local nanVec        = Vector3.new(nan, nan, nan)
+    
+                        myHum.PlatformStand = true
+                        local startTime = tick()
+    
+                        nanCounter = nanCounter + 1
+                        local localID = nanCounter
+                        if nanConn then nanConn:Disconnect() nanConn = nil end
+    
+                        nanConn = nanRun.Heartbeat:Connect(function()
+                            if nanCounter ~= localID then return end
+                            if tick() - startTime >= 1.5 then
+                                nanConn:Disconnect()
+                                nanConn = nil
+                                task.defer(function()
+                                    if nanCounter ~= localID then return end
+                                    myHum.PlatformStand               = savedPlatform
+                                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                                    myRoot.CFrame                     = savedCF
+                                    myRoot.Velocity                   = savedVel
+                                    myRoot.RotVelocity                = Vector3.zero
+                                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                                end)
+                                return
+                            end
+                            myRoot.CFrame                  = tgtRoot.CFrame
+                            myRoot.AssemblyLinearVelocity  = nanVec
+                            myRoot.AssemblyAngularVelocity = nanVec
+                            pcall(function() myHum:Move(nanVec) end)
+                            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+                        end)
+                    end
+                    task.wait(1.6)
+                end
 
             -- Step 2: loop through all players normally
             while nanLoopEnabled do
