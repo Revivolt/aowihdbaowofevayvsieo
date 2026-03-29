@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -540,7 +540,7 @@ do
     end
 
     Tab:AddToggle({
-        Label    = "test2",
+        Label    = "Fling Aura",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -570,7 +570,7 @@ do
     local SPIN_SPEED  = 3
 
 Tab:AddToggle({
-        Label    = "test3",
+        Label    = "Taunting Laugh",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -587,7 +587,7 @@ Tab:AddToggle({
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     activeFlingCount = math.max(0, activeFlingCount - 1)
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test3")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Taunting Laugh")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -643,7 +643,7 @@ do
     local cpSwingClock = 0    -- internal timer
 
 Tab:AddToggle({
-        Label    = "test4",
+        Label    = "Bang",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -658,7 +658,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test4")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Bang")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -718,7 +718,7 @@ do
     local cpSwingClock = 0    -- internal timer
 
 Tab:AddToggle({
-        Label    = "test5",
+        Label    = "Bang 2",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -733,7 +733,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test5")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Bang 2")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -787,7 +787,7 @@ do
     local MOVE_THRESH = 0.5
 
 Tab:AddToggle({
-        Label    = "test6",
+        Label    = "Slow Down",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -808,7 +808,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, false, "test6")
+                    cleanupToggle(cpConn, cpTrack, false, "Slow Down")
                     cpConn        = nil
                     cpTrack       = nil
                     lastChar      = nil
@@ -907,7 +907,7 @@ do
     local MOVE_THRESH = 0.5
 
 Tab:AddToggle({
-        Label    = "test7",
+        Label    = "Movement Breaker",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -928,7 +928,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, false, "test7")
+                    cleanupToggle(cpConn, cpTrack, false, "Movement Breaker")
                     cpConn        = nil
                     cpTrack       = nil
                     lastChar      = nil
@@ -1030,7 +1030,7 @@ do
     local cpAnimId    = 0
 
 Tab:AddToggle({
-        Label    = "test8",
+        Label    = "Platform Fly",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1044,7 +1044,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test8")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Platform Fly")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1096,7 +1096,7 @@ do
     local cpAnimId    = 0
 
 Tab:AddToggle({
-        Label    = "test9",
+        Label    = "Magic Carpet",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1110,7 +1110,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test9")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Magic Carpet")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1162,7 +1162,7 @@ do
     local cpAnimId    = 0
 
 Tab:AddToggle({
-        Label    = "test10",
+        Label    = "Elevator",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1176,7 +1176,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test10")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Elevator")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1331,7 +1331,7 @@ do
     end
 
 Tab:AddToggle({
-        Label    = "test11",
+        Label    = " Loop Fling",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1383,7 +1383,7 @@ do
     local cpAnimId    = 0
 
 Tab:AddToggle({
-        Label    = "test12",
+        Label    = "Anti Jump",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1397,7 +1397,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test12")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Anti Jump")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1449,7 +1449,7 @@ do
     local cpAnimId    = 70883871260184
 
 Tab:AddToggle({
-        Label    = "test13",
+        Label    = "Wall (Layered Clothing)",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1466,7 +1466,7 @@ Tab:AddToggle({
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     activeFlingCount = math.max(0, activeFlingCount - 1)
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test13")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1518,7 +1518,7 @@ do
     local cpAnimId    = 137644260443394
 
 Tab:AddToggle({
-        Label    = "test14",
+        Label    = "Pony Ride",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1532,7 +1532,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test14")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Pony Ride")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1584,7 +1584,7 @@ do
     local cpAnimId    = 131622627648697
 
 Tab:AddToggle({
-        Label    = "test15",
+        Label    = "Body Armor",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1598,7 +1598,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test15")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Body Armor")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1650,7 +1650,7 @@ do
     local cpAnimId    = 0
 
 Tab:AddToggle({
-        Label    = "test16",
+        Label    = "Infinite Jump",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1664,7 +1664,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test16")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Infinite Jump")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1711,7 +1711,7 @@ do
     local cpAnimId    = 0
 
 Tab:AddToggle({
-        Label    = "test17",
+        Label    = "Speed Boost (Slow)",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1725,7 +1725,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test17")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Speed Boost (Slow)")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1772,7 +1772,7 @@ do
     local cpAnimId    = 75065228741970
 
 Tab:AddToggle({
-        Label    = "test18",
+        Label    = "Speed Boost (Medium)",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1786,7 +1786,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test18")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Speed Boost (Medium)")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1838,7 +1838,7 @@ do
     local cpAnimId    = 75065228741970
 
 Tab:AddToggle({
-        Label    = "test19",
+        Label    = "Speed Boost (Fast)",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1852,7 +1852,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test19")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Speed Boost (Fast)")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1904,7 +1904,7 @@ do
     local cpAnimId    = 122171615550871
 
 Tab:AddToggle({
-        Label    = "test20",
+        Label    = "Speed Boost (Extreme)",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1918,7 +1918,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test20")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Speed Boost (Extreme)")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -1970,7 +1970,7 @@ do
     local cpAnimId    = 93193438936298
 
 Tab:AddToggle({
-        Label    = "test21",
+        Label    = "Reverse",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -1984,7 +1984,7 @@ Tab:AddToggle({
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test21")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Reverse")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
@@ -2036,7 +2036,7 @@ Tab:AddTextInput({
 })
 
     Tab:AddButton({
-        Label    = "test22",
+        Label    = "Kill",
         Callback = function()
             if nanTarget == "" then return end
             nanCounter = nanCounter + 1
@@ -2100,7 +2100,7 @@ local nanLoopEnabled = false
 local nanLoopTask    = nil
 
 Tab:AddToggle({
-    Label    = "Safe Loop",
+    Label    = "Loop Kill",
     Default  = false,
     Callback = function(state)
         nanLoopEnabled = state
