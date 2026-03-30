@@ -2617,5 +2617,5 @@ Tab:AddButton({
 
 Tab:AddButton({
         Label    = "Overdrive H",
-        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/axiordev/Overdrive/refs/heads/main/loader.lua"))() end,
+        Callback = function() loadstring(game:HttpGet("https://api.overdrivehub.xyz/v1/auth"))() end,
     })
