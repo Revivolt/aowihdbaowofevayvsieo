@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -215,7 +215,6 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-
     local cpUp        =  0
     local cpForward   =  1
     local cpSide      =  0
@@ -227,54 +226,27 @@ do
     local cpFreezeAt  = 9.99
     local cpAnimId    = 104003529319122
 
-    -- NEW: latch timer + freeze state
-    local latchStart = nil
-    local isFrozen = false
-
-    -- Freeze function
-    local function freezeCharacter(char)
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.WalkSpeed = 0
-            humanoid.JumpPower = 0
-        end
-
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Anchored = true
-            end
-        end
-    end
-
     Tab:AddToggle({
         Label    = "test",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
-
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-                cpConn = nil
-                cpTrack = nil
-                lastChar = nil
-                latchStart = nil
-                isFrozen = false
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
-
             if not selectedTarget then return end
+
+            local startTime    = tick()   -- record when toggle turned on
+            local frozenCFrame = nil      -- set once when 1s passes
 
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
-
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
-                    cpConn = nil
-                    cpTrack = nil
-                    lastChar = nil
-                    latchStart = nil
-                    isFrozen = false
+                    cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
 
@@ -282,53 +254,45 @@ do
                 local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 if not myChar or not myRoot then return end
 
-                local tgtChar = selectedTarget.Character
-                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not tgtChar or not tgtRoot then return end
-
-                -- Animation handling
+                -- Load/reload animation if character changed
                 if myChar ~= lastChar then
                     lastChar = myChar
-                    if cpTrack then
-                        cpTrack:Stop()
-                        cpTrack:Destroy()
-                    end
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
 
-                -- Position lock (latching)
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") and cpNoCollide then
-                            part.CanCollide = false
-                        end
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                     end
+
+                    -- === FREEZE LOGIC ===
+                    if tick() - startTime >= 1 then
+                        -- Capture the frozen position exactly once
+                        if not frozenCFrame then
+                            frozenCFrame = myRoot.CFrame
+                        end
+                        -- Keep hammering the frozen CFrame so other players see it
+                        myRoot.CFrame = frozenCFrame
+                        myRoot.AssemblyLinearVelocity  = Vector3.zero
+                        myRoot.AssemblyAngularVelocity = Vector3.zero
+                        return  -- skip target-follow logic below
+                    end
+
+                    -- === FOLLOW LOGIC (first 1 second only) ===
+                    local tgtChar = selectedTarget.Character
+                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                    if not tgtChar or not tgtRoot then return end
 
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-
-                    myRoot.CFrame =
-                        CFrame.new(tgtRoot.Position)
-                        * CFrame.Angles(0, yaw, 0)
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
                         * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
-
                     sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                 end)
-
-                -- 🔥 NEW: latch timer logic
-                if not latchStart then
-                    latchStart = tick()
-                end
-
-                -- If latched for 2 seconds → freeze
-                if not isFrozen and tick() - latchStart >= 2 then
-                    isFrozen = true
-                    freezeCharacter(myChar)
-                end
             end)
         end,
     })
