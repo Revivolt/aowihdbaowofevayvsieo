@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -215,6 +215,7 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
+
     local cpUp        =  0
     local cpForward   =  1
     local cpSide      =  0
@@ -226,7 +227,7 @@ do
     local cpFreezeAt  = 9.99
     local cpAnimId    = 104003529319122
 
-    Tab:AddToggle({
+Tab:AddToggle({
         Label    = "test",
         Default  = false,
         Callback = function(state)
@@ -237,10 +238,6 @@ do
                 return
             end
             if not selectedTarget then return end
-
-            local startTime    = tick()   -- record when toggle turned on
-            local frozenCFrame = nil      -- set once when 1s passes
-
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
@@ -249,43 +246,21 @@ do
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
-
                 local myChar = weldLocal.Character
                 local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 if not myChar or not myRoot then return end
-
-                -- Load/reload animation if character changed
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
-
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                     end
-
-                    -- === FREEZE LOGIC ===
-                    if tick() - startTime >= 0.1 then
-                        if not frozenCFrame then
-                            frozenCFrame = myRoot.CFrame
-                            -- Detach physics rep from target so they no longer see you riding them
-                            pcall(function()
-                                sethiddenproperty(myRoot, "PhysicsRepRootPart", myRoot)
-                            end)
-                        end
-                        myRoot.CFrame = frozenCFrame
-                        myRoot.AssemblyLinearVelocity  = Vector3.zero
-                        myRoot.AssemblyAngularVelocity = Vector3.zero
-                        return
-                    end
-
-                    -- === FOLLOW LOGIC (first 1 second only) ===
-                    local tgtChar = selectedTarget.Character
-                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                    if not tgtChar or not tgtRoot then return end
-
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                     myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
