@@ -209,101 +209,126 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     return track
 end
 
--- h
+-- e
 do
-    local cpConn        = nil
-    local cpEnabled     = false
-    local cpTrack       = nil
-    local lastChar      = nil
-    local cpUp          =  0
-    local cpForward     =  1
-    local cpSide        =  0
-    local cpTiltX       =  0
-    local cpTiltY       =  180
-    local cpTiltZ       =  0
-    local cpFaceBack    = false
-    local cpNoCollide   = true
-    local cpFreezeAt    = 9.99
-    local cpAnimId      = 104003529319122
-    local cpAnchorTask  = nil
+    local cpConn    = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+    local lastChar  = nil
+
+    local cpUp        =  0
+    local cpForward   =  1
+    local cpSide      =  0
+    local cpTiltX     =  0
+    local cpTiltY     =  180
+    local cpTiltZ     =  0
+    local cpFaceBack  = false
+    local cpNoCollide = true
+    local cpFreezeAt  = 9.99
+    local cpAnimId    = 104003529319122
+
+    -- NEW: latch timer + freeze state
+    local latchStart = nil
+    local isFrozen = false
+
+    -- Freeze function
+    local function freezeCharacter(char)
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = 0
+            humanoid.JumpPower = 0
+        end
+
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = true
+            end
+        end
+    end
 
     Tab:AddToggle({
         Label    = "test",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
+
             if not cpEnabled then
-                if cpAnchorTask then task.cancel(cpAnchorTask) cpAnchorTask = nil end
-                -- Unanchor all parts on disable
-                local myChar = weldLocal.Character
-                if myChar then
-                    for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.Anchored = false
-                        end
-                    end
-                end
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-                cpConn = nil cpTrack = nil lastChar = nil
+                cpConn = nil
+                cpTrack = nil
+                lastChar = nil
+                latchStart = nil
+                isFrozen = false
                 return
             end
-            if not selectedTarget then return end
 
-            -- Schedule the anchor cutoff after 3 seconds
-            cpAnchorTask = task.delay(3, function()
-                if not cpEnabled then return end
-                -- 1. Kill the heartbeat entirely
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-                -- 2. Anchor all parts in place
-                local myChar = weldLocal.Character
-                if myChar then
-                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-                    if myRoot then
-                        myRoot.AssemblyLinearVelocity  = Vector3.zero
-                        myRoot.AssemblyAngularVelocity = Vector3.zero
-                    end
-                    for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.Anchored = true
-                        end
-                    end
-                end
-                cpAnchorTask = nil
-            end)
+            if not selectedTarget then return end
 
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
+
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    if cpAnchorTask then task.cancel(cpAnchorTask) cpAnchorTask = nil end
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
-                    cpConn = nil cpTrack = nil lastChar = nil
+                    cpConn = nil
+                    cpTrack = nil
+                    lastChar = nil
+                    latchStart = nil
+                    isFrozen = false
                     return
                 end
+
                 local myChar = weldLocal.Character
                 local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 if not myChar or not myRoot then return end
+
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
+
+                -- Animation handling
                 if myChar ~= lastChar then
                     lastChar = myChar
-                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    if cpTrack then
+                        cpTrack:Stop()
+                        cpTrack:Destroy()
+                    end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
+
+                -- Position lock (latching)
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                        if part:IsA("BasePart") and cpNoCollide then
+                            part.CanCollide = false
+                        end
                     end
+
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+
+                    myRoot.CFrame =
+                        CFrame.new(tgtRoot.Position)
+                        * CFrame.Angles(0, yaw, 0)
                         * CFrame.new(cpSide, cpUp, -cpForward)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
+
                     sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                 end)
+
+                -- 🔥 NEW: latch timer logic
+                if not latchStart then
+                    latchStart = tick()
+                end
+
+                -- If latched for 2 seconds → freeze
+                if not isFrozen and tick() - latchStart >= 2 then
+                    isFrozen = true
+                    freezeCharacter(myChar)
+                end
             end)
         end,
     })
