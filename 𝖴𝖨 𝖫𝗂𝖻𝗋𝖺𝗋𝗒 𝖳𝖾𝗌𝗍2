@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1276,66 +1276,6 @@ Tab:AddToggle({
         end,
     })
 end
-
-
-Tab:AddButton({
-    Label    = "test",
-    Callback = function()
-        if flingTargetAll then
-            local targets = {}
-            for _, plr in ipairs(weldPlayers:GetPlayers()) do
-                if plr ~= weldLocal then table.insert(targets, plr) end
-            end
-            for _, target in ipairs(targets) do
-                local conn
-                activeFlingCount = activeFlingCount + 1
-                conn = weldRun.Heartbeat:Connect(function()
-                    local myChar = weldLocal.Character
-                    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                    local tgtChar = target.Character
-                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                    if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
-                    pcall(function()
-                        local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                        myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
-                            * CFrame.new(0, -1, 0)
-                        myRoot.Velocity    = Vector3.new(9e9 * _, 9e9 * _, 9e9 * _)
-                        myRoot.RotVelocity = Vector3.new(9e9 * _, 9e9 * _, 9e9 * _)
-                        sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-                    end)
-                end)
-                task.delay(0.5, function()
-                    conn:Disconnect()
-                    activeFlingCount = math.max(0, activeFlingCount - 1)
-                end)
-                task.wait(0.3)
-            end
-        else
-            if not selectedTarget then return end
-            local conn
-            activeFlingCount = activeFlingCount + 1
-            conn = weldRun.Heartbeat:Connect(function()
-                local myChar = weldLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                local tgtChar = selectedTarget.Character
-                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
-                pcall(function()
-                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
-                        * CFrame.new(0, -1, 0)
-                    myRoot.Velocity    = Vector3.new(500, 500, 500)
-                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
-                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-                end)
-            end)
-            task.delay(0.5, function()
-                conn:Disconnect()
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-            end)
-        end
-    end,
-})
 
 
 Tab:AddButton({
