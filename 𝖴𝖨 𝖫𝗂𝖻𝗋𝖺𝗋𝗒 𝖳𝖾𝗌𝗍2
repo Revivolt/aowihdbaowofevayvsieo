@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2351,6 +2351,8 @@ Tab:AddToggle({
 
 local isFeatureActive = false
 local featureTask = nil
+local connection = nil
+local currentCounter = 0
 
 Tab:AddToggle({
     Label    = "Options",
@@ -2454,7 +2456,7 @@ Tab:AddToggle({
                 local savedCF       = myRoot.CFrame
                 local savedVel      = myRoot.Velocity
                 local savedPlatform = myHum.PlatformStand
-                local nanVec        = Vector3.new(9e9, 9e9, 9e9) -- fixed: no undefined `_`
+                local nanVec        = Vector3.new(9e9, 9e9, 9e9)
 
                 myHum.PlatformStand = true
                 local startTime = tick()
@@ -2492,7 +2494,6 @@ Tab:AddToggle({
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", targetRoot)
                 end)
 
-                -- fixed: use isFeatureActive instead of undefined testLoopActive
                 while isFeatureActive and connection do
                     if not targetHum.Parent or targetHum.Health <= 0 then break end
                     if tick() - startTime >= maxDuration then break end
@@ -2500,7 +2501,6 @@ Tab:AddToggle({
                 end
             end
 
-            -- fixed: use isFeatureActive instead of undefined testLoopActive
             while isFeatureActive do
                 pcall(function()
                     local targets = getTargets()
