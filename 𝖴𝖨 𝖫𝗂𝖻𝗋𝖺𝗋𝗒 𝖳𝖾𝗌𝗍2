@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1079,7 +1079,7 @@ Tab:AddToggle({
     })
 end
 
--- test8
+-- 8
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1145,7 +1145,7 @@ Tab:AddToggle({
     })
 end
 
--- test9
+-- 9
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1211,7 +1211,7 @@ Tab:AddToggle({
     })
 end
 
--- test10
+-- 10
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1336,7 +1336,7 @@ Tab:AddButton({
     end,
 })
 
--- test11
+-- 11
 do
     local cpConn      = nil
     local cpEnabled   = false
@@ -1432,7 +1432,7 @@ Tab:AddToggle({
     })
 end
 
--- test12
+-- 12
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1498,7 +1498,7 @@ Tab:AddToggle({
     })
 end
 
--- test13
+-- 13
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1567,7 +1567,7 @@ Tab:AddToggle({
     })
 end
 
--- test14
+-- 14
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1633,7 +1633,7 @@ Tab:AddToggle({
     })
 end
 
--- test15
+-- 15
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1699,7 +1699,7 @@ Tab:AddToggle({
     })
 end
 
--- test16
+-- 16
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1760,7 +1760,7 @@ Tab:AddToggle({
     })
 end
 
--- test17
+-- 17
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1821,7 +1821,7 @@ Tab:AddToggle({
     })
 end
 
--- test18
+-- 18
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1887,7 +1887,7 @@ Tab:AddToggle({
     })
 end
 
--- test19
+-- 19
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -2405,7 +2405,7 @@ Tab:AddToggle({
                     local savedVel      = myRoot.Velocity
                     local savedPlatform = myHum.PlatformStand
                     local nan           = 0 / 0
-                    local nanVec        = Vector3.new(nan, nan, nan)
+                    local nanVec        = Vector3.new(9e9 * _, 9e9 * _, 9e9 * _)
 
                     myHum.PlatformStand = true
                     local startTime = tick()
