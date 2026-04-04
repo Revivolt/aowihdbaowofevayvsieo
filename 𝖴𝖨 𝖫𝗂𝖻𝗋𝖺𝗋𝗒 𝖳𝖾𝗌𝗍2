@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -215,9 +215,9 @@ do
     local cpNoCollide = true
     local cpFreezeAt  = 0
     local cpUp        =  5
-    local cpForward   =  90
+    local cpForward   =  0
     local cpSide      =  0
-    local cpTiltX     =  0
+    local cpTiltX     =  90
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
@@ -234,53 +234,52 @@ do
             if not tgtChar or not tgtRoot then return end
 
             local cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
+            local lastCFrame = nil
+            local conn = nil
+
+            local function getTargetCF(up)
+                local tgtCF  = tgtRoot.CFrame
+                local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
+                local offset = (fwdDir * cpForward)
+                           + (tgtCF.RightVector * cpSide)
+                           + (Vector3.new(0, 1, 0) * up)
+                return CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
+                           * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+            end
 
             task.spawn(function()
-                -- Phase 1: sit above target for 1 second
-                local deadline = tick() + 1
-                local lastCFrame = nil
-                while tick() < deadline do
+                -- Phase 1: hover above for 1 second
+                conn = weldRun.Heartbeat:Connect(function()
                     pcall(function()
                         for _, part in ipairs(myChar:GetDescendants()) do
                             if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                         end
-                        local tgtCF  = tgtRoot.CFrame
-                        local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
-                        local offset = (fwdDir * cpForward)
-                                   + (tgtCF.RightVector * cpSide)
-                                   + (Vector3.new(0, 1, 0) * cpUp)
-                        local baseCF = CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
-                        local tiltCF = baseCF
-                                   * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                        lastCFrame = tiltCF
-                        myRoot.CFrame      = tiltCF
+                        local cf = getTargetCF(cpUp)
+                        lastCFrame = cf
+                        myRoot.CFrame      = cf
                         myRoot.Velocity    = Vector3.new(500, 500, 500)
                         myRoot.RotVelocity = Vector3.new(500, 500, 500)
                         sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                     end)
-                    task.wait()
-                end
+                end)
+                task.wait(1)
+                conn:Disconnect()
 
-                -- Phase 2: drop to 0 for 0.1 seconds
+                -- Phase 2: drop to target for 0.1 seconds
                 local savedCFrame = lastCFrame
-                local deadline2 = tick() + 0.1
-                while tick() < deadline2 do
+                conn = weldRun.Heartbeat:Connect(function()
                     pcall(function()
-                        local tgtCF  = tgtRoot.CFrame
-                        local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
-                        local offset = (fwdDir * cpForward) + (tgtCF.RightVector * cpSide)
-                        local baseCF = CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
-                        local tiltCF = baseCF
-                                   * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                        myRoot.CFrame      = tiltCF
+                        local cf = getTargetCF(0)
+                        myRoot.CFrame      = cf
                         myRoot.Velocity    = Vector3.new(500, 500, 500)
                         myRoot.RotVelocity = Vector3.new(500, 500, 500)
                         sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                     end)
-                    task.wait()
-                end
+                end)
+                task.wait(0.1)
+                conn:Disconnect()
 
-                -- Phase 3: restore back to saved position
+                -- Phase 3: restore to saved position
                 if savedCFrame and myRoot then
                     myRoot.CFrame = savedCFrame
                 end
