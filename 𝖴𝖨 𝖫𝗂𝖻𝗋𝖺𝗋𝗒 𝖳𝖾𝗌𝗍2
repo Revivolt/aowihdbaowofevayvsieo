@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -211,97 +211,81 @@ end
 
 
 do
-    local cpConn    = nil
-    local cpEnabled = false
-    local cpTrack   = nil
-    local lastChar  = nil
-    local lastCFrame = nil
-    local cpUp        =  3
-    local cpForward   =  0
+    local cpAnimId    = 0
+    local cpNoCollide = true
+    local cpFreezeAt  = 0
+    local cpUp        =  5
+    local cpForward   =  90
     local cpSide      =  0
-    local cpTiltX     =  90
+    local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
-    local cpNoCollide = true
-    local cpFreezeAt  = 0
-    local cpAnimId    = 0
 
-    Tab:AddToggle({
+    Tab:AddButton({
         Label    = "test",
-        Default  = false,
-        Callback = function(state)
-            cpEnabled = state
-            if not cpEnabled then
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-                cpConn = nil cpTrack = nil lastChar = nil lastCFrame = nil
-                cpUp = 3
-                return
-            end
+        Callback = function()
             if not selectedTarget then return end
-            activeFlingCount = activeFlingCount + 1
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+
+            local cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
 
             task.spawn(function()
-                while cpEnabled do
-                    task.wait(1)
-                    if not cpEnabled then break end
-                    local savedCFrame = lastCFrame
-                    cpUp = 0
-                    task.wait(0.1)
-                    if not cpEnabled then break end
-                    cpUp = 3
-                    if savedCFrame then
-                        local myChar = weldLocal.Character
-                        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                        if myRoot then
-                            myRoot.CFrame = savedCFrame
+                -- Phase 1: sit above target for 1 second
+                local deadline = tick() + 1
+                local lastCFrame = nil
+                while tick() < deadline do
+                    pcall(function()
+                        for _, part in ipairs(myChar:GetDescendants()) do
+                            if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                         end
-                    end
-                end
-            end)
-
-            cpConn = weldRun.Heartbeat:Connect(function()
-                if not cpEnabled then return end
-                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
-                    cpEnabled = false
-                    activeFlingCount = math.max(0, activeFlingCount - 1)
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
-                    cpConn = nil cpTrack = nil lastChar = nil lastCFrame = nil
-                    cpUp = 3
-                    return
-                end
-                local myChar = weldLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if not myChar or not myRoot then return end
-                local tgtChar = selectedTarget.Character
-                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not tgtChar or not tgtRoot then return end
-                if myChar ~= lastChar then
-                    lastChar = myChar
-                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
-                end
-                pcall(function()
-                    for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
-                    end
-                    local tgtCF  = tgtRoot.CFrame
-                    local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
-                    local offset = (fwdDir * cpForward)
-                               + (tgtCF.RightVector * cpSide)
-                               + (Vector3.new(0, 1, 0) * cpUp)
-                    local baseCF = CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
-                    local tiltCF = baseCF
-                               * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                    if cpUp ~= 0 then
+                        local tgtCF  = tgtRoot.CFrame
+                        local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
+                        local offset = (fwdDir * cpForward)
+                                   + (tgtCF.RightVector * cpSide)
+                                   + (Vector3.new(0, 1, 0) * cpUp)
+                        local baseCF = CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
+                        local tiltCF = baseCF
+                                   * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
                         lastCFrame = tiltCF
-                    end
-                    myRoot.CFrame      = tiltCF
-                    myRoot.Velocity    = Vector3.new(500, 500, 500)
-                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
-                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-                end)
+                        myRoot.CFrame      = tiltCF
+                        myRoot.Velocity    = Vector3.new(500, 500, 500)
+                        myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                        sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                    end)
+                    task.wait()
+                end
+
+                -- Phase 2: drop to 0 for 0.1 seconds
+                local savedCFrame = lastCFrame
+                local deadline2 = tick() + 0.1
+                while tick() < deadline2 do
+                    pcall(function()
+                        local tgtCF  = tgtRoot.CFrame
+                        local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
+                        local offset = (fwdDir * cpForward) + (tgtCF.RightVector * cpSide)
+                        local baseCF = CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
+                        local tiltCF = baseCF
+                                   * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                        myRoot.CFrame      = tiltCF
+                        myRoot.Velocity    = Vector3.new(500, 500, 500)
+                        myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                        sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                    end)
+                    task.wait()
+                end
+
+                -- Phase 3: restore back to saved position
+                if savedCFrame and myRoot then
+                    myRoot.CFrame = savedCFrame
+                end
+
+                if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
             end)
         end,
     })
