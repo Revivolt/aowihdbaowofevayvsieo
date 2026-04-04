@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -207,6 +207,92 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
         if freeze then track:AdjustSpeed(0) end
     end)
     return track
+end
+
+
+do
+    local cpConn    = nil
+    local cpEnabled = false
+    local cpTrack   = nil
+    local lastChar  = nil
+    local cpUp        =  3
+    local cpForward   =  0
+    local cpSide      =  0
+    local cpTiltX     =  90
+    local cpTiltY     =  0
+    local cpTiltZ     =  0
+    local cpFaceBack  = false
+    local cpNoCollide = true
+    local cpFreezeAt  = 0
+    local cpAnimId    = 0
+
+    Tab:AddToggle({
+        Label    = "test",
+        Default  = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+                cpConn = nil cpTrack = nil lastChar = nil
+                cpUp = 3
+                return
+            end
+            if not selectedTarget then return end
+            activeFlingCount = activeFlingCount + 1
+
+            task.spawn(function()
+                while cpEnabled do
+                    task.wait(1)
+                    if not cpEnabled then break end
+                    cpUp = 0
+                    task.wait(0.1)
+                    if not cpEnabled then break end
+                    cpUp = 3
+                end
+            end)
+
+            cpConn = weldRun.Heartbeat:Connect(function()
+                if not cpEnabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    cpEnabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
+                    cpConn = nil cpTrack = nil lastChar = nil
+                    cpUp = 3
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                    end
+                    local tgtCF  = tgtRoot.CFrame
+                    local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
+                    local offset = (fwdDir * cpForward)
+                               + (tgtCF.RightVector * cpSide)
+                               + (Vector3.new(0, 1, 0) * cpUp)
+                    local baseCF = CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
+                    local tiltCF = baseCF
+                               * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                    myRoot.CFrame      = tiltCF
+                    myRoot.Velocity    = Vector3.new(500, 500, 500)
+                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
 end
 
 
@@ -633,12 +719,12 @@ do
 
     local cpNoCollide = true
     local cpFreezeAt  = 0
-    local cpAnimId    = 89619142317112
-    local SPIN_RADIUS = 8
+    local cpAnimId    = 128118761466261
+    local SPIN_RADIUS = 6.5
     local SPIN_SPEED  = 3
 
 Tab:AddToggle({
-        Label    = "Taunting Laugh",
+        Label    = "Taunt",
         Default  = false,
         Callback = function(state)
             cpEnabled = state
@@ -655,7 +741,7 @@ Tab:AddToggle({
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     activeFlingCount = math.max(0, activeFlingCount - 1)
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Taunting Laugh")
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Taunt")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
