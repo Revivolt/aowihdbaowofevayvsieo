@@ -1,176 +1,107 @@
--- PartMover LocalScript
--- Place in: StarterPlayerScripts
--- Controls:
---   Left Click (hold) = Grab part under cursor
---   Scroll Wheel      = Push/pull part closer or farther
---   R (hold)          = Rotate mode (mouse moves rotate the part)
---   Release Click     = Drop part
+-- use noclip with it
+-- made by joshclark756#7155
+-- Variables
+local mouse = game.Players.LocalPlayer:GetMouse()
+local uis = game:GetService("UserInputService")
 
-local Players         = game:GetService("Players")
-local RunService      = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-
-local player    = Players.LocalPlayer
-local mouse     = player:GetMouse()
-local camera    = workspace.CurrentCamera
-
--- ─── CONFIG ────────────────────────────────────────────────────────────────
-local MIN_DISTANCE     = 3      -- studs (can't pull closer than this)
-local MAX_DISTANCE     = 60     -- studs
-local SCROLL_SPEED     = 2      -- studs per scroll tick
-local LERP_SPEED       = 0.3    -- 0‑1: higher = snappier follow
-local ROTATE_SPEED     = 2      -- degrees per pixel of mouse delta
--- ───────────────────────────────────────────────────────────────────────────
-
--- State
-local heldPart      = nil
-local holdDistance  = 10
-local holdOffset    = Vector3.zero   -- offset from part centre when grabbed
-local isHolding     = false
-local isRotating    = false
-local lastMousePos  = Vector2.zero
-
--- Highlight shown while hovering / holding
-local highlight = Instance.new("SelectionBox")
-highlight.Color3        = Color3.fromRGB(0, 200, 255)
-highlight.LineThickness = 0.05
-highlight.SurfaceTransparency = 0.7
-highlight.SurfaceColor3 = Color3.fromRGB(0, 200, 255)
-highlight.Parent        = workspace
-
--- ─── HELPERS ───────────────────────────────────────────────────────────────
-
-local function getCharacterParts()
-    local char = player.Character
-    if not char then return {} end
-    local parts = {}
-    for _, v in ipairs(char:GetDescendants()) do
-        if v:IsA("BasePart") then
-            parts[#parts + 1] = v
-        end
-    end
-    return parts
-end
-
---- Returns the unanchored BasePart the mouse is hovering, plus hit distance.
-local function getHoveredPart()
-    local params = RaycastParams.new()
-    params.FilterDescendantsInstances = getCharacterParts()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-
-    local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
-    local result  = workspace:Raycast(unitRay.Origin, unitRay.Direction * MAX_DISTANCE, params)
-
-    if result and result.Instance then
-        local part = result.Instance
-        -- Walk up to the model root if needed (optional: remove if you only want base parts)
-        if part:IsA("BasePart") and not part.Anchored then
-            return part, result.Distance, result.Position
-        end
-    end
-    return nil, nil, nil
-end
-
---- Compute the world position we want to move the held part to this frame.
-local function getTargetPosition()
-    local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
-    return unitRay.Origin + unitRay.Direction * holdDistance
-end
-
--- ─── INPUT ─────────────────────────────────────────────────────────────────
-
+-- Connect
 mouse.Button1Down:Connect(function()
-    local part, dist, hitPos = getHoveredPart()
-    if part then
-        heldPart     = part
-        holdDistance = math.clamp(dist, MIN_DISTANCE, MAX_DISTANCE)
-        -- Store the local offset so the part doesn't "snap" to its centre
-        holdOffset   = heldPart.CFrame:PointToObjectSpace(hitPos)
-        isHolding    = true
-        highlight.Adornee = heldPart
-        -- Disable default mouse icon interference
-        mouse.TargetFilter = heldPart
-    end
+   -- Check for Target & Left Shift
+   if mouse.Target and uis:IsKeyDown(Enum.KeyCode.LeftControl) then
+local npc = mouse.target
+local npcparts = mouse.target.Parent
+local PlayerCharacter = game:GetService("Players").LocalPlayer.Character
+local PlayerRootPart = PlayerCharacter.HumanoidRootPart
+local A0 = Instance.new("Attachment")
+local AP = Instance.new("AlignPosition")
+local AO = Instance.new("AlignOrientation")
+local A1 = Instance.new("Attachment")
+for _, v in pairs(npcparts:GetDescendants()) do
+if v:IsA("BasePart") or v:IsA("Part") and v.Name ~= "HumanoidRootPart" then
+do
+v.CanCollide = false
+
+end
+end
+end
+-- Variables
+local mouse = game.Players.LocalPlayer:GetMouse()
+local uis = game:GetService("UserInputService")
+
+-- Connect
+mouse.Button1Down:Connect(function()
+   if mouse.Target and uis:IsKeyDown(Enum.KeyCode.LeftControl) then
+local npc = mouse.target
+local npcparts = mouse.target.Parent
+local PlayerCharacter = game:GetService("Players").LocalPlayer.Character
+local PlayerRootPart = PlayerCharacter.HumanoidRootPart
+local A0 = Instance.new("Attachment")
+local AP = Instance.new("AlignPosition")
+local AO = Instance.new("AlignOrientation")
+local A1 = Instance.new("Attachment")
+for _, v in pairs(npcparts:GetDescendants()) do
+if v:IsA("BasePart") or v:IsA("Part") and v.Name ~= "HumanoidRootPart" then
+do
+v.CanCollide = false
+
+wait(0)
+local player = game.Players.LocalPlayer
+local mouse = player:GetMouse()
+bind = "e" -- has to be lowercase
+mouse.KeyDown:connect(function(key)
+if key == bind then do
+v.CanCollide = true
+end
+end
 end)
+end
+end
+end
+for _, v in pairs(PlayerCharacter:GetDescendants()) do
+if v:IsA("BasePart") then
+if v.Name == "HumanoidRootPart" or v.Name == "UpperTorso" or v.Name == "Head" then
 
-mouse.Button1Up:Connect(function()
-    if heldPart then
-        mouse.TargetFilter = nil
-        highlight.Adornee  = nil
-        heldPart           = nil
-    end
-    isHolding  = false
-    isRotating = false
+end
+end
+end
+PlayerRootPart.Position = PlayerRootPart.Position+Vector3.new(0, 0, 0)
+PlayerCharacter.Head.Anchored = false
+PlayerCharacter.Torso.Anchored = false
+A0.Parent = npc
+AP.Parent = npc
+AO.Parent = npc
+AP.Responsiveness = 200
+AP.MaxForce = math.huge
+AO.MaxTorque = math.huge
+AO.Responsiveness = 200
+AP.Attachment0 = A0
+AP.Attachment1 = A1
+AO.Attachment1 = A1
+AO.Attachment0 = A0
+A1.Parent = PlayerRootPart
+end
 end)
+for _, v in pairs(PlayerCharacter:GetDescendants()) do
+if v:IsA("BasePart") then
+if v.Name == "HumanoidRootPart" or v.Name == "UpperTorso" or v.Name == "Head" then
 
--- Scroll to push / pull the part
-mouse.WheelForward:Connect(function()
-    holdDistance = math.clamp(holdDistance - SCROLL_SPEED, MIN_DISTANCE, MAX_DISTANCE)
-end)
-
-mouse.WheelBackward:Connect(function()
-    holdDistance = math.clamp(holdDistance + SCROLL_SPEED, MIN_DISTANCE, MAX_DISTANCE)
-end)
-
--- R = rotate mode toggle (hold key)
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Enum.KeyCode.R and isHolding then
-        isRotating   = true
-        lastMousePos = UserInputService:GetMouseLocation()
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.R then
-        isRotating = false
-    end
-end)
-
--- ─── HOVER HIGHLIGHT (when not holding) ────────────────────────────────────
-
-RunService.RenderStepped:Connect(function(dt)
-    -- Hover preview
-    if not isHolding then
-        local hovered = getHoveredPart()
-        highlight.Adornee = hovered or nil
-    end
-
-    -- Move held part
-    if not (isHolding and heldPart) then return end
-
-    -- Safety: part may have been destroyed or re-anchored
-    if not heldPart:IsDescendantOf(workspace) or heldPart.Anchored then
-        mouse.TargetFilter = nil
-        highlight.Adornee  = nil
-        heldPart           = nil
-        isHolding          = false
-        return
-    end
-
-    local targetPos = getTargetPosition() - heldPart.CFrame:VectorToWorldSpace(holdOffset)
-
-    if isRotating then
-        -- ── Rotate mode ────────────────────────────────────────────────────
-        local currentMouse = UserInputService:GetMouseLocation()
-        local delta        = currentMouse - lastMousePos
-        lastMousePos       = currentMouse
-
-        local yawCF   = CFrame.Angles(0, math.rad(-delta.X * ROTATE_SPEED), 0)
-        local pitchCF = CFrame.Angles(math.rad(-delta.Y * ROTATE_SPEED), 0, 0)
-
-        -- Yaw in world space, pitch in local space
-        heldPart.CFrame = CFrame.new(heldPart.Position)
-            * yawCF
-            * CFrame.Angles(0, 0, 0)   -- preserve roll
-            * CFrame.new(Vector3.zero, heldPart.CFrame.LookVector)
-            -- simpler combined rotation:
-        heldPart.CFrame = CFrame.new(heldPart.Position) * (yawCF * heldPart.CFrame - heldPart.CFrame.Position) * pitchCF
-        heldPart.CFrame = CFrame.new(heldPart.Position, heldPart.Position + (yawCF * heldPart.CFrame.LookVector))
-    else
-        -- ── Follow cursor ──────────────────────────────────────────────────
-        -- Lerp position for a smooth, "floating" feel
-        local newPos = heldPart.Position:Lerp(targetPos, LERP_SPEED)
-        heldPart.CFrame = CFrame.new(newPos) * (heldPart.CFrame - heldPart.CFrame.Position)
-    end
+end
+end
+end
+PlayerRootPart.Position = PlayerRootPart.Position+Vector3.new(0, 0, 0)
+PlayerCharacter.Head.Anchored = false
+PlayerCharacter.Torso.Anchored = false
+A0.Parent = npc
+AP.Parent = npc
+AO.Parent = npc
+AP.Responsiveness = 200
+AP.MaxForce = math.huge
+AO.MaxTorque = math.huge
+AO.Responsiveness = 200
+AP.Attachment0 = A0
+AP.Attachment1 = A1
+AO.Attachment1 = A1
+AO.Attachment0 = A0
+A1.Parent = PlayerRootPart
+end
 end)
