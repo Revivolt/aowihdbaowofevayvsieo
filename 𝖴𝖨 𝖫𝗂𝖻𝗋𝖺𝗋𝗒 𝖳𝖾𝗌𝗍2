@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -214,10 +214,10 @@ do
     local cpAnimId    = 0
     local cpNoCollide = true
     local cpFreezeAt  = 0
-    local cpUp        =  5
-    local cpForward   =  0
+    local cpUp        =  3
+    local cpForward   =  90
     local cpSide      =  0
-    local cpTiltX     =  90
+    local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
@@ -234,27 +234,28 @@ do
             if not tgtChar or not tgtRoot then return end
 
             local cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
-            local lastCFrame = nil
-            local conn = nil
 
-            local function getTargetCF(up)
+            local function getOffsetCFrame(upAmount)
                 local tgtCF  = tgtRoot.CFrame
                 local fwdDir = cpFaceBack and -tgtCF.LookVector or tgtCF.LookVector
                 local offset = (fwdDir * cpForward)
                            + (tgtCF.RightVector * cpSide)
-                           + (Vector3.new(0, 1, 0) * up)
-                return CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
-                           * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                           + (Vector3.new(0, 1, 0) * upAmount)
+                local baseCF = CFrame.new(tgtRoot.Position + offset, tgtRoot.Position + offset + fwdDir)
+                return baseCF * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
             end
 
             task.spawn(function()
-                -- Phase 1: hover above for 1 second
-                conn = weldRun.Heartbeat:Connect(function()
+                local lastCFrame = nil
+
+                -- Phase 1: hold above target for 1 second via Heartbeat
+                local phase1Done = false
+                local conn1 = weldRun.Heartbeat:Connect(function()
                     pcall(function()
                         for _, part in ipairs(myChar:GetDescendants()) do
                             if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                         end
-                        local cf = getTargetCF(cpUp)
+                        local cf = getOffsetCFrame(cpUp)
                         lastCFrame = cf
                         myRoot.CFrame      = cf
                         myRoot.Velocity    = Vector3.new(500, 500, 500)
@@ -263,13 +264,13 @@ do
                     end)
                 end)
                 task.wait(1)
-                conn:Disconnect()
+                conn1:Disconnect()
 
-                -- Phase 2: drop to target for 0.1 seconds
+                -- Phase 2: drop to target for 0.1 seconds via Heartbeat
                 local savedCFrame = lastCFrame
-                conn = weldRun.Heartbeat:Connect(function()
+                local conn2 = weldRun.Heartbeat:Connect(function()
                     pcall(function()
-                        local cf = getTargetCF(0)
+                        local cf = getOffsetCFrame(0)
                         myRoot.CFrame      = cf
                         myRoot.Velocity    = Vector3.new(500, 500, 500)
                         myRoot.RotVelocity = Vector3.new(500, 500, 500)
@@ -277,7 +278,7 @@ do
                     end)
                 end)
                 task.wait(0.1)
-                conn:Disconnect()
+                conn2:Disconnect()
 
                 -- Phase 3: restore to saved position
                 if savedCFrame and myRoot then
