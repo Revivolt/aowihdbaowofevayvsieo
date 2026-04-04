@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -156,7 +156,9 @@ Tab:AddTextInput({
     Callback = function(input)
         input = (tostring(input or "")):lower()
         selectedTarget = nil
+        if input == "" then return end  -- ADD THIS
         for _, plr in ipairs(weldPlayers:GetPlayers()) do
+            if plr == weldLocal then continue end  -- ADD THIS
             local name    = plr.Name:lower()
             local display = (plr.DisplayName or plr.Name):lower()
             if name == input or display == input
@@ -1948,6 +1950,7 @@ Tab:AddTextInput({
 Tab:AddButton({
     Label    = "Fling",
     Callback = function()
+        if nanTarget == "" then return end  -- ADD THIS
         local targets = {}
         if nanTarget == "-" then
             for _, plr in ipairs(weldPlayers:GetPlayers()) do
@@ -2063,6 +2066,7 @@ do
             end
             cpLoopTask = task.spawn(function()
                 while cpEnabled do
+                    if nanTarget == "" then task.wait(0.1) continue end  -- ADD THIS
                     local targets = {}
                     if nanTarget == "-" then
                         for _, plr in ipairs(weldPlayers:GetPlayers()) do
