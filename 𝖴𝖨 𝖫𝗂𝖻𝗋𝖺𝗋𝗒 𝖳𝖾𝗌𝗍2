@@ -1929,7 +1929,7 @@ Tab:AddToggle({
 end
 
 
-local Tab = Window:AddTab("NaN")
+local Tab = Window:AddTab("Fling")
 
 local nanPlayers  = game:GetService("Players")
 local nanRun      = game:GetService("RunService")
@@ -2096,7 +2096,7 @@ end
 
 
 Tab:AddButton({
-    Label    = "Kill",
+    Label    = "Force Kill",
     Callback = function()
         if nanTarget == "" then return end
         nanCounter = nanCounter + 1
@@ -2160,7 +2160,7 @@ local nanLoopEnabled = false
 local nanLoopTask    = nil
 
 Tab:AddToggle({
-    Label    = "Loop Kill",
+    Label    = "Loop Force Kill",
     Default  = false,
     Callback = function(state)
         nanLoopEnabled = state
