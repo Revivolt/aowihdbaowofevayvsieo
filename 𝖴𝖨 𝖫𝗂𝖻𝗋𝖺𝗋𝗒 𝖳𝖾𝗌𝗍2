@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -213,7 +213,7 @@ do
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  3
+    local cpUp        =  2
     local cpForward   =  -0.9
     local cpSide      =  0
     local cpTiltX     =  0
@@ -1669,7 +1669,7 @@ Tab:AddToggle({
     })
 end
 
--- 17
+-- 18
 do
     local cpConn    = nil
     local cpEnabled = false
@@ -1677,7 +1677,7 @@ do
     local lastChar  = nil
 
     local cpUp        =  0.7
-    local cpForward   =  -0.95
+    local cpForward   = -0.95
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
@@ -1712,6 +1712,11 @@ Tab:AddToggle({
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+                end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
