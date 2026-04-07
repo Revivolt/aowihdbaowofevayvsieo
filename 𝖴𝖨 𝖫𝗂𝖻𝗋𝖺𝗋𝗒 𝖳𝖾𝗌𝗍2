@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -211,26 +211,20 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-    local cpUp        =  -0.1
-    local cpForward   =  0.8
+    local cpUp        =  2.5
+    local cpForward   =  0
     local cpSide      =  0
     local cpTiltX     =  0
-    local cpTiltY     =  180
+    local cpTiltY     =  0
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 9.99
-    local cpAnimId    = 104003529319122
+    local cpFreezeAt  = 4.1
+    local cpAnimId    = 136924276934156
 
-    local clickConn   = nil
-    local tpTweenTime = 1
-    local tpYOffset   = -0.1
-
-    -- Tween state
-    local isTweening   = false
-    local tweenOrigin  = nil
-    local tweenTarget  = nil
-    local tweenElapsed = 0
+    local clickConn  = nil
+    local tpYOffset  = 2.5
+    local tpTarget   = nil  -- set on click, consumed by heartbeat
 
     Tab:AddToggle({
         Label    = "test",
@@ -241,7 +235,7 @@ do
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 if clickConn then clickConn:Disconnect() clickConn = nil end
-                isTweening = false tweenOrigin = nil tweenTarget = nil tweenElapsed = 0
+                tpTarget = nil
                 return
             end
             if not selectedTarget then return end
@@ -249,7 +243,6 @@ do
             local UIS    = game:GetService("UserInputService")
             local camera = workspace.CurrentCamera
 
-            -- Click listener: just store the target CFrame, heartbeat does the actual moving
             clickConn = UIS.InputBegan:Connect(function(input, gameProcessed)
                 if gameProcessed then return end
                 if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
@@ -270,22 +263,18 @@ do
                 if not result then return end
 
                 local _, yaw, _ = myRoot.CFrame:ToEulerAnglesYXZ()
-
-                tweenOrigin  = myRoot.CFrame
-                tweenTarget  = CFrame.new(result.Position + Vector3.new(0, tpYOffset, 0))
-                            * CFrame.Angles(0, yaw, 0)
-                tweenElapsed = 0
-                isTweening   = true
+                tpTarget = CFrame.new(result.Position + Vector3.new(0, tpYOffset, 0))
+                         * CFrame.Angles(0, yaw, 0)
             end)
 
-            cpConn = weldRun.Heartbeat:Connect(function(dt)
+            cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     if clickConn then clickConn:Disconnect() clickConn = nil end
-                    isTweening = false
+                    tpTarget = nil
                     return
                 end
                 local myChar = weldLocal.Character
@@ -305,15 +294,9 @@ do
                     end
 
                     local finalCF
-                    if isTweening then
-                        tweenElapsed = tweenElapsed + dt
-                        local alpha = math.min(tweenElapsed / tpTweenTime, 1)
-                        -- Quad ease-out
-                        alpha = 1 - (1 - alpha) ^ 2
-                        finalCF = tweenOrigin:Lerp(tweenTarget, alpha)
-                        if alpha >= 1 then
-                            isTweening = false
-                        end
+                    if tpTarget then
+                        finalCF  = tpTarget
+                        tpTarget = nil  -- consume it, only applied for one frame
                     else
                         local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                         local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
