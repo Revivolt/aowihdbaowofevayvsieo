@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2460,17 +2460,24 @@ Tab:AddButton({
 local Tab = Window:AddTab("R15 FE")
 
 
-local ANIMATION_ID = 102940155040466  -- Your animation ID here
+local ANIMATION_ID = 102940155040466
 local ANIM_SPEED = 1
 
 local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local animator = humanoid:WaitForChild("Animator")
 
+local humanoid, animator
 local animTrack = nil
+local toggleEnabled = false
+
+local function updateCharacter()
+    local character = player.Character or player.CharacterAdded:Wait()
+    humanoid = character:WaitForChild("Humanoid")
+    animator = humanoid:WaitForChild("Animator")
+end
+
+updateCharacter()
 
 local function isValidId(id)
     return typeof(id) == "number" and id > 0
@@ -2493,23 +2500,36 @@ local function destroyTrack(track)
     end
 end
 
+local function playAnim()
+    destroyTrack(animTrack)
+    animTrack = nil
+
+    animTrack = loadAnimation(ANIMATION_ID, true, Enum.AnimationPriority.Action)
+    if animTrack then
+        animTrack:Play()
+        animTrack:AdjustSpeed(0)
+        animTrack.TimePosition = 0
+    end
+end
+
+player.CharacterAdded:Connect(function(character)
+    humanoid = character:WaitForChild("Humanoid")
+    animator = humanoid:WaitForChild("Animator")
+    animTrack = nil -- old track is gone after reset
+
+    if toggleEnabled then
+        task.wait(0.1) -- small wait for character to fully load
+        playAnim()
+    end
+end)
+
 Tab:AddToggle({
     Label   = "Hide Display Name",
     Default = false,
     Callback = function(value)
+        toggleEnabled = value
         if value then
-            -- Stop any existing track first
-            destroyTrack(animTrack)
-            animTrack = nil
-
-            animTrack = loadAnimation(ANIMATION_ID, true, Enum.AnimationPriority.Action)
-            if animTrack then
-                animTrack:Play()
-                animTrack:AdjustSpeed(ANIM_SPEED)
-                -- Freeze at 0 seconds
-                animTrack:AdjustSpeed(0)
-                animTrack.TimePosition = 0
-            end
+            playAnim()
         else
             destroyTrack(animTrack)
             animTrack = nil
