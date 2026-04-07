@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -211,20 +211,20 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-    local cpUp        =  2.5
-    local cpForward   =  0
+    local cpUp        =  -0.1
+    local cpForward   =  0.8
     local cpSide      =  0
     local cpTiltX     =  0
-    local cpTiltY     =  0
+    local cpTiltY     =  180
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 4.1
-    local cpAnimId    = 136924276934156
+    local cpFreezeAt  = 9.99
+    local cpAnimId    = 104003529319122
 
     local clickConn   = nil
     local tpTweenTime = 1
-    local tpYOffset   = 2.5
+    local tpYOffset   = -0.1
 
     -- Tween state
     local isTweening   = false
