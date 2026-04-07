@@ -1,161 +1,68 @@
--- ShowHead LocalScript
--- Place this in StarterPlayerScripts or StarterCharacterScripts
-
+--// Services
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+--// Settings
+local TOGGLE_KEY = Enum.KeyCode.G
+--// State
+local enabled = false
 
-local localPlayer = Players.LocalPlayer
+--// Play and freeze animation at 0 seconds before anything else
+local function playAndFreezeAnimation()
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+    local animator = humanoid:WaitForChild("Animator")
 
--- Wait for character to load
-local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local head = character:WaitForChild("Head")
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://102940155040466"
 
--- =============================================
--- 1. Make the Head visible
--- =============================================
-head.Transparency = 0.4
-head.Color = Color3.fromRGB(0, 150, 255)   -- Blue tint
-head.Material = Enum.Material.Neon
-head.CastShadow = false
+    local animTrack = animator:LoadAnimation(animation)
+    animTrack:Play()
+    animTrack.TimePosition = 0
+    animTrack:AdjustSpeed(0)
+end
 
--- =============================================
--- 2. Add a highlight/outline for extra clarity
--- =============================================
-local highlight = Instance.new("Highlight")
-highlight.FillColor = Color3.fromRGB(0, 180, 255)
-highlight.OutlineColor = Color3.fromRGB(0, 255, 200)
-highlight.FillTransparency = 0.5
-highlight.OutlineTransparency = 0
-highlight.Adornee = head
-highlight.Parent = head
+pcall(playAndFreezeAnimation)
 
--- =============================================
--- 3. Floating label above the Head
--- =============================================
-local billboardGui = Instance.new("BillboardGui")
-billboardGui.Adornee = head
-billboardGui.Size = UDim2.new(0, 200, 0, 40)
-billboardGui.StudsOffset = Vector3.new(0, 3.5, 0)
-billboardGui.AlwaysOnTop = true
-billboardGui.Parent = head
-
-local label = Instance.new("TextLabel")
-label.Size = UDim2.new(1, 0, 1, 0)
-label.BackgroundTransparency = 1
-label.Text = "⚙ Head"
-label.TextColor3 = Color3.fromRGB(0, 255, 200)
-label.TextStrokeTransparency = 0
-label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-label.Font = Enum.Font.GothamBold
-label.TextScaled = true
-label.Parent = billboardGui
-
--- =============================================
--- 4. Live position/CFrame display in ScreenGui
--- =============================================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "HeadDebugGui"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = localPlayer.PlayerGui
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 320, 0, 100)
-frame.Position = UDim2.new(0, 10, 0, 10)
-frame.BackgroundColor3 = Color3.fromRGB(10, 20, 40)
-frame.BackgroundTransparency = 0.3
-frame.BorderSizePixel = 0
-frame.Parent = screenGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = frame
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
-titleLabel.Position = UDim2.new(0, 0, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "⚙ Head Debug"
-titleLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextScaled = true
-titleLabel.Parent = frame
-
-local posLabel = Instance.new("TextLabel")
-posLabel.Size = UDim2.new(1, -10, 0.35, 0)
-posLabel.Position = UDim2.new(0, 5, 0.32, 0)
-posLabel.BackgroundTransparency = 1
-posLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-posLabel.Font = Enum.Font.Code
-posLabel.TextScaled = true
-posLabel.TextXAlignment = Enum.TextXAlignment.Left
-posLabel.Parent = frame
-
-local rotLabel = Instance.new("TextLabel")
-rotLabel.Size = UDim2.new(1, -10, 0.3, 0)
-rotLabel.Position = UDim2.new(0, 5, 0.67, 0)
-rotLabel.BackgroundTransparency = 1
-rotLabel.TextColor3 = Color3.fromRGB(180, 255, 220)
-rotLabel.Font = Enum.Font.Code
-rotLabel.TextScaled = true
-rotLabel.TextXAlignment = Enum.TextXAlignment.Left
-rotLabel.Parent = frame
-
--- =============================================
--- 5. Update loop — refreshes position display
--- =============================================
-RunService.RenderStepped:Connect(function()
-    if head and head.Parent then
-        local pos = head.Position
-        local rot = head.CFrame:ToEulerAnglesXYZ()
-
-        posLabel.Text = string.format(
-            "Pos  X:%.2f  Y:%.2f  Z:%.2f",
-            pos.X, pos.Y, pos.Z
-        )
-        rotLabel.Text = string.format(
-            "Rot  X:%.1f°  Y:%.1f°  Z:%.1f°",
-            math.deg(rot), math.deg(select(2, head.CFrame:ToEulerAnglesXYZ())),
-            math.deg(select(3, head.CFrame:ToEulerAnglesXYZ()))
-        )
+--// test Function
+local function testfunc()
+    if not player.Character or not player.Character.Parent then return end
+    local character = player.Character
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.Name ~= "OldHumanoid" then
+        humanoid.Name = "OldHumanoid"
+        local newHumanoid = humanoid:Clone()
+        newHumanoid.Parent = character
+        newHumanoid.Name = "Humanoid"
+        task.wait(0.1)
+        if character:FindFirstChild("OldHumanoid") then
+            character.OldHumanoid:Destroy()
+        end
+        workspace.CurrentCamera.CameraSubject = newHumanoid
+        local animate = character:FindFirstChild("Animate")
+        if animate then
+            animate.Disabled = true
+            task.wait(0.1)
+            animate.Disabled = false
+        end
     end
-end)
-
--- =============================================
--- 6. Re-apply on respawn
--- =============================================
-localPlayer.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    head = newCharacter:WaitForChild("Head")
-
-    head.Transparency = 0.4
-    head.Color = Color3.fromRGB(0, 150, 255)
-    head.Material = Enum.Material.Neon
-    head.CastShadow = false
-
-    local newHighlight = Instance.new("Highlight")
-    newHighlight.FillColor = Color3.fromRGB(0, 180, 255)
-    newHighlight.OutlineColor = Color3.fromRGB(0, 255, 200)
-    newHighlight.FillTransparency = 0.5
-    newHighlight.OutlineTransparency = 0
-    newHighlight.Adornee = head
-    newHighlight.Parent = head
-
-    local newBillboard = Instance.new("BillboardGui")
-    newBillboard.Adornee = head
-    newBillboard.Size = UDim2.new(0, 200, 0, 40)
-    newBillboard.StudsOffset = Vector3.new(0, 3.5, 0)
-    newBillboard.AlwaysOnTop = true
-    newBillboard.Parent = head
-
-    local newLabel = Instance.new("TextLabel")
-    newLabel.Size = UDim2.new(1, 0, 1, 0)
-    newLabel.BackgroundTransparency = 1
-    newLabel.Text = "⚙ Head"
-    newLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
-    newLabel.TextStrokeTransparency = 0
-    newLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    newLabel.Font = Enum.Font.GothamBold
-    newLabel.TextScaled = true
-    newLabel.Parent = newBillboard
+end
+--// Character handler
+local function onCharacterAdded()
+    task.wait(0.5)
+    if enabled then
+        pcall(testfunc)
+    end
+end
+-- Run on respawn
+player.CharacterAdded:Connect(onCharacterAdded)
+--// Toggle input
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == TOGGLE_KEY then
+        enabled = not enabled
+        if enabled then
+            pcall(testfunc)
+        end
+    end
 end)
