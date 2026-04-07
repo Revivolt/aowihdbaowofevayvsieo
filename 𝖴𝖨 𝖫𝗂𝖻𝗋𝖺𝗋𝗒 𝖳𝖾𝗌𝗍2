@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -206,14 +206,11 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
 end
 
 
--- e
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-
-    local cpUp        =  -2
     local cpForward   =  0
     local cpSide      =  0
     local cpTiltX     =  0
@@ -224,7 +221,7 @@ do
     local cpFreezeAt  = 0
     local cpAnimId    = 102940155040466
 
-Tab:AddToggle({
+    Tab:AddToggle({
         Label    = "test",
         Default  = false,
         Callback = function(state)
@@ -258,11 +255,35 @@ Tab:AddToggle({
                     for _, part in ipairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
                     end
+
                     local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                     local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(cpSide, cpUp, -cpForward)
+
+                    -- Compute desired XZ world position (without Y yet)
+                    local offsetCF = CFrame.new(tgtRoot.Position)
+                        * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(cpSide, 0, -cpForward)
+                    local desiredPos = offsetCF.Position
+
+                    -- Raycast downward to find ground beneath desired XZ position
+                    local rayParams = RaycastParams.new()
+                    rayParams.FilterDescendantsInstances = {myChar, tgtChar}
+                    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                    local rayResult = workspace:Raycast(
+                        Vector3.new(desiredPos.X, desiredPos.Y + 10, desiredPos.Z),
+                        Vector3.new(0, -60, 0),
+                        rayParams
+                    )
+
+                    -- Use hip height so the root sits correctly above ground
+                    local myHumanoid = myChar:FindFirstChildWhichIsA("Humanoid")
+                    local hipHeight  = myHumanoid and (myHumanoid.HipHeight + 0.1) or 2.5
+                    local groundY    = rayResult and (rayResult.Position.Y + hipHeight) or desiredPos.Y
+
+                    myRoot.CFrame = CFrame.new(desiredPos.X, groundY, desiredPos.Z)
+                        * CFrame.Angles(0, yaw, 0)
                         * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
                     sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
