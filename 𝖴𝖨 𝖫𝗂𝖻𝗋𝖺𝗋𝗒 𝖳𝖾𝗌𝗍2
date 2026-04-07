@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -211,7 +211,6 @@ do
     local cpClickConn = nil
     local cpEnabled   = false
     local cpTrack     = nil
-    local cpTgtTrack  = nil
     local lastChar    = nil
     local cpUp        =  2.5
     local cpForward   =  0
@@ -223,36 +222,14 @@ do
     local cpNoCollide = true
     local cpFreezeAt  = 4.1
     local cpAnimId    = 136924276934156
-    local cpTweenTime = 1.0  -- seconds to reach click destination, adjust as needed
+    local cpTweenTime = 0.4
 
     local TweenService = game:GetService("TweenService")
     local Mouse        = weldLocal:GetMouse()
     local activeTween  = nil
 
     local function stopActiveTween()
-        if activeTween then
-            activeTween:Cancel()
-            activeTween = nil
-        end
-    end
-
-    local function cleanupCP()
-        stopActiveTween()
-        if cpClickConn then cpClickConn:Disconnect() cpClickConn = nil end
-        -- Restore target
-        if selectedTarget and selectedTarget.Character then
-            local h = selectedTarget.Character:FindFirstChildOfClass("Humanoid")
-            if h then
-                h.PlatformStand = false
-                h.WalkSpeed     = 16
-                h.JumpPower     = 50
-            end
-            if cpTgtTrack then
-                cpTgtTrack:Stop()
-                cpTgtTrack:Destroy()
-                cpTgtTrack = nil
-            end
-        end
+        if activeTween then activeTween:Cancel() activeTween = nil end
     end
 
     Tab:AddToggle({
@@ -261,33 +238,33 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
-                cleanupCP()
+                stopActiveTween()
+                if cpClickConn then cpClickConn:Disconnect() cpClickConn = nil end
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
             if not selectedTarget then return end
 
-            -- Click to move target (and you follow via heartbeat snap)
+            -- Click tweens YOUR root, target follows via heartbeat snap
             cpClickConn = Mouse.Button1Down:Connect(function()
                 if not cpEnabled then return end
-                local tgtChar = selectedTarget and selectedTarget.Character
-                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not tgtRoot then return end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot then return end
 
-                local target = Mouse.Hit
-                if not target then return end
+                local hit = Mouse.Hit
+                if not hit then return end
 
                 stopActiveTween()
 
-                -- Tween the target's root to the clicked position, keep Y so they don't sink into floor
-                local goal = { CFrame = CFrame.new(Vector3.new(target.X, tgtRoot.Position.Y, target.Z))
-                    * CFrame.Angles(0, tgtRoot.CFrame:ToEulerAnglesYXZ(), 0) }
+                local dest = CFrame.new(Vector3.new(hit.X, myRoot.Position.Y, hit.Z))
+                    * CFrame.Angles(0, select(2, myRoot.CFrame:ToEulerAnglesYXZ()), 0)
 
                 activeTween = TweenService:Create(
-                    tgtRoot,
+                    myRoot,
                     TweenInfo.new(cpTweenTime, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-                    goal
+                    { CFrame = dest }
                 )
                 activeTween:Play()
             end)
@@ -296,7 +273,8 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
-                    cleanupCP()
+                    stopActiveTween()
+                    if cpClickConn then cpClickConn:Disconnect() cpClickConn = nil end
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
@@ -308,17 +286,12 @@ do
 
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
-                if not tgtChar or not tgtRoot or not tgtHum then return end
+                if not tgtChar or not tgtRoot then return end
 
-                -- Load animations on first run / respawn
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
-                    -- Load same climb anim on target so they stay in it
-                    if cpTgtTrack then cpTgtTrack:Stop() cpTgtTrack:Destroy() end
-                    cpTgtTrack = loadAnim(tgtChar, cpAnimId, cpFreezeAt, true)
                 end
 
                 pcall(function()
@@ -329,18 +302,17 @@ do
                         end
                     end
 
-                    -- Lock target so humanoid doesn't fight the tween
-                    tgtHum.PlatformStand = true
-                    tgtHum.WalkSpeed     = 0
-                    tgtHum.JumpPower     = 0
-
-                    -- Snap self onto target every frame — you follow wherever tween moves them
-                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                    -- Snap TARGET to YOUR position (offset behind/below you)
+                    -- You own yourself so this is the only direction that replicates
+                    local _, myYaw, _ = myRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = cpFaceBack and (myYaw + math.pi) or myYaw
+                    tgtRoot.CFrame = CFrame.new(myRoot.Position)
                         * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(cpSide, cpUp, -cpForward)
-                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                        * CFrame.new(-cpSide, -cpUp, cpForward)
+                        * CFrame.Angles(math.rad(-cpTiltX), math.rad(-cpTiltY), math.rad(-cpTiltZ))
+
+                    tgtRoot.AssemblyLinearVelocity  = Vector3.zero
+                    tgtRoot.AssemblyAngularVelocity = Vector3.zero
 
                     myRoot.AssemblyLinearVelocity  = Vector3.zero
                     myRoot.AssemblyAngularVelocity = Vector3.zero
