@@ -1,159 +1,161 @@
--- CursorGrab LocalScript
--- Place in: StarterPlayerScripts
---
--- Controls:
---   LeftCtrl + Left Click  →  Grab part under cursor
---   Left Click (again)     →  Drop part
---   E                      →  Drop part
---   Scroll Wheel           →  Push / pull part closer or farther
+-- ShowHead LocalScript
+-- Place this in StarterPlayerScripts or StarterCharacterScripts
 
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
-local player  = Players.LocalPlayer
-local mouse   = player:GetMouse()
-local camera  = workspace.CurrentCamera
+local localPlayer = Players.LocalPlayer
 
--- ─── CONFIG ────────────────────────────────────────────────────────────────
-local MIN_DIST     = 3      -- studs (closest the part can be pulled)
-local MAX_DIST     = 120    -- studs (furthest the part can be pushed)
-local SCROLL_SPEED = 3      -- studs per scroll tick
--- ───────────────────────────────────────────────────────────────────────────
+-- Wait for character to load
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local head = character:WaitForChild("Head")
 
--- State
-local heldPart     = nil
-local heldModel    = nil
-local holdDistance = 15
+-- =============================================
+-- 1. Make the Head visible
+-- =============================================
+head.Transparency = 0.4
+head.Color = Color3.fromRGB(0, 150, 255)   -- Blue tint
+head.Material = Enum.Material.Neon
+head.CastShadow = false
 
--- Invisible anchored part that follows the cursor — the part chases this
-local cursorAnchor = nil
+-- =============================================
+-- 2. Add a highlight/outline for extra clarity
+-- =============================================
+local highlight = Instance.new("Highlight")
+highlight.FillColor = Color3.fromRGB(0, 180, 255)
+highlight.OutlineColor = Color3.fromRGB(0, 255, 200)
+highlight.FillTransparency = 0.5
+highlight.OutlineTransparency = 0
+highlight.Adornee = head
+highlight.Parent = head
 
--- Constraints / attachments (stored so we can destroy them on release)
-local AP, AO, A0, A1 = nil, nil, nil, nil
+-- =============================================
+-- 3. Floating label above the Head
+-- =============================================
+local billboardGui = Instance.new("BillboardGui")
+billboardGui.Adornee = head
+billboardGui.Size = UDim2.new(0, 200, 0, 40)
+billboardGui.StudsOffset = Vector3.new(0, 3.5, 0)
+billboardGui.AlwaysOnTop = true
+billboardGui.Parent = head
 
--- ─── CLEANUP ───────────────────────────────────────────────────────────────
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, 0, 1, 0)
+label.BackgroundTransparency = 1
+label.Text = "⚙ Head"
+label.TextColor3 = Color3.fromRGB(0, 255, 200)
+label.TextStrokeTransparency = 0
+label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+label.Font = Enum.Font.GothamBold
+label.TextScaled = true
+label.Parent = billboardGui
 
-local function releaseGrab()
-    -- Destroy constraints and anchor
-    if AP  then AP:Destroy()  AP  = nil end
-    if AO  then AO:Destroy()  AO  = nil end
-    if A0  then A0:Destroy()  A0  = nil end
-    if A1  then A1:Destroy()  A1  = nil end
-    if cursorAnchor then cursorAnchor:Destroy() cursorAnchor = nil end
+-- =============================================
+-- 4. Live position/CFrame display in ScreenGui
+-- =============================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HeadDebugGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = localPlayer.PlayerGui
 
-    -- Restore collision on the grabbed model
-    if heldModel then
-        for _, v in ipairs(heldModel:GetDescendants()) do
-            if v:IsA("BasePart") then
-                v.CanCollide = true
-            end
-        end
-    end
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 320, 0, 100)
+frame.Position = UDim2.new(0, 10, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(10, 20, 40)
+frame.BackgroundTransparency = 0.3
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
 
-    heldPart  = nil
-    heldModel = nil
-end
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = frame
 
--- ─── GRAB ──────────────────────────────────────────────────────────────────
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0.3, 0)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "⚙ Head Debug"
+titleLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextScaled = true
+titleLabel.Parent = frame
 
-mouse.Button1Down:Connect(function()
-    -- Clicking while already holding → drop
-    if heldPart then
-        releaseGrab()
-        return
-    end
+local posLabel = Instance.new("TextLabel")
+posLabel.Size = UDim2.new(1, -10, 0.35, 0)
+posLabel.Position = UDim2.new(0, 5, 0.32, 0)
+posLabel.BackgroundTransparency = 1
+posLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+posLabel.Font = Enum.Font.Code
+posLabel.TextScaled = true
+posLabel.TextXAlignment = Enum.TextXAlignment.Left
+posLabel.Parent = frame
 
-    -- Must be holding LeftCtrl and have a valid unanchored target
-    if not UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then return end
-    if not mouse.Target then return end
+local rotLabel = Instance.new("TextLabel")
+rotLabel.Size = UDim2.new(1, -10, 0.3, 0)
+rotLabel.Position = UDim2.new(0, 5, 0.67, 0)
+rotLabel.BackgroundTransparency = 1
+rotLabel.TextColor3 = Color3.fromRGB(180, 255, 220)
+rotLabel.Font = Enum.Font.Code
+rotLabel.TextScaled = true
+rotLabel.TextXAlignment = Enum.TextXAlignment.Left
+rotLabel.Parent = frame
 
-    local target = mouse.Target
-    if not target:IsA("BasePart") or target.Anchored then return end
-
-    heldPart  = target
-    heldModel = target.Parent
-
-    -- Start hold distance = current distance to part (clamped)
-    holdDistance = math.clamp(
-        (camera.CFrame.Position - target.Position).Magnitude,
-        MIN_DIST, MAX_DIST
-    )
-
-    -- ── Invisible cursor anchor ──────────────────────────────────────────
-    cursorAnchor              = Instance.new("Part")
-    cursorAnchor.Name         = "CursorAnchor"
-    cursorAnchor.Size         = Vector3.new(0.05, 0.05, 0.05)
-    cursorAnchor.Anchored     = true
-    cursorAnchor.CanCollide   = false
-    cursorAnchor.Transparency = 1
-    cursorAnchor.CastShadow   = false
-    cursorAnchor.CFrame       = target.CFrame
-    cursorAnchor.Parent       = workspace
-
-    -- ── Attachments ──────────────────────────────────────────────────────
-    A0 = Instance.new("Attachment")
-    A0.Parent = heldPart          -- lives on the grabbed part
-
-    A1 = Instance.new("Attachment")
-    A1.Parent = cursorAnchor      -- lives on the cursor anchor
-
-    -- ── AlignPosition ────────────────────────────────────────────────────
-    AP                 = Instance.new("AlignPosition")
-    AP.Responsiveness  = 200
-    AP.MaxForce        = math.huge
-    AP.Attachment0     = A0
-    AP.Attachment1     = A1
-    AP.Parent          = heldPart
-
-    -- ── AlignOrientation ─────────────────────────────────────────────────
-    AO                 = Instance.new("AlignOrientation")
-    AO.Responsiveness  = 200
-    AO.MaxTorque       = math.huge
-    AO.Attachment0     = A0
-    AO.Attachment1     = A1
-    AO.Parent          = heldPart
-
-    -- ── Disable collision so it doesn't snag on the world ────────────────
-    for _, v in ipairs(heldModel:GetDescendants()) do
-        if v:IsA("BasePart") then
-            v.CanCollide = false
-        end
-    end
-end)
-
--- ─── RELEASE WITH E ────────────────────────────────────────────────────────
-
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Enum.KeyCode.E then
-        releaseGrab()
-    end
-end)
-
--- ─── SCROLL: push / pull ───────────────────────────────────────────────────
-
-mouse.WheelForward:Connect(function()
-    holdDistance = math.clamp(holdDistance - SCROLL_SPEED, MIN_DIST, MAX_DIST)
-end)
-
-mouse.WheelBackward:Connect(function()
-    holdDistance = math.clamp(holdDistance + SCROLL_SPEED, MIN_DIST, MAX_DIST)
-end)
-
--- ─── FRAME LOOP: move cursor anchor along mouse ray ───────────────────────
-
+-- =============================================
+-- 5. Update loop — refreshes position display
+-- =============================================
 RunService.RenderStepped:Connect(function()
-    if not cursorAnchor or not heldPart then return end
+    if head and head.Parent then
+        local pos = head.Position
+        local rot = head.CFrame:ToEulerAnglesXYZ()
 
-    -- Safety: part was deleted externally
-    if not heldPart:IsDescendantOf(workspace) then
-        releaseGrab()
-        return
+        posLabel.Text = string.format(
+            "Pos  X:%.2f  Y:%.2f  Z:%.2f",
+            pos.X, pos.Y, pos.Z
+        )
+        rotLabel.Text = string.format(
+            "Rot  X:%.1f°  Y:%.1f°  Z:%.1f°",
+            math.deg(rot), math.deg(select(2, head.CFrame:ToEulerAnglesXYZ())),
+            math.deg(select(3, head.CFrame:ToEulerAnglesXYZ()))
+        )
     end
+end)
 
-    -- Project mouse ray out to holdDistance and place the anchor there
-    local ray       = camera:ScreenPointToRay(mouse.X, mouse.Y)
-    local worldPos  = ray.Origin + ray.Direction * holdDistance
-    cursorAnchor.CFrame = CFrame.new(worldPos)
+-- =============================================
+-- 6. Re-apply on respawn
+-- =============================================
+localPlayer.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    head = newCharacter:WaitForChild("Head")
+
+    head.Transparency = 0.4
+    head.Color = Color3.fromRGB(0, 150, 255)
+    head.Material = Enum.Material.Neon
+    head.CastShadow = false
+
+    local newHighlight = Instance.new("Highlight")
+    newHighlight.FillColor = Color3.fromRGB(0, 180, 255)
+    newHighlight.OutlineColor = Color3.fromRGB(0, 255, 200)
+    newHighlight.FillTransparency = 0.5
+    newHighlight.OutlineTransparency = 0
+    newHighlight.Adornee = head
+    newHighlight.Parent = head
+
+    local newBillboard = Instance.new("BillboardGui")
+    newBillboard.Adornee = head
+    newBillboard.Size = UDim2.new(0, 200, 0, 40)
+    newBillboard.StudsOffset = Vector3.new(0, 3.5, 0)
+    newBillboard.AlwaysOnTop = true
+    newBillboard.Parent = head
+
+    local newLabel = Instance.new("TextLabel")
+    newLabel.Size = UDim2.new(1, 0, 1, 0)
+    newLabel.BackgroundTransparency = 1
+    newLabel.Text = "⚙ Head"
+    newLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+    newLabel.TextStrokeTransparency = 0
+    newLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    newLabel.Font = Enum.Font.GothamBold
+    newLabel.TextScaled = true
+    newLabel.Parent = newBillboard
 end)
