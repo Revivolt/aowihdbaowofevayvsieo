@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -206,13 +206,11 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
 end
 
 
--- e
 do
     local cpConn    = nil
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-
     local cpUp        =  2.5
     local cpForward   =  0
     local cpSide      =  0
@@ -224,7 +222,12 @@ do
     local cpFreezeAt  = 4.1
     local cpAnimId    = 136924276934156
 
-Tab:AddToggle({
+    local clickConn  = nil
+    local activeTween = nil
+    local tpTweenTime = 0.35
+    local tpYOffset   = 2.5
+
+    Tab:AddToggle({
         Label    = "test",
         Default  = false,
         Callback = function(state)
@@ -232,15 +235,69 @@ Tab:AddToggle({
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
+                if clickConn then clickConn:Disconnect() clickConn = nil end
+                if activeTween then activeTween:Cancel() activeTween = nil end
                 return
             end
             if not selectedTarget then return end
+
+            local UIS          = game:GetService("UserInputService")
+            local TweenService = game:GetService("TweenService")
+            local camera       = workspace.CurrentCamera
+
+            -- Click-to-tween listener
+            clickConn = UIS.InputBegan:Connect(function(input, gameProcessed)
+                if gameProcessed then return end
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                if not cpEnabled then return end
+
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+
+                local mousePos = UIS:GetMouseLocation()
+                local unitRay  = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+
+                local rayParams = RaycastParams.new()
+                rayParams.FilterDescendantsInstances = { myChar }
+                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+                local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, rayParams)
+                if not result then return end
+
+                local _, yaw, _ = myRoot.CFrame:ToEulerAnglesYXZ()
+                local targetCF  = CFrame.new(result.Position + Vector3.new(0, tpYOffset, 0))
+                                * CFrame.Angles(0, yaw, 0)
+
+                if activeTween then activeTween:Cancel() activeTween = nil end
+
+                myRoot.Anchored = true
+
+                activeTween = TweenService:Create(
+                    myRoot,
+                    TweenInfo.new(tpTweenTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    { CFrame = targetCF }
+                )
+
+                activeTween.Completed:Connect(function()
+                    if myRoot then
+                        myRoot.Anchored = false
+                        myRoot.AssemblyLinearVelocity  = Vector3.zero
+                        myRoot.AssemblyAngularVelocity = Vector3.zero
+                    end
+                    activeTween = nil
+                end)
+
+                activeTween:Play()
+            end)
+
             cpConn = weldRun.Heartbeat:Connect(function()
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
+                    if clickConn then clickConn:Disconnect() clickConn = nil end
                     return
                 end
                 local myChar = weldLocal.Character
