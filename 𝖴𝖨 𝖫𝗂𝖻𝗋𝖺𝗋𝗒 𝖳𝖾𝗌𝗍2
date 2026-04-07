@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -204,6 +204,64 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
     end)
     return track
 end
+
+
+local ANIMATION_ID = 102940155040466  -- Your animation ID here
+local ANIM_SPEED = 1
+
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local animator = humanoid:WaitForChild("Animator")
+
+local animTrack = nil
+
+local function isValidId(id)
+    return typeof(id) == "number" and id > 0
+end
+
+local function loadAnimation(assetId, looped, priority)
+    if not isValidId(assetId) then return nil end
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://" .. assetId
+    local track = animator:LoadAnimation(anim)
+    track.Looped = looped
+    track.Priority = priority
+    return track
+end
+
+local function destroyTrack(track)
+    if track then
+        track:Stop()
+        track:Destroy()
+    end
+end
+
+Tab:AddToggle({
+    Label   = "test",
+    Default = false,
+    Callback = function(value)
+        if value then
+            -- Stop any existing track first
+            destroyTrack(animTrack)
+            animTrack = nil
+
+            animTrack = loadAnimation(ANIMATION_ID, true, Enum.AnimationPriority.Action)
+            if animTrack then
+                animTrack:Play()
+                animTrack:AdjustSpeed(ANIM_SPEED)
+                -- Freeze at 0 seconds
+                animTrack:AdjustSpeed(0)
+                animTrack.TimePosition = 0
+            end
+        else
+            destroyTrack(animTrack)
+            animTrack = nil
+        end
+    end,
+})
 
 
 -- e
