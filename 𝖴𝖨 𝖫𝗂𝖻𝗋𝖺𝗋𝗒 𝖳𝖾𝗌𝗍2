@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -273,10 +273,10 @@ do
                     -- Read WASD and drive the target's humanoid
                     if tgtHum then
                         local moveVec = Vector3.zero
-                        if UIS:IsKeyDown(Enum.KeyCode.W) then moveVec += Vector3.new(0, 0, -1) end
-                        if UIS:IsKeyDown(Enum.KeyCode.S) then moveVec += Vector3.new(0, 0,  1) end
-                        if UIS:IsKeyDown(Enum.KeyCode.A) then moveVec += Vector3.new(-1, 0,  0) end
-                        if UIS:IsKeyDown(Enum.KeyCode.D) then moveVec += Vector3.new( 1, 0,  0) end
+                        if UIS:IsKeyDown(Enum.KeyCode.W) then moveVec += Vector3.new(0, 0, -100) end
+                        if UIS:IsKeyDown(Enum.KeyCode.S) then moveVec += Vector3.new(0, 0,  100) end
+                        if UIS:IsKeyDown(Enum.KeyCode.A) then moveVec += Vector3.new(-100, 0,  0) end
+                        if UIS:IsKeyDown(Enum.KeyCode.D) then moveVec += Vector3.new( 100, 0,  0) end
 
                         -- Rotate input relative to camera
                         local camFlat = Vector3.new(Camera.CFrame.LookVector.X, 0, Camera.CFrame.LookVector.Z)
