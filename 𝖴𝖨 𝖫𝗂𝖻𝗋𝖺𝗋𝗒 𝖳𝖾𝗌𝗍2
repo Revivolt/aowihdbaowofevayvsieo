@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -221,9 +221,9 @@ do
     local cpNoCollide = true
     local cpFreezeAt  = 4.1
     local cpAnimId    = 136924276934156
+    local cpSpeed     = 16
 
-    local UIS    = game:GetService("UserInputService")
-    local Camera = workspace.CurrentCamera
+    local UIS = game:GetService("UserInputService")
 
     Tab:AddToggle({
         Label    = "test",
@@ -231,6 +231,11 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
+                -- Restore target platformstand on cleanup
+                if selectedTarget and selectedTarget.Character then
+                    local h = selectedTarget.Character:FindFirstChildOfClass("Humanoid")
+                    if h then h.PlatformStand = false end
+                end
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
                 cpConn = nil cpTrack = nil lastChar = nil
                 return
@@ -240,21 +245,30 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
+                    if selectedTarget and selectedTarget.Character then
+                        local h = selectedTarget.Character:FindFirstChildOfClass("Humanoid")
+                        if h then h.PlatformStand = false end
+                    end
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
+
                 local myChar = weldLocal.Character
                 local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 if not myChar or not myRoot then return end
+
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not tgtChar or not tgtRoot then return end
+                local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
+                if not tgtChar or not tgtRoot or not tgtHum then return end
+
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
+
                 pcall(function()
                     -- No collide self
                     for _, part in ipairs(myChar:GetDescendants()) do
@@ -263,32 +277,24 @@ do
                         end
                     end
 
-                    local tgtHum = tgtChar:FindFirstChildOfClass("Humanoid")
+                    -- Lock target humanoid so it can't fight our movement
+                    tgtHum.PlatformStand = true
 
-                    -- Force target into climbing state every frame
-                    if tgtHum then
-                        tgtHum:ChangeState(Enum.HumanoidStateType.Climbing)
-                    end
+                    -- Build velocity from WASD
+                    -- W/S = up/down (climbing), A/D = strafe
+                    local vel = Vector3.zero
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then vel += Vector3.new(0,  1, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then vel += Vector3.new(0, -1, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then vel += Vector3.new(-1, 0, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then vel += Vector3.new( 1, 0, 0) end
 
-                    -- Read WASD and drive the target's humanoid
-                    if tgtHum then
-                        local moveVec = Vector3.zero
-                        if UIS:IsKeyDown(Enum.KeyCode.W) then moveVec += Vector3.new(0, 0, -100) end
-                        if UIS:IsKeyDown(Enum.KeyCode.S) then moveVec += Vector3.new(0, 0,  100) end
-                        if UIS:IsKeyDown(Enum.KeyCode.A) then moveVec += Vector3.new(-100, 0,  0) end
-                        if UIS:IsKeyDown(Enum.KeyCode.D) then moveVec += Vector3.new( 100, 0,  0) end
-
-                        -- Rotate input relative to camera
-                        local camFlat = Vector3.new(Camera.CFrame.LookVector.X, 0, Camera.CFrame.LookVector.Z)
-                        local forward = camFlat.Magnitude > 0 and camFlat.Unit or Vector3.zAxis
-                        local right   = Camera.CFrame.RightVector
-                        right         = Vector3.new(right.X, 0, right.Z)
-                        right         = right.Magnitude > 0 and right.Unit or Vector3.xAxis
-
-                        local worldDir = (forward * -moveVec.Z) + (right * moveVec.X)
-
-                        -- Move target in world space
-                        tgtHum:Move(worldDir, false)
+                    if vel.Magnitude > 0 then
+                        tgtRoot.AssemblyLinearVelocity  = vel.Unit * cpSpeed
+                        tgtRoot.AssemblyAngularVelocity = Vector3.zero
+                    else
+                        -- No input — hold target in place
+                        tgtRoot.AssemblyLinearVelocity  = Vector3.zero
+                        tgtRoot.AssemblyAngularVelocity = Vector3.zero
                     end
 
                     -- Snap self onto target
