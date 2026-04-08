@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -222,29 +222,39 @@ do
     local cpNoCollide = true
     local cpFreezeAt  = 9.99
     local cpAnimId    = 79326665237642
+    local wasRagdolled = false
 
     local function isRagdolled(character)
         if not character then return false end
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid then return false end
 
-        -- Method 1: Check HumanoidStateType
         if humanoid:GetState() == Enum.HumanoidStateType.Physics then
             return true
         end
-
-        -- Method 2: Check for ragdoll attribute (common in many games)
         if character:GetAttribute("Ragdoll") == true then
             return true
         end
-
-        -- Method 3: Check if HumanoidRootPart has a ragdoll-style constraint or root is unanchored/physics-driven
         local rootPart = character:FindFirstChild("HumanoidRootPart")
         if rootPart and rootPart:FindFirstChild("RagdollConstraint") then
             return true
         end
 
         return false
+    end
+
+    local function detachCharacter(myChar, myRoot)
+        if not myChar or not myRoot then return end
+        pcall(function()
+            -- Release physics anchor from target
+            sethiddenproperty(myRoot, "PhysicsRepRootPart", myRoot)
+            -- Restore collisions
+            for _, part in ipairs(myChar:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end)
     end
 
     Tab:AddToggle({
@@ -254,7 +264,7 @@ do
             cpEnabled = state
             if not cpEnabled then
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-                cpConn = nil cpTrack = nil lastChar = nil
+                cpConn = nil cpTrack = nil lastChar = nil wasRagdolled = false
                 return
             end
             if not selectedTarget then return end
@@ -263,20 +273,34 @@ do
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
-                    cpConn = nil cpTrack = nil lastChar = nil
+                    cpConn = nil cpTrack = nil lastChar = nil wasRagdolled = false
                     return
                 end
+
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
 
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
 
-                -- Pause everything while target is ragdolled
-                if isRagdolled(tgtChar) then return end
+                local ragdolled = isRagdolled(tgtChar)
 
-                local myChar = weldLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if not myChar or not myRoot then return end
+                -- On ragdoll enter: actively detach
+                if ragdolled and not wasRagdolled then
+                    wasRagdolled = true
+                    detachCharacter(myChar, myRoot)
+                    return
+                end
+
+                -- Still ragdolled: keep skipping
+                if ragdolled then return end
+
+                -- On ragdoll exit: reset flag
+                if wasRagdolled then
+                    wasRagdolled = false
+                end
 
                 if myChar ~= lastChar then
                     lastChar = myChar
