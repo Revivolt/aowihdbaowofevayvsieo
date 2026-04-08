@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -212,8 +212,7 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-
-    local cpUp        =  0
+    local cpUp        =  0.5
     local cpForward   =  0
     local cpSide      =  0
     local cpTiltX     =  90
@@ -224,7 +223,31 @@ do
     local cpFreezeAt  = 9.99
     local cpAnimId    = 79326665237642
 
-Tab:AddToggle({
+    local function isRagdolled(character)
+        if not character then return false end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return false end
+
+        -- Method 1: Check HumanoidStateType
+        if humanoid:GetState() == Enum.HumanoidStateType.Physics then
+            return true
+        end
+
+        -- Method 2: Check for ragdoll attribute (common in many games)
+        if character:GetAttribute("Ragdoll") == true then
+            return true
+        end
+
+        -- Method 3: Check if HumanoidRootPart has a ragdoll-style constraint or root is unanchored/physics-driven
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart and rootPart:FindFirstChild("RagdollConstraint") then
+            return true
+        end
+
+        return false
+    end
+
+    Tab:AddToggle({
         Label    = "test",
         Default  = false,
         Callback = function(state)
@@ -243,12 +266,18 @@ Tab:AddToggle({
                     cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
-                local myChar = weldLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if not myChar or not myRoot then return end
+
                 local tgtChar = selectedTarget.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
+
+                -- Pause everything while target is ragdolled
+                if isRagdolled(tgtChar) then return end
+
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
