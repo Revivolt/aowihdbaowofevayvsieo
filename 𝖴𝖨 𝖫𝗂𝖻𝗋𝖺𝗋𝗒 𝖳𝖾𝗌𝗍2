@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -208,10 +208,12 @@ end
 
 -- e
 do
-    local cpConn    = nil
-    local cpEnabled = false
-    local cpTrack   = nil
-    local lastChar  = nil
+    local cpConn       = nil
+    local cpEnabled    = false
+    local cpTrack      = nil
+    local lastChar     = nil
+    local ragdollConn  = nil
+    local isRagdolled  = false
     local cpUp        =  0.5
     local cpForward   =  0
     local cpSide      =  0
@@ -222,61 +224,6 @@ do
     local cpNoCollide = true
     local cpFreezeAt  = 9.99
     local cpAnimId    = 79326665237642
-    local wasRagdolled = false
-
-    local function isRagdolled(character)
-        if not character then return false end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return false end
-
-        -- Check HumanoidStateType
-        local state = humanoid:GetState()
-        if state == Enum.HumanoidStateType.Physics
-        or state == Enum.HumanoidStateType.Dead
-        or state == Enum.HumanoidStateType.FallingDown then
-            return true
-        end
-
-        -- Check common ragdoll attributes
-        for _, attrName in ipairs({"Ragdoll", "ragdoll", "IsRagdoll", "isRagdoll", "Ragdolled", "ragdolled"}) do
-            if character:GetAttribute(attrName) == true then
-                return true
-            end
-        end
-
-        -- Check humanoid attributes too
-        for _, attrName in ipairs({"Ragdoll", "ragdoll", "IsRagdoll", "isRagdoll", "Ragdolled", "ragdolled"}) do
-            if humanoid:GetAttribute(attrName) == true then
-                return true
-            end
-        end
-
-        -- Check for ragdoll constraints/tags on root
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if rootPart then
-            for _, child in ipairs(rootPart:GetChildren()) do
-                local n = child.Name:lower()
-                if n:find("ragdoll") then return true end
-            end
-        end
-
-        -- Check if motor6Ds are disabled (classic ragdoll technique)
-        local disabledMotors = 0
-        local totalMotors = 0
-        for _, v in ipairs(character:GetDescendants()) do
-            if v:IsA("Motor6D") then
-                totalMotors += 1
-                if not v.Enabled then
-                    disabledMotors += 1
-                end
-            end
-        end
-        if totalMotors > 0 and disabledMotors >= (totalMotors * 0.5) then
-            return true
-        end
-
-        return false
-    end
 
     local function detachCharacter(myChar, myRoot)
         if not myChar or not myRoot then return end
@@ -284,13 +231,93 @@ do
             sethiddenproperty(myRoot, "PhysicsRepRootPart", myRoot)
             myRoot.AssemblyLinearVelocity  = Vector3.zero
             myRoot.AssemblyAngularVelocity = Vector3.zero
-            -- Re-enable collisions
             for _, part in ipairs(myChar:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
+                if part:IsA("BasePart") then part.CanCollide = true end
             end
         end)
+    end
+
+    local function checkRagdollFromMotors(tgtChar)
+        local total, disabled = 0, 0
+        for _, v in ipairs(tgtChar:GetDescendants()) do
+            if v:IsA("Motor6D") then
+                total += 1
+                if not v.Enabled then disabled += 1 end
+            end
+        end
+        return total > 0 and disabled >= (total * 0.5)
+    end
+
+    local function setupRagdollDetection(tgtChar)
+        -- Clean up any previous listeners
+        if ragdollConn then
+            for _, c in ipairs(ragdollConn) do c:Disconnect() end
+        end
+        ragdollConn = {}
+
+        local humanoid = tgtChar:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+
+        local function updateRagdollState()
+            local state = humanoid:GetState()
+
+            -- State-based check
+            if state == Enum.HumanoidStateType.Physics
+            or state == Enum.HumanoidStateType.Dead
+            or state == Enum.HumanoidStateType.FallingDown then
+                isRagdolled = true
+                return
+            end
+
+            -- Attribute-based check
+            for _, attrName in ipairs({"Ragdoll","ragdoll","IsRagdoll","isRagdoll","Ragdolled","ragdolled"}) do
+                if tgtChar:GetAttribute(attrName) == true
+                or humanoid:GetAttribute(attrName) == true then
+                    isRagdolled = true
+                    return
+                end
+            end
+
+            -- Motor6D check as fallback
+            if checkRagdollFromMotors(tgtChar) then
+                isRagdolled = true
+                return
+            end
+
+            isRagdolled = false
+        end
+
+        -- Listen to humanoid state changes instantly
+        table.insert(ragdollConn, humanoid.StateChanged:Connect(function()
+            updateRagdollState()
+        end))
+
+        -- Listen to attribute changes on character and humanoid
+        table.insert(ragdollConn, tgtChar.AttributeChanged:Connect(function()
+            updateRagdollState()
+        end))
+        table.insert(ragdollConn, humanoid.AttributeChanged:Connect(function()
+            updateRagdollState()
+        end))
+
+        -- Listen to every Motor6D Enabled property change
+        local function watchMotor(motor)
+            table.insert(ragdollConn, motor:GetPropertyChangedSignal("Enabled"):Connect(function()
+                updateRagdollState()
+            end))
+        end
+
+        for _, v in ipairs(tgtChar:GetDescendants()) do
+            if v:IsA("Motor6D") then watchMotor(v) end
+        end
+
+        -- Watch for motors added late
+        table.insert(ragdollConn, tgtChar.DescendantAdded:Connect(function(v)
+            if v:IsA("Motor6D") then watchMotor(v) end
+        end))
+
+        -- Run once immediately to sync current state
+        updateRagdollState()
     end
 
     Tab:AddToggle({
@@ -299,8 +326,13 @@ do
         Callback = function(state)
             cpEnabled = state
             if not cpEnabled then
+                if ragdollConn then
+                    for _, c in ipairs(ragdollConn) do c:Disconnect() end
+                    ragdollConn = nil
+                end
+                isRagdolled = false
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-                cpConn = nil cpTrack = nil lastChar = nil wasRagdolled = false
+                cpConn = nil cpTrack = nil lastChar = nil
                 return
             end
             if not selectedTarget then return end
@@ -308,8 +340,13 @@ do
                 if not cpEnabled then return end
                 if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                     cpEnabled = false
+                    if ragdollConn then
+                        for _, c in ipairs(ragdollConn) do c:Disconnect() end
+                        ragdollConn = nil
+                    end
+                    isRagdolled = false
                     cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
-                    cpConn = nil cpTrack = nil lastChar = nil wasRagdolled = false
+                    cpConn = nil cpTrack = nil lastChar = nil
                     return
                 end
 
@@ -321,17 +358,15 @@ do
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 if not tgtChar or not tgtRoot then return end
 
-                local ragdolled = isRagdolled(tgtChar)
-
-                if ragdolled then
-                    -- Actively detach every frame while ragdolled, not just on entry
-                    detachCharacter(myChar, myRoot)
-                    wasRagdolled = true
-                    return
+                -- Re-setup listeners if target character changed
+                if tgtChar ~= lastChar then
+                    lastChar = tgtChar
+                    setupRagdollDetection(tgtChar)
                 end
 
-                if wasRagdolled then
-                    wasRagdolled = false
+                if isRagdolled then
+                    detachCharacter(myChar, myRoot)
+                    return
                 end
 
                 if myChar ~= lastChar then
