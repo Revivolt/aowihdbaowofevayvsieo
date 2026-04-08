@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2189,6 +2189,8 @@ Tab:AddButton({
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
 
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
@@ -2216,33 +2218,15 @@ Tab:AddButton({
                 end)
                 return
             end
-
-            local freshTgtChar = target and target.Character
-            local freshTgtRoot = freshTgtChar and (
-                freshTgtChar:FindFirstChild("HumanoidRootPart") or
-                freshTgtChar:FindFirstChild("Torso") or
-                freshTgtChar:FindFirstChild("UpperTorso")
-            )
-            local freshTgtHum = freshTgtChar and freshTgtChar:FindFirstChildOfClass("Humanoid")
-            if not freshTgtRoot or not freshTgtHum then return end
-            
-            myRoot.CFrame                  = freshTgtRoot.CFrame
+            myRoot.CFrame                  = tgtRoot.CFrame
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
-            
-            -- Alternate between FallingDown and Physics to interrupt noclip state
-            local pingState = (tick() % 0.2 < 0.1)
-                and Enum.HumanoidStateType.FallingDown
-                or  Enum.HumanoidStateType.Physics
-            
-            pcall(function() myHum:ChangeState(pingState) end)
             pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", freshTgtRoot)
-            pcall(sethiddenproperty, myRoot, "AssemblyRootPart", freshTgtRoot)
-            pcall(sethiddenproperty, myRoot, "NetworkOwnerV3", freshTgtRoot)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
     end,
 })
+
 
 local nanLoopEnabled = false
 local nanLoopTask    = nil
@@ -2289,12 +2273,14 @@ Tab:AddToggle({
                 return targets
             end
 
-            local function performDoubleAction(firstTarget)
+            local function doDoubleTap(firstTarget)
                 if not firstTarget or not firstTarget.Character then return end
                 for _ = 1, 2 do
                     local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
                     local myHum   = myChar:WaitForChild("Humanoid")
                     local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+                    local tgtRoot = firstTarget.Character and firstTarget.Character:FindFirstChild("HumanoidRootPart")
+                    if not tgtRoot then break end
 
                     local savedCF       = myRoot.CFrame
                     local savedVel      = myRoot.Velocity
@@ -2326,42 +2312,24 @@ Tab:AddToggle({
                             end)
                             return
                         end
-
-                        local freshTgtChar = target and target.Character
-                        local freshTgtRoot = freshTgtChar and (
-                            freshTgtChar:FindFirstChild("HumanoidRootPart") or
-                            freshTgtChar:FindFirstChild("Torso") or
-                            freshTgtChar:FindFirstChild("UpperTorso")
-                        )
-                        local freshTgtHum = freshTgtChar and freshTgtChar:FindFirstChildOfClass("Humanoid")
-                        if not freshTgtRoot or not freshTgtHum then return end
-                        
-                        myRoot.CFrame                  = freshTgtRoot.CFrame
+                        myRoot.CFrame                  = tgtRoot.CFrame
                         myRoot.AssemblyLinearVelocity  = nanVec
                         myRoot.AssemblyAngularVelocity = nanVec
-                        
-                        -- Alternate between FallingDown and Physics to interrupt noclip state
-                        local pingState = (tick() % 0.2 < 0.1)
-                            and Enum.HumanoidStateType.FallingDown
-                            or  Enum.HumanoidStateType.Physics
-                        
-                        pcall(function() myHum:ChangeState(pingState) end)
                         pcall(function() myHum:Move(nanVec) end)
-                        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", freshTgtRoot)
-                        pcall(sethiddenproperty, myRoot, "AssemblyRootPart", freshTgtRoot)
-                        pcall(sethiddenproperty, myRoot, "NetworkOwnerV3", freshTgtRoot)
+                        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
                     end)
                 end
                 task.wait(0)
             end
 
-            local function runUntilTimeout(target, maxTime)
+            local function doNanUntilDead(target, maxTime)
                 local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
                 local myHum   = myChar:WaitForChild("Humanoid")
                 local myRoot  = myChar:WaitForChild("HumanoidRootPart")
                 local tgtChar = target.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
                 local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
-                if not tgtHum then return end
+                if not tgtRoot or not tgtHum then return end
 
                 local savedCF       = myRoot.CFrame
                 local savedVel      = myRoot.Velocity
@@ -2379,17 +2347,10 @@ Tab:AddToggle({
                 nanConn = nanRun.Heartbeat:Connect(function()
                     if nanCounter ~= localID then return end
 
-                    local freshTgtChar = target and target.Character
-                    local freshTgtRoot = freshTgtChar and (
-                        freshTgtChar:FindFirstChild("HumanoidRootPart") or
-                        freshTgtChar:FindFirstChild("Torso") or
-                        freshTgtChar:FindFirstChild("UpperTorso")
-                    )
-
-                    local isDead   = not tgtHum.Parent or tgtHum.Health <= 0
+                    local isDead   = tgtHum.Health <= 0 or not tgtHum.Parent
                     local timedOut = tick() - startTime >= maxTime
 
-                    if isDead or timedOut or not freshTgtRoot then
+                    if isDead or timedOut then
                         nanConn:Disconnect()
                         nanConn = nil
                         task.defer(function()
@@ -2405,14 +2366,11 @@ Tab:AddToggle({
                         return
                     end
 
-                    myRoot.CFrame                  = freshTgtRoot.CFrame
+                    myRoot.CFrame                  = tgtRoot.CFrame
                     myRoot.AssemblyLinearVelocity  = nanVec
                     myRoot.AssemblyAngularVelocity = nanVec
-                    pcall(function() myRoot.Anchored = false end)
                     pcall(function() myHum:Move(nanVec) end)
-                    pcall(function() myHum:ChangeState(Enum.HumanoidStateType.Physics) end)
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", freshTgtRoot)
-                    pcall(sethiddenproperty, myRoot, "NetworkOwnerV3", freshTgtRoot)
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
                 end)
 
                 while nanLoopEnabled and nanConn do
@@ -2427,18 +2385,18 @@ Tab:AddToggle({
                     local targets = getTargets()
                     local firstTarget = targets[1]
 
-                    performDoubleAction(firstTarget)
+                    doDoubleTap(firstTarget)
 
                     for _, target in ipairs(targets) do
                         if not nanLoopEnabled then break end
                         if not target.Character then continue end
 
                         if firstTarget and firstTarget.Character and firstTarget ~= target then
-                            performDoubleAction(firstTarget)
+                            doDoubleTap(firstTarget)
                         end
 
                         if not nanLoopEnabled then break end
-                        runUntilTimeout(target, 2)
+                        doNanUntilDead(target, 2)
                         task.wait(0)
                     end
                 end)
