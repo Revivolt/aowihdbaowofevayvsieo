@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -229,14 +229,49 @@ do
         local humanoid = character:FindFirstChildOfClass("Humanoid")
         if not humanoid then return false end
 
-        if humanoid:GetState() == Enum.HumanoidStateType.Physics then
+        -- Check HumanoidStateType
+        local state = humanoid:GetState()
+        if state == Enum.HumanoidStateType.Physics
+        or state == Enum.HumanoidStateType.Dead
+        or state == Enum.HumanoidStateType.FallingDown then
             return true
         end
-        if character:GetAttribute("Ragdoll") == true then
-            return true
+
+        -- Check common ragdoll attributes
+        for _, attrName in ipairs({"Ragdoll", "ragdoll", "IsRagdoll", "isRagdoll", "Ragdolled", "ragdolled"}) do
+            if character:GetAttribute(attrName) == true then
+                return true
+            end
         end
+
+        -- Check humanoid attributes too
+        for _, attrName in ipairs({"Ragdoll", "ragdoll", "IsRagdoll", "isRagdoll", "Ragdolled", "ragdolled"}) do
+            if humanoid:GetAttribute(attrName) == true then
+                return true
+            end
+        end
+
+        -- Check for ragdoll constraints/tags on root
         local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if rootPart and rootPart:FindFirstChild("RagdollConstraint") then
+        if rootPart then
+            for _, child in ipairs(rootPart:GetChildren()) do
+                local n = child.Name:lower()
+                if n:find("ragdoll") then return true end
+            end
+        end
+
+        -- Check if motor6Ds are disabled (classic ragdoll technique)
+        local disabledMotors = 0
+        local totalMotors = 0
+        for _, v in ipairs(character:GetDescendants()) do
+            if v:IsA("Motor6D") then
+                totalMotors += 1
+                if not v.Enabled then
+                    disabledMotors += 1
+                end
+            end
+        end
+        if totalMotors > 0 and disabledMotors >= (totalMotors * 0.5) then
             return true
         end
 
@@ -246,9 +281,10 @@ do
     local function detachCharacter(myChar, myRoot)
         if not myChar or not myRoot then return end
         pcall(function()
-            -- Release physics anchor from target
             sethiddenproperty(myRoot, "PhysicsRepRootPart", myRoot)
-            -- Restore collisions
+            myRoot.AssemblyLinearVelocity  = Vector3.zero
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+            -- Re-enable collisions
             for _, part in ipairs(myChar:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = true
@@ -287,17 +323,13 @@ do
 
                 local ragdolled = isRagdolled(tgtChar)
 
-                -- On ragdoll enter: actively detach
-                if ragdolled and not wasRagdolled then
-                    wasRagdolled = true
+                if ragdolled then
+                    -- Actively detach every frame while ragdolled, not just on entry
                     detachCharacter(myChar, myRoot)
+                    wasRagdolled = true
                     return
                 end
 
-                -- Still ragdolled: keep skipping
-                if ragdolled then return end
-
-                -- On ragdoll exit: reset flag
                 if wasRagdolled then
                     wasRagdolled = false
                 end
