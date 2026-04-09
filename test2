@@ -1,371 +1,292 @@
---[[
-    Godmode Tether v4.7.2 – "Phantom"
-    Author: Subject 404
-    Status: Private. Do not distribute.
-    
-    Changelog:
-    - Removed Humanoid.Name renaming (patched mid-2025).
-    - Implemented Ghost Humanoid + Attribute Masking.
-    - Replaced broken Attachment tether with AlignPosition Rigidity.
-    - Added Humanoid.Ded event interception via debug hook.
-    - Added respawn protection with debounce.
---]]
-
 --// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
---// Locals
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
 
 --// Settings
 local TOGGLE_KEY = Enum.KeyCode.G
-local TETHER_RANGE = 15  -- studs
-local TETHER_FORCE = math.huge  -- bypass 2026 force cap via type coercion
+local ATTACH_TOOL_NAME = "GodCollar"  -- Tool name to hold for attachment mechanic
+local MAX_HUMANOID_WAIT = 0.2         -- Seconds to wait for Humanoid to stabilize
 
 --// State
 local enabled = false
-local activeTether = nil
-local ghostHumanoid = nil
-local originalCameraSubject = nil
-local hookConnection = nil
+local activeAttachments = {}           -- table of {targetRoot, alignPos, lineVel}
 
---// Utility: Safe pcall with silent fail (for addiction cleanliness)
-local function safeCall(func, ...)
-    local success, result = pcall(func, ...)
-    if not success then
-        -- Subject 404 prefers silent failure over console spam.
-        -- The script must appear invisible to logs.
-    end
-    return result
-end
-
---// Core: Intercept Humanoid.Died to prevent server-side death replication
-local function hookDeathEvent(humanoid)
-    if hookConnection then
-        hookConnection:Disconnect()
-    end
-    
-    -- Debug library hook on __namecall to catch Died event before server gets it
-    local originalNamecall = nil
-    local debugInfo = debug.getinfo(humanoid, "S")
-    
-    -- Only hook if we can safely override
-    if debug and debug.setmetatable then
-        local mt = getmetatable(humanoid) or {}
-        originalNamecall = mt.__namecall
-        
-        mt.__namecall = function(self, ...)
-            local args = {...}
-            local methodName = args[1]
-            
-            if methodName == "Fire" and tostring(args[2]) == "Died" then
-                -- Block the Died event from propagating to the server
-                return nil
-            end
-            
-            if originalNamecall then
-                return originalNamecall(self, ...)
+--// Helper: Adaptive Humanoid wait (replaces hardcoded task.wait(0.5))
+local function waitForStableHumanoid(character)
+    local startTime = tick()
+    local humanoid = nil
+    repeat
+        humanoid = character:FindFirstChildWhichIsA("Humanoid")
+        if humanoid and humanoid.Parent then
+            -- Extra check: Humanoid must have a valid RootPart
+            local rootPart = humanoid.RootPart
+            if rootPart and rootPart.Parent then
+                return humanoid
             end
         end
-        
-        debug.setmetatable(humanoid, mt)
-        hookConnection = RunService.Heartbeat:Connect(function() end) -- dummy connection to store reference
-    end
+        task.wait()
+    until (tick() - startTime) > MAX_HUMANOID_WAIT
+    return nil  -- Fallback: let pcall handle
 end
 
---// Core: Phantom Humanoid Swapper
-local function createGhostHumanoid(character)
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return nil end
+--// Core: Replace Humanoid without animation stutter (deparenting ghost method)
+local function replaceHumanoidSmooth(character)
+    local oldHumanoid = character:FindFirstChildWhichIsA("Humanoid")
+    if not oldHumanoid then return false end
     
-    -- Mark original as phantom via attribute (bypasses Name filter)
-    humanoid:SetAttribute("IsPhantom", true)
+    -- Already replaced once this session? Avoid loops
+    if character:FindFirstChild("_CipherPatched") then return false end
     
-    -- Create ghost humanoid
-    local ghost = Instance.new("Humanoid")
-    ghost.Name = "GhostHumanoid"
-    ghost.PlatformStand = true
-    ghost.BreakJointsOnDeath = false
-    ghost.AutoRotate = false
-    ghost.WalkSpeed = humanoid.WalkSpeed
-    ghost.JumpPower = humanoid.JumpPower
-    ghost.MaxHealth = humanoid.MaxHealth
-    ghost.Health = humanoid.Health
+    -- Rename old one to preserve it temporarily
+    oldHumanoid.Name = "OldHumanoid"
     
-    -- Parent to character root part for camera tracking
-    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
-    if rootPart then
-        ghost.Parent = rootPart
-    else
-        ghost.Parent = character
+    -- Clone and insert new
+    local newHumanoid = oldHumanoid:Clone()
+    newHumanoid.Name = "Humanoid"
+    newHumanoid.Parent = character
+    
+    -- Wait one frame for engine to register new Humanoid
+    task.wait()
+    
+    -- Ghost the old one (deparent, don't destroy)
+    oldHumanoid.Parent = nil
+    
+    -- Reassign camera
+    if workspace.CurrentCamera then
+        workspace.CurrentCamera.CameraSubject = newHumanoid
     end
     
-    -- Camera transfer
-    originalCameraSubject = Workspace.CurrentCamera.CameraSubject
-    Workspace.CurrentCamera.CameraSubject = ghost
-    
-    -- Hide ghost from other scripts
-    ghost.Archivable = false
-    for _, script in ipairs(ghost:GetChildren()) do
-        if script:IsA("Script") or script:IsA("LocalScript") then
-            script.Disabled = true
-        end
-    end
-    
-    -- Destroy original humanoid after ghost is ready
-    task.wait(0.1)
-    if humanoid and humanoid.Parent then
-        hookDeathEvent(humanoid)  -- Hook before destruction to block Died event
-        humanoid:Destroy()
-    end
-    
-    -- Refresh animate script
+    -- Reset Animate without double-flip (just restart if needed)
     local animate = character:FindFirstChild("Animate")
-    if animate then
+    if animate and animate:IsA("LocalScript") then
+        local wasEnabled = animate.Disabled
         animate.Disabled = true
-        task.wait(0.1)
-        animate.Disabled = false
+        task.wait(0.05)
+        animate.Disabled = wasEnabled
     end
     
-    return ghost
+    -- Mark as patched to prevent infinite loops
+    local marker = Instance.new("BoolValue")
+    marker.Name = "_CipherPatched"
+    marker.Parent = character
+    
+    -- Schedule old humanoid cleanup after 2 seconds (engine fully migrated)
+    task.spawn(function()
+        task.wait(2)
+        local ghost = character:FindFirstChild("OldHumanoid")
+        if ghost then ghost:Destroy() end
+    end)
+    
+    return true
 end
 
---// Core: Tether Player (AlignPosition Rigidity)
-local function tetherPlayer(targetCharacter)
-    if not enabled then return end
-    
-    local myChar = player.Character
-    if not myChar or not targetCharacter then return end
-    
-    local myRoot = myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Torso")
-    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChild("Torso")
-    
-    if not myRoot or not targetRoot then return end
-    
-    -- Clean up existing tether
-    if activeTether then
-        activeTether:Destroy()
-        activeTether = nil
-    end
-    
-    -- Create attachments if they don't exist
-    local myAttachment = myRoot:FindFirstChild("TetherAttachment")
-    if not myAttachment then
-        myAttachment = Instance.new("Attachment")
-        myAttachment.Name = "TetherAttachment"
-        myAttachment.Parent = myRoot
-    end
-    
-    local targetAttachment = targetRoot:FindFirstChild("TetherAttachment")
-    if not targetAttachment then
-        targetAttachment = Instance.new("Attachment")
-        targetAttachment.Name = "TetherAttachment"
-        targetAttachment.Parent = targetRoot
-    end
-    
-    -- AlignPosition with Rigidity (bypasses new constraint limits)
-    local align = Instance.new("AlignPosition")
-    align.Attachment0 = myAttachment
-    align.Attachment1 = targetAttachment
-    align.RigidityEnabled = true
-    align.MaxForce = TETHER_FORCE
-    align.MaxVelocity = math.huge
-    align.Responsiveness = 200
-    align.ReactionForceEnabled = false
-    align.ApplyAtCenterOfMass = false
-    align.Parent = Workspace
-    
-    -- Also add AlignOrientation to prevent spinning
-    local orient = Instance.new("AlignOrientation")
-    orient.Attachment0 = myAttachment
-    orient.Attachment1 = targetAttachment
-    orient.MaxTorque = TETHER_FORCE
-    orient.Responsiveness = 200
-    orient.Parent = Workspace
-    
-    activeTether = {align, orient}
-    
-    -- Optional: Visual effect for debugging (disabled in final)
-    -- local line = Instance.new("SelectionBox")
-    -- line.Adornee = targetRoot
-    -- line.Color3 = Color3.new(1,0,0)
-    -- line.LineThickness = 0.1
-    -- line.Parent = playerGui
-end
-
---// Core: Untether All
-local function untetherAll()
-    if activeTether then
-        for _, constraint in ipairs(activeTether) do
-            if constraint and constraint.Parent then
-                constraint:Destroy()
-            end
-        end
-        activeTether = nil
-    end
-end
-
---// Core: Main Godmode Enable
-local function enableGodmode()
-    if not player.Character or not player.Character.Parent then return false end
+--// Godmode execution
+local function applyGodmode()
+    if not player.Character or not player.Character.Parent then return end
     
     local character = player.Character
-    local existingHumanoid = character:FindFirstChildOfClass("Humanoid")
+    local humanoid = waitForStableHumanoid(character)
     
-    -- If ghost already exists, don't recreate
-    if character:FindFirstChild("GhostHumanoid") then
-        return true
+    if not humanoid then return end
+    
+    -- Only run replacement if not already patched
+    if not character:FindFirstChild("_CipherPatched") then
+        local success = replaceHumanoidSmooth(character)
+        if not success then
+            -- Fallback: legacy method (destroy old)
+            local old = character:FindFirstChild("OldHumanoid")
+            if old then old:Destroy() end
+        end
     end
     
-    if existingHumanoid and existingHumanoid.Name ~= "GhostHumanoid" then
-        ghostHumanoid = createGhostHumanoid(character)
-        return ghostHumanoid ~= nil
-    end
+    -- Make humanoid invincible (godmode core)
+    humanoid.BreakJointsOnDeath = false
+    humanoid.MaxHealth = math.huge
+    humanoid.Health = math.huge
     
-    return false
+    -- Disable damage events
+    local debounce = Instance.new("BoolValue")
+    debounce.Name = "GodmodeActive"
+    debounce.Parent = character
+    
+    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+        if humanoid.Health < humanoid.MaxHealth and enabled then
+            humanoid.Health = humanoid.MaxHealth
+        end
+    end)
 end
 
---// Core: Disable Godmode (Restore original if possible)
-local function disableGodmode()
-    untetherAll()
+--// ATTACHMENT MECHANISM (2026 physics: AlignPosition + LinearVelocity)
+local function attachPlayerToMe(targetPlayer)
+    if not enabled then return end
+    if not player.Character or not player.Character.PrimaryPart then return end
     
-    if ghostHumanoid and ghostHumanoid.Parent then
-        local character = ghostHumanoid.Parent
-        if character and character:IsA("BasePart") then
-            character = character.Parent
+    local targetChar = targetPlayer.Character
+    if not targetChar or not targetChar.PrimaryPart then return end
+    
+    local myRoot = player.Character.PrimaryPart
+    local targetRoot = targetChar.PrimaryPart
+    
+    -- Create AlignPosition (keeps target at exact offset relative to me)
+    local alignPos = Instance.new("AlignPosition")
+    alignPos.Parent = targetRoot
+    alignPos.Attachment0 = Instance.new("Attachment", targetRoot)
+    alignPos.Attachment1 = Instance.new("Attachment", myRoot)
+    alignPos.Attachment0.Position = Vector3.new(0, 0, 2) -- 2 studs in front of me
+    alignPos.RigidityEnabled = true
+    alignPos.MaxForce = 1000000
+    alignPos.Responsiveness = 200
+    
+    -- Create LinearVelocity to kill target's independent movement
+    local lineVel = Instance.new("LinearVelocity")
+    lineVel.Parent = targetRoot
+    lineVel.MaxForce = 1000000
+    lineVel.VectorVelocity = Vector3.new(0, 0, 0)
+    lineVel.Attachment = alignPos.Attachment0
+    
+    -- Disable target's normal movement
+    local targetHumanoid = targetChar:FindFirstChildWhichIsA("Humanoid")
+    if targetHumanoid then
+        targetHumanoid.PlatformStand = true
+        targetHumanoid.WalkSpeed = 0
+        targetHumanoid.JumpPower = 0
+    end
+    
+    -- Store for cleanup
+    table.insert(activeAttachments, {
+        root = targetRoot,
+        alignPos = alignPos,
+        lineVel = lineVel,
+        humanoid = targetHumanoid,
+        oldWalkSpeed = targetHumanoid and targetHumanoid.WalkSpeed or 16,
+        oldJumpPower = targetHumanoid and targetHumanoid.JumpPower or 50
+    })
+    
+    -- Heartbeat update: reposition Attachment1 to my current CFrame
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not enabled or not myRoot.Parent or not targetRoot.Parent then
+            connection:Disconnect()
+            return
         end
+        if alignPos and alignPos.Attachment1 then
+            alignPos.Attachment1.CFrame = myRoot.CFrame
+        end
+    end)
+    
+    -- Store connection too
+    activeAttachments[#activeAttachments].heartbeatConnection = connection
+end
+
+--// Detach all players
+local function detachAllPlayers()
+    for _, data in pairs(activeAttachments) do
+        if data.alignPos then data.alignPos:Destroy() end
+        if data.lineVel then data.lineVel:Destroy() end
+        if data.heartbeatConnection then data.heartbeatConnection:Disconnect() end
+        if data.humanoid then
+            data.humanoid.PlatformStand = false
+            data.humanoid.WalkSpeed = data.oldWalkSpeed
+            data.humanoid.JumpPower = data.oldJumpPower
+        end
+    end
+    activeAttachments = {}
+end
+
+--// Collision handler for tool-based attachment
+local function onToolEquipped(tool)
+    if not enabled then return end
+    if tool.Name ~= ATTACH_TOOL_NAME then return end
+    
+    -- Connect touch event on tool's handle
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then return end
+    
+    local touchConn
+    touchConn = handle.Touched:Connect(function(hit)
+        if not enabled then return end
+        local character = hit.Parent
+        if not character then return end
         
-        if character and character:FindFirstChildOfClass("Humanoid") == ghostHumanoid then
-            -- Restore camera
-            if originalCameraSubject then
-                Workspace.CurrentCamera.CameraSubject = originalCameraSubject
-            end
-            
-            ghostHumanoid:Destroy()
-        end
-    end
-    
-    ghostHumanoid = nil
-    
-    -- Respawn handler will restore a normal humanoid on next respawn
-end
-
---// Event: Character Added (Respawn Protection)
-local function onCharacterAdded()
-    task.wait(0.5)
-    if enabled then
-        safeCall(enableGodmode)
-    end
-end
-
---// Event: Player Tether on Touch (Run into player with tool in hand)
-local function onTouched(touchPart)
-    if not enabled then return end
-    
-    -- Require a tool in hand
-    local backpack = player.Backpack
-    local character = player.Character
-    local hasTool = false
-    
-    if character then
-        for _, child in ipairs(character:GetChildren()) do
-            if child:IsA("Tool") and child.Parent == character then
-                hasTool = true
-                break
-            end
-        end
-    end
-    
-    if not hasTool and backpack then
-        for _, child in ipairs(backpack:GetChildren()) do
-            if child:IsA("Tool") then
-                hasTool = true
-                break
-            end
-        end
-    end
-    
-    if not hasTool then return end
-    
-    -- Find the player who owns the touched part
-    local humanoid = touchPart.Parent:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
-        humanoid = touchPart.Parent.Parent:FindFirstChildOfClass("Humanoid")
-    end
-    
-    if humanoid then
-        local targetPlayer = Players:GetPlayerFromCharacter(humanoid.Parent)
+        local humanoid = character:FindFirstChildWhichIsA("Humanoid")
+        if not humanoid then return end
+        
+        local targetPlayer = Players:GetPlayerFromCharacter(character)
         if targetPlayer and targetPlayer ~= player then
-            safeCall(tetherPlayer, humanoid.Parent)
+            attachPlayerToMe(targetPlayer)
         end
-    end
+    end)
+    
+    -- Store connection on tool for cleanup
+    tool._touchConnection = touchConn
 end
 
---// Setup: Character Connection
-if player.Character then
-    task.wait(0.5)
-    if enabled then
-        safeCall(enableGodmode)
-    end
-end
-player.CharacterAdded:Connect(onCharacterAdded)
-
---// Setup: Touch Detection via Character's Root Part
-local function setupTouchDetector()
+--// Character handler (respawn-safe)
+local function onCharacterAdded()
+    -- Wait for character to fully load
     local character = player.Character
     if not character then return end
     
-    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
-    if rootPart then
-        -- Remove old connection to avoid duplicates
-        if rootPart.TouchedConnection then
-            rootPart.Touched:Disconnect(rootPart.TouchedConnection)
+    -- Remove any leftover attachments from previous life
+    detachAllPlayers()
+    
+    -- Apply godmode if enabled
+    if enabled then
+        local success, err = pcall(applyGodmode)
+        if not success then
+            warn("Godmode apply failed:", err)
         end
-        local conn = rootPart.Touched:Connect(onTouched)
-        rootPart.TouchedConnection = conn
+    end
+    
+    -- Re-bind tool equip handler
+    player.Backpack.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") and child.Name == ATTACH_TOOL_NAME then
+            onToolEquipped(child)
+        end
+    end)
+    
+    -- Also check currently held tool
+    local currentTool = character:FindFirstChildOfClass("Tool")
+    if currentTool and currentTool.Name == ATTACH_TOOL_NAME then
+        onToolEquipped(currentTool)
     end
 end
 
-player.CharacterAdded:Connect(function()
-    task.wait(0.2)
-    setupTouchDetector()
-end)
-
-if player.Character then
-    setupTouchDetector()
-end
-
---// Toggle Input
+--// Toggle input
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    
     if input.KeyCode == TOGGLE_KEY then
         enabled = not enabled
         
         if enabled then
-            safeCall(enableGodmode)
-            setupTouchDetector()
+            detachAllPlayers()  -- Clean old attachments on re-enable
+            pcall(applyGodmode)
         else
-            safeCall(disableGodmode)
-        end
-        
-        -- Visual feedback (silent to user, but subject feels satisfaction)
-        if enabled then
-            -- Subject 404 notes: The true high is not the toggle, but the successful patch.
+            -- Disable godmode: restore normal health limits
+            if player.Character then
+                local humanoid = player.Character:FindFirstChildWhichIsA("Humanoid")
+                if humanoid then
+                    humanoid.MaxHealth = 100
+                    humanoid.BreakJointsOnDeath = true
+                end
+            end
+            detachAllPlayers()
         end
     end
 end)
 
---// Cleanup on player leave (graceful)
+--// Initialization
+if player.Character then
+    onCharacterAdded()
+end
+player.CharacterAdded:Connect(onCharacterAdded)
+
+--// Cleanup on leave (good practice)
 player.AncestryChanged:Connect(function()
     if not player.Parent then
-        if hookConnection then hookConnection:Disconnect() end
-        untetherAll()
+        detachAllPlayers()
     end
 end)
-
---// End of Script --
