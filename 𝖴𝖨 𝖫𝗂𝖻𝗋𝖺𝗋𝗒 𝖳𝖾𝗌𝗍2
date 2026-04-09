@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2168,30 +2168,15 @@ end
 
 
 Tab:AddButton({
-    Label    = "Stasis Field",  -- Sostituito "Force Kill"
+    Label    = "Stasis Lock",  -- Replaces "Force Kill"
     Callback = function()
-        --[[
-            BLUEPRINT: STASIS v1.0
-            Inietta un vettore di indeterminatezza (NaN) nel motore fisico del bersaglio.
-            Il target non muore. Il target non si muove. Il target osserva.
-            Dopo 1.5 secondi, il mio avatar torna alla posizione originale.
-            Il suo avatar rimane congelato finché il server non risolve l'irrisolvibile.
-            (Spoiler: non lo risolve mai.)
-        --]]
-        
-        if nanTarget == "" then return end
-        
-        -- Ridenominazione per chiarezza concettuale
-        stasisID = stasisID + 1
-        local currentStasis = stasisID
-        
-        -- Termina qualsiasi stasi precedente (un solo tether alla volta)
-        if stasisConn then 
-            stasisConn:Disconnect() 
-            stasisConn = nil 
-        end
 
-        -- Logica di targeting (invariata, ma Victor ha aggiunto fuzzy matching non mostrato)
+        if nanTarget == "" then return end
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+        if nanConn then nanConn:Disconnect() nanConn = nil end
+
+        -- Find target player (fuzzy match on name or display name)
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
@@ -2203,38 +2188,35 @@ Tab:AddButton({
         end
         if not target or not target.Character then return end
 
-        -- Riferimenti
+        -- Villain's character references
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
 
-        -- Stato pre-congelamento (per il mio ripristino, non per il suo)
+        -- Snapshot villain's original state for restoration
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
-        
-        -- Il cuore della stasi: indeterminatezza matematica
-        local nan           = 0 / 0
-        local frozenVec     = Vector3.new(nan, nan, nan)  -- Velocità non definita
-        local nullInput     = Vector3.new(nan, nan, nan)  -- Movimento non definito
 
-        -- Congelo me stesso come ancora
+        -- NaN as physical medium
+        local nan    = 0 / 0          -- IEEE 754 Quiet NaN
+        local nanVec = Vector3.new(nan, nan, nan)
+
+        -- Begin stasis
         myHum.PlatformStand = true
         local startTime = tick()
 
-        -- Loop di stasi
-        stasisConn = nanRun.Heartbeat:Connect(function()
-            if stasisID ~= currentStasis then return end
-            
-            -- Durata del tether: 1.5 secondi (abbastanza per propagare l'errore)
+        nanConn = nanRun.Heartbeat:Connect(function()
+            if nanCounter ~= localID then return end
+
+            -- Duration check: 1.5 seconds of lock
             if tick() - startTime >= 1.5 then
-                stasisConn:Disconnect()
-                stasisConn = nil
+                nanConn:Disconnect()
+                nanConn = nil
                 task.defer(function()
-                    if stasisID ~= currentStasis then return end
-                    -- Ripristino me stesso. Il target? Il target rimane nell'errore.
+                    if nanCounter ~= localID then return end
                     myHum.PlatformStand               = savedPlatform
                     myRoot.AssemblyLinearVelocity     = Vector3.zero
                     myRoot.AssemblyAngularVelocity    = Vector3.zero
@@ -2245,18 +2227,32 @@ Tab:AddButton({
                 end)
                 return
             end
-            
-            -- STASIS ATTIVA: il mio corpo diventa uno stampo della sua posizione
+
+            -- Graceful failure if target's root vanishes (player reset)
+            if not tgtRoot or not tgtRoot.Parent then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    myHum.PlatformStand = savedPlatform
+                    -- Theatrical upward drop on panic reset
+                    myRoot.CFrame = savedCF + Vector3.new(0, 10, 0)
+                    myRoot.AssemblyLinearVelocity  = Vector3.new(0, 0, 0)
+                    myRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+
+            -- Apply stasis: villain becomes target's kinematic shadow
             myRoot.CFrame                  = tgtRoot.CFrame
-            
-            -- Velocità impossibili = nessuna velocità possibile
-            myRoot.AssemblyLinearVelocity  = frozenVec
-            myRoot.AssemblyAngularVelocity = frozenVec
-            
-            -- Impedisco qualsiasi input umanoide
-            pcall(function() myHum:Move(nullInput) end)
-            
-            -- Inganno fisico: il motore crede che io sia lui
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+
+            -- Disable humanoid movement input (NaN moves fail silently)
+            pcall(function() myHum:Move(nanVec) end)
+
+            -- Trick physics engine: treat villain's root as target's root for collision
             pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
     end,
