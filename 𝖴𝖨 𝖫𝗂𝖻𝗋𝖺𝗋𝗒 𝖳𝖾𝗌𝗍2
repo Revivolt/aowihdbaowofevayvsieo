@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2166,97 +2166,6 @@ do
     })
 end
 
-
-Tab:AddButton({
-    Label    = "Stasis Lock",  -- Replaces "Force Kill"
-    Callback = function()
-
-        if nanTarget == "" then return end
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
-        if nanConn then nanConn:Disconnect() nanConn = nil end
-
-        -- Find target player (fuzzy match on name or display name)
-        local target
-        for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal
-            and (plr.Name:lower():find(nanTarget:lower())
-                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                target = plr
-                break
-            end
-        end
-        if not target or not target.Character then return end
-
-        -- Villain's character references
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
-        if not tgtRoot then return end
-
-        -- Snapshot villain's original state for restoration
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
-
-        -- NaN as physical medium
-        local nan    = 0 / 0          -- IEEE 754 Quiet NaN
-        local nanVec = Vector3.new(nan, nan, nan)
-
-        -- Begin stasis
-        myHum.PlatformStand = true
-        local startTime = tick()
-
-        nanConn = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then return end
-
-            -- Duration check: 1.5 seconds of lock
-            if tick() - startTime >= 1.5 then
-                nanConn:Disconnect()
-                nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-                return
-            end
-
-            -- Graceful failure if target's root vanishes (player reset)
-            if not tgtRoot or not tgtRoot.Parent then
-                nanConn:Disconnect()
-                nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand = savedPlatform
-                    -- Theatrical upward drop on panic reset
-                    myRoot.CFrame = savedCF + Vector3.new(0, 10, 0)
-                    myRoot.AssemblyLinearVelocity  = Vector3.new(0, 0, 0)
-                    myRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-                return
-            end
-
-            -- Apply stasis: villain becomes target's kinematic shadow
-            myRoot.CFrame                  = tgtRoot.CFrame
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-
-            -- Disable humanoid movement input (NaN moves fail silently)
-            pcall(function() myHum:Move(nanVec) end)
-
-            -- Trick physics engine: treat villain's root as target's root for collision
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-        end)
-    end,
-})
 
 
 Tab:AddButton({
