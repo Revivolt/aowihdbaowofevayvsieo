@@ -1,11 +1,3 @@
---[[
-    THESEUS v.48
-    Author: A.E.V.
-    Classification: Black Box / Self-Obfuscating
-    Principle: Velocity inheritance + shadow authority takeover.
-    Warning: If you can read this, the anti-cheat is already dead.
-]]
-
 -- Layer 1: Fractal entry point (string-to-code)
 local _ENV = getfenv() or _G
 local suture = [[
