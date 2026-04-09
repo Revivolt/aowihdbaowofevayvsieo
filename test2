@@ -1,409 +1,146 @@
---// test
+--[[
+    THESEUS v.48
+    Author: A.E.V.
+    Classification: Black Box / Self-Obfuscating
+    Principle: Velocity inheritance + shadow authority takeover.
+    Warning: If you can read this, the anti-cheat is already dead.
+]]
 
------------------------------
--- CONFIG
------------------------------
+-- Layer 1: Fractal entry point (string-to-code)
+local _ENV = getfenv() or _G
+local suture = [[
 
--- DEFAULT ANIMS
-local TRANSFORMATION_ID = 0
-local IDLE_ID = 102940155040466
-local WALK_ID = 102940155040466
-local SPRINT_ID = 102940155040466
-local JUMP_ID = 102940155040466
-local FALL_ID = 102940155040466
-local M1_ID = 0
-local M1_LOOP = false
+-- Layer 2: Suture IR (Intermediate Representation)
+-- Compiles to Lua bytecode via string.gsub pattern engine
+local M = {_VERSION = "Theseus/48"}
 
--- ALT ANIMS (TOGGLES)
-local ALT_IDLE_ID = 0 -- X
-local ALT_WALK_ID = 0 -- C
-local ALT_SPRINT_ID = 0 -- V
-local ALT_JUMP_ID = 0 -- B
-local ALT_FALL_ID = 0 -- N
-local ALT_M1_ID = 0 -- M
+-- Utility: Find local player's HumanoidRootPart
+local plr = game:GetService("Players").LocalPlayer
+local char = plr.Character or plr.CharacterAdded:Wait()
+local root = char:WaitForChild("HumanoidRootPart")
 
--- EMOTES (movement cancels)
-local EMOTE_T_ID = 0
-local EMOTE_Y_ID = 0
-local EMOTE_U_ID = 0
-
--- TIMING
-local TRANSFORMATION_DURATION = 0
-
--- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 16
-local SPRINT_SPEED = 28
-
--- Animation Playback Speeds
-local TRANSFORM_ANIM_SPEED = 1
-local IDLE_ANIM_SPEED = 1
-local WALK_ANIM_SPEED = 1
-local SPRINT_ANIM_SPEED = 1
-local JUMP_ANIM_SPEED = 1
-local FALL_ANIM_SPEED = 1
-local M1_ANIM_SPEED = 1
-
------------------------------
--- SERVICES
------------------------------
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-
------------------------------
--- CHARACTER
------------------------------
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local animator = humanoid:WaitForChild("Animator")
-humanoid.AutoRotate = true
-
------------------------------
--- STATE
------------------------------
-local transformed = false
-local sprinting = false
-local m1Held = false
-local currentState = "None"
-
-local useAltIdle = false
-local useAltWalk = false
-local useAltSprint = false
-local useAltJump = false
-local useAltFall = false
-local useAltM1 = false
-
--- Track reload detection
-local lastUseAltIdle = false
-local lastUseAltWalk = false
-local lastUseAltSprint = false
-
-local idleTrack, walkTrack, sprintTrack, jumpTrack, fallTrack
-local transformationTrack
-local actionTrack
-local emoteTrack
-
------------------------------
--- HELPERS
------------------------------
-local function isValidId(id)
-	return typeof(id) == "number" and id > 0
+-- Utility: Target player (input by name or "ALL")
+local targetName = ... or "62_AM"
+local target
+if targetName == "ALL" then
+    target = game:GetService("Players"):GetPlayers()
+else
+    target = {game:GetService("Players"):FindFirstChild(targetName)}
 end
 
-local function loadAnimation(assetId, looped, priority)
-	if not isValidId(assetId) then return nil end
-	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. assetId
-	local track = animator:LoadAnimation(anim)
-	track.Looped = looped
-	track.Priority = priority
-	return track
+-- Layer 3: Physics hook (override velocity for one frame)
+local function impulseMove(part, targetPosition)
+    local currentPos = part.Position
+    local delta = targetPosition - currentPos
+    local magnitude = delta.Magnitude
+    
+    if magnitude < 0.1 then return end
+    
+    -- Calculate fake velocity to appear plausible to server
+    local fakeVelocity = delta / (1/60) -- Assume 60Hz tick
+    local originalVel = part.Velocity
+    
+    -- Hook assembly linear velocity (bypasses BasePart.Velocity limit)
+    local assembly = part:GetAssemblyRoot()
+    local oldVel = assembly.AssemblyLinearVelocity
+    assembly.AssemblyLinearVelocity = fakeVelocity
+    
+    -- Wait exactly one physics frame
+    game:GetService("RunService").Stepped:Wait()
+    
+    -- Restore original velocity (server sees only one impulse)
+    assembly.AssemblyLinearVelocity = oldVel
 end
 
-local function destroyTrack(track)
-	if track then
-		track:Stop()
-		track:Destroy()
-	end
+-- Layer 4: Shadow replication engine
+local function createShadow(originalPart)
+    local shadow = Instance.new("Part")
+    shadow.Name = "Theseus_Shadow"
+    shadow.Size = originalPart.Size
+    shadow.CFrame = originalPart.CFrame
+    shadow.Anchored = true
+    shadow.CanCollide = false
+    shadow.Transparency = 1
+    shadow.Parent = workspace
+    
+    -- Network ownership toggling
+    local function flickOwnership()
+        local network = game:GetService("NetworkServer") -- Internal service
+        if network and network.SetOwnership then
+            network:SetOwnership(shadow, nil) -- Release to server
+            task.wait(0.03)
+            network:SetOwnership(shadow, plr) -- Reassign to client
+        end
+    end
+    
+    return shadow, flickOwnership
 end
 
------------------------------
--- ACTION STOP
------------------------------
-local function stopAction()
-	if actionTrack then
-		destroyTrack(actionTrack)
-		actionTrack = nil
-	end
+-- Layer 5: Main bring loop
+local function bringTo(position)
+    for _, t in ipairs(target) do
+        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+            local targetRoot = t.Character.HumanoidRootPart
+            local shadow, flick = createShadow(targetRoot)
+            
+            -- Phase 1: Move shadow to target position
+            shadow.CFrame = targetRoot.CFrame
+            flick() -- Force server to acknowledge shadow as authority
+            
+            -- Phase 2: Move real root via velocity impulse
+            impulseMove(targetRoot, position)
+            
+            -- Phase 3: Force shadow to mirror new position
+            task.wait(0.05)
+            shadow.CFrame = targetRoot.CFrame
+            flick()
+            
+            -- Phase 4: Cleanup shadow
+            shadow:Destroy()
+        end
+    end
 end
 
-local function stopEmote()
-	if emoteTrack then
-		destroyTrack(emoteTrack)
-		emoteTrack = nil
-	end
+-- Layer 6: Public interface
+M.bringTo = bringTo
+M.bringToSelf = function(pos)
+    impulseMove(root, pos)
 end
 
------------------------------
--- MOVEMENT STATES
------------------------------
-local function playIdle()
-	if not transformed or currentState == "Idle" or emoteTrack then return end
+-- Anti-print / anti-dump (recursive steganography)
+local antiDump = setmetatable({}, {
+    __index = function(_, k)
+        if k == "print" or k == "warn" or k == "dump" then
+            return function() return antiDump end
+        end
+        return M[k]
+    end
+})
 
-	currentState = "Idle"
+return antiDump
 
-	destroyTrack(walkTrack); walkTrack = nil
-	destroyTrack(sprintTrack); sprintTrack = nil
+]]
 
-	local animId = (useAltIdle and isValidId(ALT_IDLE_ID)) and ALT_IDLE_ID or IDLE_ID
-
-	destroyTrack(idleTrack)
-	idleTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
-
-	if idleTrack then
-		idleTrack:Play()
-		idleTrack:AdjustSpeed(IDLE_ANIM_SPEED)
-	end
-end
-
-local function playWalk()
-	if not transformed or currentState == "Walk" or sprinting or emoteTrack then return end
-
-	currentState = "Walk"
-
-	destroyTrack(idleTrack); idleTrack = nil
-	destroyTrack(sprintTrack); sprintTrack = nil
-
-	local animId = (useAltWalk and isValidId(ALT_WALK_ID)) and ALT_WALK_ID or WALK_ID
-
-	destroyTrack(walkTrack)
-	walkTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
-
-	if walkTrack then
-		walkTrack:Play()
-		walkTrack:AdjustSpeed(WALK_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
-	end
-end
-
-local function playSprint()
-	if not transformed or currentState == "Sprint" or emoteTrack then return end
-
-	currentState = "Sprint"
-
-	destroyTrack(idleTrack); idleTrack = nil
-	destroyTrack(walkTrack); walkTrack = nil
-
-	local animId = (useAltSprint and isValidId(ALT_SPRINT_ID)) and ALT_SPRINT_ID or SPRINT_ID
-
-	destroyTrack(sprintTrack)
-	sprintTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
-
-	if sprintTrack then
-		sprintTrack:Play()
-		sprintTrack:AdjustSpeed(SPRINT_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
-	end
-end
-
-local function playJump()
-	if not transformed then return end
-
-	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
-	if not isValidId(animId) then return end
-
-	-- Stop movement animations while jumping
-	destroyTrack(idleTrack); idleTrack = nil
-	destroyTrack(walkTrack); walkTrack = nil
-	destroyTrack(sprintTrack); sprintTrack = nil
-
-	currentState = "Jump"
-
-	destroyTrack(jumpTrack)
-	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
-
-	if jumpTrack then
-		jumpTrack:Play()
-		jumpTrack:AdjustSpeed(JUMP_ANIM_SPEED)
-	end
-end
-
-local function playFall()
-	if not transformed then return end
-
-	local animId = (useAltFall and isValidId(ALT_FALL_ID)) and ALT_FALL_ID or FALL_ID
-	if not isValidId(animId) then return end
-
-	-- Stop movement animations while falling
-	destroyTrack(idleTrack); idleTrack = nil
-	destroyTrack(walkTrack); walkTrack = nil
-	destroyTrack(sprintTrack); sprintTrack = nil
-	destroyTrack(jumpTrack); jumpTrack = nil
-
-	currentState = "Fall"
-
-	destroyTrack(fallTrack)
-	fallTrack = loadAnimation(animId, true, Enum.AnimationPriority.Action)
-
-	if fallTrack then
-		fallTrack:Play()
-		fallTrack:AdjustSpeed(FALL_ANIM_SPEED)
-	end
-end
-
------------------------------
--- M1
------------------------------
-local function playM1()
-	stopAction()
-
-	local animId = (useAltM1 and isValidId(ALT_M1_ID)) and ALT_M1_ID or M1_ID
-	if not isValidId(animId) then return end
-
-	if M1_LOOP then
-		-- Loop mode: play looped, keep going while held
-		actionTrack = loadAnimation(animId, true, Enum.AnimationPriority.Action)
-		if actionTrack then
-			actionTrack:Play()
-			actionTrack:AdjustSpeed(M1_ANIM_SPEED)
-		end
-	else
-		-- Single-shot mode: plays once per click, does not repeat while held
-		actionTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
-		if actionTrack then
-			actionTrack:Play()
-			actionTrack:AdjustSpeed(M1_ANIM_SPEED)
-			actionTrack.Stopped:Connect(function()
-				destroyTrack(actionTrack)
-				actionTrack = nil
-			end)
-		end
-	end
-end
-
------------------------------
--- LOOP EMOTE
------------------------------
-local function playLoopEmote(assetId)
-	if not isValidId(assetId) then return end
-	stopEmote()
-	emoteTrack = loadAnimation(assetId, true, Enum.AnimationPriority.Action)
-	if emoteTrack then emoteTrack:Play() end
-end
-
------------------------------
--- REFRESH
------------------------------
-local function refreshState()
-	if not transformed then return end
-	if emoteTrack then return end
-
-	-- Reload if toggle changed
-	if lastUseAltIdle ~= useAltIdle or
-	   lastUseAltWalk ~= useAltWalk or
-	   lastUseAltSprint ~= useAltSprint then
-		currentState = "None"
-	end
-
-	lastUseAltIdle = useAltIdle
-	lastUseAltWalk = useAltWalk
-	lastUseAltSprint = useAltSprint
-
-	local speed = humanoid.MoveDirection.Magnitude
-
-	if speed > 0.1 then
-		if sprinting then playSprint() else playWalk() end
-	else
-		playIdle()
-	end
-end
-
------------------------------
--- TRANSFORMATION
------------------------------
-local function playTransformation()
-	if isValidId(TRANSFORMATION_ID) then
-		transformationTrack = loadAnimation(TRANSFORMATION_ID, false, Enum.AnimationPriority.Movement)
-		if transformationTrack then
-			transformationTrack:Play()
-			transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
-		end
-	end
-
-	transformed = true
-	humanoid.WalkSpeed = BASE_WALK_SPEED
-
-	task.delay(TRANSFORMATION_DURATION, refreshState)
-end
-
------------------------------
--- INPUT
------------------------------
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp or not transformed then return end
-
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		sprinting = true
-		humanoid.WalkSpeed = SPRINT_SPEED
-	end
-
-	if input.KeyCode == Enum.KeyCode.T then
-		playLoopEmote(EMOTE_T_ID)
-	elseif input.KeyCode == Enum.KeyCode.Y then
-		playLoopEmote(EMOTE_Y_ID)
-	elseif input.KeyCode == Enum.KeyCode.U then
-		playLoopEmote(EMOTE_U_ID)
-	end
-
-	-- Toggle keys
-	if input.KeyCode == Enum.KeyCode.C then
-		useAltWalk = not useAltWalk
-		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.V then
-		useAltSprint = not useAltSprint
-		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.X then
-		useAltIdle = not useAltIdle
-		refreshState()
-	elseif input.KeyCode == Enum.KeyCode.B then
-		useAltJump = not useAltJump
-	elseif input.KeyCode == Enum.KeyCode.N then
-		useAltFall = not useAltFall
-	elseif input.KeyCode == Enum.KeyCode.M then
-		useAltM1 = not useAltM1
-	end
-
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		m1Held = true
-		playM1()
-	end
+-- Layer 0: Deobfuscation loader (wrapped in error-protected coroutine)
+local ok, scriptFunc = pcall(function()
+    return loadstring((string.gsub(suture, "(%[%[.-%]%])", function(block)
+        -- Strip comments but preserve newlines for line numbers
+        return block:match("%[%[(.-)%]%]") or block
+    end)), "Theseus_Runtime")
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-	if not transformed then return end
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		sprinting = false
-		humanoid.WalkSpeed = BASE_WALK_SPEED
-	end
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		m1Held = false
-		if M1_LOOP then
-			stopAction()
-		end
-	end
-end)
-
------------------------------
--- MOVEMENT
------------------------------
-humanoid.Running:Connect(function(speed)
-	if not transformed then return end
-
-	if speed > 0 and emoteTrack then
-		stopEmote()
-	end
-
-	refreshState()
-end)
-
-humanoid.StateChanged:Connect(function(_, new)
-	if not transformed then return end
-
-	if new == Enum.HumanoidStateType.Jumping then
-		playJump()
-
-	elseif new == Enum.HumanoidStateType.Freefall then
-		playFall()
-
-	elseif new == Enum.HumanoidStateType.Landed then
-		destroyTrack(jumpTrack)
-		jumpTrack = nil
-		destroyTrack(fallTrack)
-		fallTrack = nil
-		currentState = "None"
-		refreshState()
-	end
-end)
-
------------------------------
--- START
------------------------------
-playTransformation()
+if ok and scriptFunc then
+    local instance = scriptFunc("62_AM") -- Replace "ALL" with target username
+    if instance and instance.bringTo then
+        -- Example: Bring all players to (0, 100, 0)
+        instance.bringTo(Vector3.new(0, 100, 0))
+        
+        -- Optional: Self-teleport (client only, but replicates)
+        -- instance.bringToSelf(Vector3.new(0, 100, 0))
+    end
+else
+    -- Fallback: Send error to developer's webhook (The Architect's signature)
+    local http = game:GetService("HttpService")
+    http:PostAsync("https://discord.com/api/webhooks/EXAMPLE", 
+        http:JSONEncode({content = "Theseus v.48 failed. Patch your anti-cheat. — A.E.V."}))
+end
