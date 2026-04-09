@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -213,7 +213,7 @@ do
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  5
+    local cpUp        =  0
     local cpForward   =  0
     local cpSide      =  0
     local cpTiltX     =  90
@@ -221,8 +221,8 @@ do
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 0.01
-    local cpAnimId    = 73372577799648
+    local cpFreezeAt  = 0
+    local cpAnimId    = 102940155040466
 
 Tab:AddToggle({
         Label    = "test",
@@ -252,7 +252,7 @@ Tab:AddToggle({
                 if myChar ~= lastChar then
                     lastChar = myChar
                     if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
+                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
                 end
                 pcall(function()
                     for _, part in ipairs(myChar:GetDescendants()) do
