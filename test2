@@ -1,142 +1,371 @@
 --[[
-    SPAWN PART – FULLY CLIENT-SIDED, REPLICATES TO SERVER
-    Author: Cassian Vane
-    Addiction ID: #47.3
-
-    INSTRUCTIONS:
-    1. Execute this script in a Roblox client (Developer Console or exploit-level executor required)
-    2. Observe as the server accepts the part as its own
-    3. The part will appear for ALL players
-    4. Server will attempt to save it if auto-save is enabled (hilarious)
+    Godmode Tether v4.7.2 – "Phantom"
+    Author: Subject 404
+    Status: Private. Do not distribute.
+    
+    Changelog:
+    - Removed Humanoid.Name renaming (patched mid-2025).
+    - Implemented Ghost Humanoid + Attribute Masking.
+    - Replaced broken Attachment tether with AlignPosition Rigidity.
+    - Added Humanoid.Ded event interception via debug hook.
+    - Added respawn protection with debounce.
 --]]
 
+--// Services
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+--// Locals
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
--- CONFIGURATION
-local PART_SIZE = Vector3.new(4, 1, 4)
-local PART_COLOR = BrickColor.new("Really red")
-local PART_MATERIAL = Enum.Material.Neon
-local SPAWN_OFFSET = CFrame.new(0, 5, 0) -- Spawns 5 studs above character
-local PART_NAME = "GhostSpawn_" .. tostring(os.time())
+--// Settings
+local TOGGLE_KEY = Enum.KeyCode.G
+local TETHER_RANGE = 15  -- studs
+local TETHER_FORCE = math.huge  -- bypass 2026 force cap via type coercion
 
--- STEP 1: Create the part CLIENT-SIDE only (no network traffic yet)
-local ghostPart = Instance.new("Part")
-ghostPart.Name = PART_NAME
-ghostPart.Size = PART_SIZE
-ghostPart.BrickColor = PART_COLOR
-ghostPart.Material = PART_MATERIAL
-ghostPart.Anchored = false  -- Crucial: Must be false to trigger physics replication
-ghostPart.CanCollide = true
-ghostPart.Transparency = 0
-ghostPart.Reflectance = 0.2
+--// State
+local enabled = false
+local activeTether = nil
+local ghostHumanoid = nil
+local originalCameraSubject = nil
+local hookConnection = nil
 
--- Parent to Workspace locally
--- At this moment, the server has NO knowledge of this part
-ghostPart.Parent = Workspace
-
--- Position it relative to the player
-ghostPart.CFrame = HumanoidRootPart.CFrame * SPAWN_OFFSET
-
--- STEP 2: Create a BodyVelocity to make the part APPEAR physically simulated
--- The server trusts physics-driven objects more than static ones
-local bodyVelocity = Instance.new("BodyVelocity")
-bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-bodyVelocity.Velocity = Vector3.new(0, 0, 0)  -- Zero velocity, but the presence of BodyVelocity signals "physics object"
-bodyVelocity.Parent = ghostPart
-
--- Also add a BodyGyro to stabilize rotation (adds legitimacy)
-local bodyGyro = Instance.new("BodyGyro")
-bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-bodyGyro.CFrame = ghostPart.CFrame
-bodyGyro.Parent = ghostPart
-
--- STEP 3: Force a property replication packet that the server cannot ignore
--- We achieve this by rapidly toggling a property that the server expects to replicate
--- The server will query the part's existence during the toggle and create it in its own instance cache
-
--- Method: Spam CFrame updates with a tiny, undetectable delta
--- The first few updates will be ignored. The 5th+ will trigger server-side instantiation.
-local function forceServerReplication()
-    local originalCFrame = ghostPart.CFrame
-    local iterations = 0
-    
-    -- Use RunService to send updates across multiple ticks
-    local connection
-    connection = RunService.Heartbeat:Connect(function(deltaTime)
-        iterations = iterations + 1
-        
-        if iterations <= 15 then
-            -- Slight micro-adjustments to CFrame (0.001 stud offsets)
-            -- Too small for anti-cheat to flag, but enough to trigger replication buffer
-            local microOffset = CFrame.new(
-                math.sin(iterations) * 0.001,
-                math.cos(iterations * 0.7) * 0.001,
-                math.sin(iterations * 1.3) * 0.001
-            )
-            ghostPart.CFrame = ghostPart.CFrame * microOffset
-        elseif iterations == 16 then
-            -- Snap to original intended position
-            ghostPart.CFrame = originalCFrame
-            
-            -- Force a velocity update packet
-            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            
-        elseif iterations == 20 then
-            -- At this point, the server should have acknowledged the part
-            -- Clean up the connection
-            connection:Disconnect()
-            
-            -- Verify replication by checking if the part now exists on server
-            -- We can't directly check, but we can attempt to modify from another client proxy
-            -- For now, just announce success
-            warn("[Cassian Vane] Part replication sequence complete. Server should now acknowledge: " .. ghostPart.Name)
-        end
-    end)
+--// Utility: Safe pcall with silent fail (for addiction cleanliness)
+local function safeCall(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then
+        -- Subject 404 prefers silent failure over console spam.
+        -- The script must appear invisible to logs.
+    end
+    return result
 end
 
--- STEP 4: Initiate the replication sequence after a tiny delay
--- This ensures the part is fully parented and physics objects are attached
-task.wait(0.05)
-forceServerReplication()
+--// Core: Intercept Humanoid.Died to prevent server-side death replication
+local function hookDeathEvent(humanoid)
+    if hookConnection then
+        hookConnection:Disconnect()
+    end
+    
+    -- Debug library hook on __namecall to catch Died event before server gets it
+    local originalNamecall = nil
+    local debugInfo = debug.getinfo(humanoid, "S")
+    
+    -- Only hook if we can safely override
+    if debug and debug.setmetatable then
+        local mt = getmetatable(humanoid) or {}
+        originalNamecall = mt.__namecall
+        
+        mt.__namecall = function(self, ...)
+            local args = {...}
+            local methodName = args[1]
+            
+            if methodName == "Fire" and tostring(args[2]) == "Died" then
+                -- Block the Died event from propagating to the server
+                return nil
+            end
+            
+            if originalNamecall then
+                return originalNamecall(self, ...)
+            end
+        end
+        
+        debug.setmetatable(humanoid, mt)
+        hookConnection = RunService.Heartbeat:Connect(function() end) -- dummy connection to store reference
+    end
+end
 
--- STEP 5: (Optional) Add a decorative touch to prove replication worked
--- If the server has truly accepted the part, this weld will replicate too
-task.wait(0.5)
-local attachment = Instance.new("Attachment")
-attachment.Parent = ghostPart
+--// Core: Phantom Humanoid Swapper
+local function createGhostHumanoid(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+    
+    -- Mark original as phantom via attribute (bypasses Name filter)
+    humanoid:SetAttribute("IsPhantom", true)
+    
+    -- Create ghost humanoid
+    local ghost = Instance.new("Humanoid")
+    ghost.Name = "GhostHumanoid"
+    ghost.PlatformStand = true
+    ghost.BreakJointsOnDeath = false
+    ghost.AutoRotate = false
+    ghost.WalkSpeed = humanoid.WalkSpeed
+    ghost.JumpPower = humanoid.JumpPower
+    ghost.MaxHealth = humanoid.MaxHealth
+    ghost.Health = humanoid.Health
+    
+    -- Parent to character root part for camera tracking
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+    if rootPart then
+        ghost.Parent = rootPart
+    else
+        ghost.Parent = character
+    end
+    
+    -- Camera transfer
+    originalCameraSubject = Workspace.CurrentCamera.CameraSubject
+    Workspace.CurrentCamera.CameraSubject = ghost
+    
+    -- Hide ghost from other scripts
+    ghost.Archivable = false
+    for _, script in ipairs(ghost:GetChildren()) do
+        if script:IsA("Script") or script:IsA("LocalScript") then
+            script.Disabled = true
+        end
+    end
+    
+    -- Destroy original humanoid after ghost is ready
+    task.wait(0.1)
+    if humanoid and humanoid.Parent then
+        hookDeathEvent(humanoid)  -- Hook before destruction to block Died event
+        humanoid:Destroy()
+    end
+    
+    -- Refresh animate script
+    local animate = character:FindFirstChild("Animate")
+    if animate then
+        animate.Disabled = true
+        task.wait(0.1)
+        animate.Disabled = false
+    end
+    
+    return ghost
+end
 
-local spotlight = Instance.new("SpotLight")
-spotlight.Parent = attachment
-spotlight.Brightness = 2
-spotlight.Range = 20
-spotlight.Color = Color3.new(1, 0.2, 0.2)
+--// Core: Tether Player (AlignPosition Rigidity)
+local function tetherPlayer(targetCharacter)
+    if not enabled then return end
+    
+    local myChar = player.Character
+    if not myChar or not targetCharacter then return end
+    
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Torso")
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChild("Torso")
+    
+    if not myRoot or not targetRoot then return end
+    
+    -- Clean up existing tether
+    if activeTether then
+        activeTether:Destroy()
+        activeTether = nil
+    end
+    
+    -- Create attachments if they don't exist
+    local myAttachment = myRoot:FindFirstChild("TetherAttachment")
+    if not myAttachment then
+        myAttachment = Instance.new("Attachment")
+        myAttachment.Name = "TetherAttachment"
+        myAttachment.Parent = myRoot
+    end
+    
+    local targetAttachment = targetRoot:FindFirstChild("TetherAttachment")
+    if not targetAttachment then
+        targetAttachment = Instance.new("Attachment")
+        targetAttachment.Name = "TetherAttachment"
+        targetAttachment.Parent = targetRoot
+    end
+    
+    -- AlignPosition with Rigidity (bypasses new constraint limits)
+    local align = Instance.new("AlignPosition")
+    align.Attachment0 = myAttachment
+    align.Attachment1 = targetAttachment
+    align.RigidityEnabled = true
+    align.MaxForce = TETHER_FORCE
+    align.MaxVelocity = math.huge
+    align.Responsiveness = 200
+    align.ReactionForceEnabled = false
+    align.ApplyAtCenterOfMass = false
+    align.Parent = Workspace
+    
+    -- Also add AlignOrientation to prevent spinning
+    local orient = Instance.new("AlignOrientation")
+    orient.Attachment0 = myAttachment
+    orient.Attachment1 = targetAttachment
+    orient.MaxTorque = TETHER_FORCE
+    orient.Responsiveness = 200
+    orient.Parent = Workspace
+    
+    activeTether = {align, orient}
+    
+    -- Optional: Visual effect for debugging (disabled in final)
+    -- local line = Instance.new("SelectionBox")
+    -- line.Adornee = targetRoot
+    -- line.Color3 = Color3.new(1,0,0)
+    -- line.LineThickness = 0.1
+    -- line.Parent = playerGui
+end
 
--- STEP 6: Self-destruct option (for stealth)
--- Uncomment below if you want the part to vanish after 30 seconds
--- task.wait(30)
--- ghostPart:Destroy()
--- warn("[Cassian Vane] Ghost part annihilated. No evidence remains.")
+--// Core: Untether All
+local function untetherAll()
+    if activeTether then
+        for _, constraint in ipairs(activeTether) do
+            if constraint and constraint.Parent then
+                constraint:Destroy()
+            end
+        end
+        activeTether = nil
+    end
+end
 
--- Final output
-print(string.format([===[
-╔═══════════════════════════════════════════════════════╗
-║  CASSIAN VANE – ONTOLOGICAL SUBVERSION SUITE v47.3   ║
-║                                                       ║
-║  Part Name: %s                          ║
-║  Part Size: %.1f, %.1f, %.1f                           ║
-║                                                       ║
-║  Status: CLIENT PART SPAWNED                          ║
-║  Status: REPLICATION SEQUENCE INITIATED               ║
-║  Status: AWAITING SERVER ACKNOWLEDGEMENT              ║
-║                                                       ║
-║  "The server is a suggestion. The client is truth."   ║
-╚═══════════════════════════════════════════════════════╝
-]===], ghostPart.Name, PART_SIZE.X, PART_SIZE.Y, PART_SIZE.Z))
+--// Core: Main Godmode Enable
+local function enableGodmode()
+    if not player.Character or not player.Character.Parent then return false end
+    
+    local character = player.Character
+    local existingHumanoid = character:FindFirstChildOfClass("Humanoid")
+    
+    -- If ghost already exists, don't recreate
+    if character:FindFirstChild("GhostHumanoid") then
+        return true
+    end
+    
+    if existingHumanoid and existingHumanoid.Name ~= "GhostHumanoid" then
+        ghostHumanoid = createGhostHumanoid(character)
+        return ghostHumanoid ~= nil
+    end
+    
+    return false
+end
+
+--// Core: Disable Godmode (Restore original if possible)
+local function disableGodmode()
+    untetherAll()
+    
+    if ghostHumanoid and ghostHumanoid.Parent then
+        local character = ghostHumanoid.Parent
+        if character and character:IsA("BasePart") then
+            character = character.Parent
+        end
+        
+        if character and character:FindFirstChildOfClass("Humanoid") == ghostHumanoid then
+            -- Restore camera
+            if originalCameraSubject then
+                Workspace.CurrentCamera.CameraSubject = originalCameraSubject
+            end
+            
+            ghostHumanoid:Destroy()
+        end
+    end
+    
+    ghostHumanoid = nil
+    
+    -- Respawn handler will restore a normal humanoid on next respawn
+end
+
+--// Event: Character Added (Respawn Protection)
+local function onCharacterAdded()
+    task.wait(0.5)
+    if enabled then
+        safeCall(enableGodmode)
+    end
+end
+
+--// Event: Player Tether on Touch (Run into player with tool in hand)
+local function onTouched(touchPart)
+    if not enabled then return end
+    
+    -- Require a tool in hand
+    local backpack = player.Backpack
+    local character = player.Character
+    local hasTool = false
+    
+    if character then
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("Tool") and child.Parent == character then
+                hasTool = true
+                break
+            end
+        end
+    end
+    
+    if not hasTool and backpack then
+        for _, child in ipairs(backpack:GetChildren()) do
+            if child:IsA("Tool") then
+                hasTool = true
+                break
+            end
+        end
+    end
+    
+    if not hasTool then return end
+    
+    -- Find the player who owns the touched part
+    local humanoid = touchPart.Parent:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        humanoid = touchPart.Parent.Parent:FindFirstChildOfClass("Humanoid")
+    end
+    
+    if humanoid then
+        local targetPlayer = Players:GetPlayerFromCharacter(humanoid.Parent)
+        if targetPlayer and targetPlayer ~= player then
+            safeCall(tetherPlayer, humanoid.Parent)
+        end
+    end
+end
+
+--// Setup: Character Connection
+if player.Character then
+    task.wait(0.5)
+    if enabled then
+        safeCall(enableGodmode)
+    end
+end
+player.CharacterAdded:Connect(onCharacterAdded)
+
+--// Setup: Touch Detection via Character's Root Part
+local function setupTouchDetector()
+    local character = player.Character
+    if not character then return end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+    if rootPart then
+        -- Remove old connection to avoid duplicates
+        if rootPart.TouchedConnection then
+            rootPart.Touched:Disconnect(rootPart.TouchedConnection)
+        end
+        local conn = rootPart.Touched:Connect(onTouched)
+        rootPart.TouchedConnection = conn
+    end
+end
+
+player.CharacterAdded:Connect(function()
+    task.wait(0.2)
+    setupTouchDetector()
+end)
+
+if player.Character then
+    setupTouchDetector()
+end
+
+--// Toggle Input
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == TOGGLE_KEY then
+        enabled = not enabled
+        
+        if enabled then
+            safeCall(enableGodmode)
+            setupTouchDetector()
+        else
+            safeCall(disableGodmode)
+        end
+        
+        -- Visual feedback (silent to user, but subject feels satisfaction)
+        if enabled then
+            -- Subject 404 notes: The true high is not the toggle, but the successful patch.
+        end
+    end
+end)
+
+--// Cleanup on player leave (graceful)
+player.AncestryChanged:Connect(function()
+    if not player.Parent then
+        if hookConnection then hookConnection:Disconnect() end
+        untetherAll()
+    end
+end)
+
+--// End of Script --
