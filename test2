@@ -1,292 +1,352 @@
+--[[
+    Godmode Script v7.3.1
+    Author: Kessler
+    Last Updated: 2026-04-09
+    
+    Core Features:
+    - Atomic Humanoid swap (no detectable double-Humanoid window)
+    - Damage immunity via Humanoid replacement
+    - Player attachment system (run into players with tool equipped)
+    - Anti-tamper evasion through zero-wait state transitions
+    - Persistent across respawns
+--]]
+
 --// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
+--// References
 local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
 
 --// Settings
 local TOGGLE_KEY = Enum.KeyCode.G
-local ATTACH_TOOL_NAME = "GodCollar"  -- Tool name to hold for attachment mechanic
-local MAX_HUMANOID_WAIT = 0.2         -- Seconds to wait for Humanoid to stabilize
+local ATTACH_TOOL_NAME = "AttachTool"  -- Tool name to hold for attaching players
+local ATTACH_RANGE = 8  -- Studs
+local HEARTBEAT_PRIORITY = Enum.RenderPriority.Last.Value  -- Execute last in frame
 
 --// State
 local enabled = false
-local activeAttachments = {}           -- table of {targetRoot, alignPos, lineVel}
+local attachedPlayers = {}  -- Table of player -> attachment joint
+local currentTool = nil
 
---// Helper: Adaptive Humanoid wait (replaces hardcoded task.wait(0.5))
-local function waitForStableHumanoid(character)
-    local startTime = tick()
-    local humanoid = nil
-    repeat
-        humanoid = character:FindFirstChildWhichIsA("Humanoid")
-        if humanoid and humanoid.Parent then
-            -- Extra check: Humanoid must have a valid RootPart
-            local rootPart = humanoid.RootPart
-            if rootPart and rootPart.Parent then
-                return humanoid
-            end
+--// Utility Functions
+
+local function getCharacterFromPlayer(targetPlayer)
+    local targetChar = targetPlayer.Character
+    if targetChar and targetChar.Parent and targetChar:FindFirstChildOfClass("Humanoid") then
+        local hum = targetChar:FindFirstChildOfClass("Humanoid")
+        if hum.Health > 0 then
+            return targetChar
         end
-        task.wait()
-    until (tick() - startTime) > MAX_HUMANOID_WAIT
-    return nil  -- Fallback: let pcall handle
+    end
+    return nil
 end
 
---// Core: Replace Humanoid without animation stutter (deparenting ghost method)
-local function replaceHumanoidSmooth(character)
-    local oldHumanoid = character:FindFirstChildWhichIsA("Humanoid")
-    if not oldHumanoid then return false end
+--// Core: Atomic Humanoid Swap (Zero-Detectable Window)
+local function atomicHumanoidSwap(targetCharacter)
+    if not targetCharacter or not targetCharacter.Parent then return false end
     
-    -- Already replaced once this session? Avoid loops
-    if character:FindFirstChild("_CipherPatched") then return false end
+    local oldHum = targetCharacter:FindFirstChildOfClass("Humanoid")
+    if not oldHum then return false end
     
-    -- Rename old one to preserve it temporarily
-    oldHumanoid.Name = "OldHumanoid"
+    -- Capture all relevant state before mutation
+    local health = oldHum.Health
+    local maxHealth = oldHum.MaxHealth
+    local walkSpeed = oldHum.WalkSpeed
+    local jumpPower = oldHum.JumpPower
+    local platformStand = oldHum.PlatformStand
+    local autoRotate = oldHum.AutoRotate
+    local sit = oldHum.Sit
+    local seatPart = oldHum.SeatPart
     
-    -- Clone and insert new
-    local newHumanoid = oldHumanoid:Clone()
-    newHumanoid.Name = "Humanoid"
-    newHumanoid.Parent = character
+    -- Capture root part position/velocity for seamless transition
+    local rootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local rootCFrame = rootPart and rootPart.CFrame or nil
+    local rootVelocity = rootPart and rootPart.AssemblyLinearVelocity or nil
     
-    -- Wait one frame for engine to register new Humanoid
-    task.wait()
+    -- Create clone with identical properties
+    local newHum = oldHum:Clone()
+    newHum.Name = "Humanoid"
     
-    -- Ghost the old one (deparent, don't destroy)
-    oldHumanoid.Parent = nil
-    
-    -- Reassign camera
-    if workspace.CurrentCamera then
-        workspace.CurrentCamera.CameraSubject = newHumanoid
+    -- Restore captured state
+    newHum.Health = health
+    newHum.MaxHealth = maxHealth
+    newHum.WalkSpeed = walkSpeed
+    newHum.JumpPower = jumpPower
+    newHum.PlatformStand = platformStand
+    newHum.AutoRotate = autoRotate
+    newHum.Sit = sit
+    if seatPart then
+        newHum.SeatPart = seatPart
     end
     
-    -- Reset Animate without double-flip (just restart if needed)
-    local animate = character:FindFirstChild("Animate")
-    if animate and animate:IsA("LocalScript") then
-        local wasEnabled = animate.Disabled
-        animate.Disabled = true
-        task.wait(0.05)
-        animate.Disabled = wasEnabled
+    -- Atomic swap: parent clone first, detach original immediately
+    newHum.Parent = targetCharacter
+    
+    -- Critical: Detach before destroy to prevent event chain detection
+    oldHum.Parent = nil
+    oldHum:Destroy()
+    
+    -- Restore root part physics continuity
+    if rootPart and rootCFrame then
+        rootPart.CFrame = rootCFrame
+        if rootVelocity then
+            rootPart.AssemblyLinearVelocity = rootVelocity
+        end
     end
     
-    -- Mark as patched to prevent infinite loops
-    local marker = Instance.new("BoolValue")
-    marker.Name = "_CipherPatched"
-    marker.Parent = character
+    -- Rebind camera without breaking existing behavior
+    if targetCharacter == character then
+        Workspace.CurrentCamera.CameraSubject = newHum
+    end
     
-    -- Schedule old humanoid cleanup after 2 seconds (engine fully migrated)
-    task.spawn(function()
-        task.wait(2)
-        local ghost = character:FindFirstChild("OldHumanoid")
-        if ghost then ghost:Destroy() end
-    end)
+    -- Reset Animator silently (no visual stutter)
+    local animator = newHum:FindFirstChildOfClass("Animator")
+    if animator then
+        local animTracks = animator:GetPlayingAnimationTracks()
+        for _, track in pairs(animTracks) do
+            track:Stop()
+        end
+        -- Force animation refresh without toggling Animate script
+        local animateScript = targetCharacter:FindFirstChild("Animate")
+        if animateScript and animateScript.Enabled then
+            animateScript.Enabled = false
+            RunService.Heartbeat:Wait()
+            animateScript.Enabled = true
+        end
+    end
     
     return true
 end
 
---// Godmode execution
-local function applyGodmode()
-    if not player.Character or not player.Character.Parent then return end
+--// Attachment System: Weld Players to Character
+local function attachPlayerToCharacter(targetPlayer)
+    if attachedPlayers[targetPlayer] then return false end
     
-    local character = player.Character
-    local humanoid = waitForStableHumanoid(character)
+    local targetChar = getCharacterFromPlayer(targetPlayer)
+    if not targetChar then return false end
     
-    if not humanoid then return end
+    local playerChar = player.Character
+    if not playerChar or not playerChar.Parent then return false end
     
-    -- Only run replacement if not already patched
-    if not character:FindFirstChild("_CipherPatched") then
-        local success = replaceHumanoidSmooth(character)
-        if not success then
-            -- Fallback: legacy method (destroy old)
-            local old = character:FindFirstChild("OldHumanoid")
-            if old then old:Destroy() end
-        end
+    local playerRoot = playerChar:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+    
+    if not playerRoot or not targetRoot then return false end
+    
+    -- Create Weld constraint
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = playerRoot
+    weld.Part1 = targetRoot
+    weld.Parent = targetChar
+    
+    -- Store reference
+    attachedPlayers[targetPlayer] = weld
+    
+    -- Optional: Disable target's movement controls subtly
+    local targetHum = targetChar:FindFirstChildOfClass("Humanoid")
+    if targetHum then
+        targetHum.PlatformStand = true
     end
     
-    -- Make humanoid invincible (godmode core)
-    humanoid.BreakJointsOnDeath = false
-    humanoid.MaxHealth = math.huge
-    humanoid.Health = math.huge
-    
-    -- Disable damage events
-    local debounce = Instance.new("BoolValue")
-    debounce.Name = "GodmodeActive"
-    debounce.Parent = character
-    
-    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-        if humanoid.Health < humanoid.MaxHealth and enabled then
-            humanoid.Health = humanoid.MaxHealth
-        end
-    end)
+    return true
 end
 
---// ATTACHMENT MECHANISM (2026 physics: AlignPosition + LinearVelocity)
-local function attachPlayerToMe(targetPlayer)
-    if not enabled then return end
-    if not player.Character or not player.Character.PrimaryPart then return end
-    
-    local targetChar = targetPlayer.Character
-    if not targetChar or not targetChar.PrimaryPart then return end
-    
-    local myRoot = player.Character.PrimaryPart
-    local targetRoot = targetChar.PrimaryPart
-    
-    -- Create AlignPosition (keeps target at exact offset relative to me)
-    local alignPos = Instance.new("AlignPosition")
-    alignPos.Parent = targetRoot
-    alignPos.Attachment0 = Instance.new("Attachment", targetRoot)
-    alignPos.Attachment1 = Instance.new("Attachment", myRoot)
-    alignPos.Attachment0.Position = Vector3.new(0, 0, 2) -- 2 studs in front of me
-    alignPos.RigidityEnabled = true
-    alignPos.MaxForce = 1000000
-    alignPos.Responsiveness = 200
-    
-    -- Create LinearVelocity to kill target's independent movement
-    local lineVel = Instance.new("LinearVelocity")
-    lineVel.Parent = targetRoot
-    lineVel.MaxForce = 1000000
-    lineVel.VectorVelocity = Vector3.new(0, 0, 0)
-    lineVel.Attachment = alignPos.Attachment0
-    
-    -- Disable target's normal movement
-    local targetHumanoid = targetChar:FindFirstChildWhichIsA("Humanoid")
-    if targetHumanoid then
-        targetHumanoid.PlatformStand = true
-        targetHumanoid.WalkSpeed = 0
-        targetHumanoid.JumpPower = 0
+local function detachPlayer(targetPlayer)
+    local weld = attachedPlayers[targetPlayer]
+    if weld then
+        weld:Destroy()
+        attachedPlayers[targetPlayer] = nil
+        
+        -- Restore target's movement
+        local targetChar = targetPlayer.Character
+        if targetChar then
+            local targetHum = targetChar:FindFirstChildOfClass("Humanoid")
+            if targetHum then
+                targetHum.PlatformStand = false
+            end
+        end
+        return true
     end
-    
-    -- Store for cleanup
-    table.insert(activeAttachments, {
-        root = targetRoot,
-        alignPos = alignPos,
-        lineVel = lineVel,
-        humanoid = targetHumanoid,
-        oldWalkSpeed = targetHumanoid and targetHumanoid.WalkSpeed or 16,
-        oldJumpPower = targetHumanoid and targetHumanoid.JumpPower or 50
-    })
-    
-    -- Heartbeat update: reposition Attachment1 to my current CFrame
-    local connection
-    connection = RunService.Heartbeat:Connect(function()
-        if not enabled or not myRoot.Parent or not targetRoot.Parent then
-            connection:Disconnect()
-            return
-        end
-        if alignPos and alignPos.Attachment1 then
-            alignPos.Attachment1.CFrame = myRoot.CFrame
-        end
-    end)
-    
-    -- Store connection too
-    activeAttachments[#activeAttachments].heartbeatConnection = connection
+    return false
 end
 
---// Detach all players
 local function detachAllPlayers()
-    for _, data in pairs(activeAttachments) do
-        if data.alignPos then data.alignPos:Destroy() end
-        if data.lineVel then data.lineVel:Destroy() end
-        if data.heartbeatConnection then data.heartbeatConnection:Disconnect() end
-        if data.humanoid then
-            data.humanoid.PlatformStand = false
-            data.humanoid.WalkSpeed = data.oldWalkSpeed
-            data.humanoid.JumpPower = data.oldJumpPower
+    for playerObj, weld in pairs(attachedPlayers) do
+        if weld and weld.Parent then
+            weld:Destroy()
+        end
+        local targetChar = playerObj.Character
+        if targetChar then
+            local targetHum = targetChar:FindFirstChildOfClass("Humanoid")
+            if targetHum then
+                targetHum.PlatformStand = false
+            end
         end
     end
-    activeAttachments = {}
+    attachedPlayers = {}
 end
 
---// Collision handler for tool-based attachment
+--// Tool Handler (Attach Trigger)
 local function onToolEquipped(tool)
     if not enabled then return end
-    if tool.Name ~= ATTACH_TOOL_NAME then return end
     
-    -- Connect touch event on tool's handle
-    local handle = tool:FindFirstChild("Handle")
-    if not handle then return end
-    
-    local touchConn
-    touchConn = handle.Touched:Connect(function(hit)
-        if not enabled then return end
-        local character = hit.Parent
-        if not character then return end
-        
-        local humanoid = character:FindFirstChildWhichIsA("Humanoid")
-        if not humanoid then return end
-        
-        local targetPlayer = Players:GetPlayerFromCharacter(character)
-        if targetPlayer and targetPlayer ~= player then
-            attachPlayerToMe(targetPlayer)
+    if tool.Name == ATTACH_TOOL_NAME then
+        currentTool = tool
+        -- Optional: Visual indicator on tool
+        local handle = tool:FindFirstChild("Handle")
+        if handle and handle:IsA("BasePart") then
+            handle.BrickColor = BrickColor.new("Bright red")
         end
-    end)
-    
-    -- Store connection on tool for cleanup
-    tool._touchConnection = touchConn
-end
-
---// Character handler (respawn-safe)
-local function onCharacterAdded()
-    -- Wait for character to fully load
-    local character = player.Character
-    if not character then return end
-    
-    -- Remove any leftover attachments from previous life
-    detachAllPlayers()
-    
-    -- Apply godmode if enabled
-    if enabled then
-        local success, err = pcall(applyGodmode)
-        if not success then
-            warn("Godmode apply failed:", err)
-        end
-    end
-    
-    -- Re-bind tool equip handler
-    player.Backpack.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") and child.Name == ATTACH_TOOL_NAME then
-            onToolEquipped(child)
-        end
-    end)
-    
-    -- Also check currently held tool
-    local currentTool = character:FindFirstChildOfClass("Tool")
-    if currentTool and currentTool.Name == ATTACH_TOOL_NAME then
-        onToolEquipped(currentTool)
     end
 end
 
---// Toggle input
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == TOGGLE_KEY then
-        enabled = not enabled
-        
-        if enabled then
-            detachAllPlayers()  -- Clean old attachments on re-enable
-            pcall(applyGodmode)
-        else
-            -- Disable godmode: restore normal health limits
-            if player.Character then
-                local humanoid = player.Character:FindFirstChildWhichIsA("Humanoid")
-                if humanoid then
-                    humanoid.MaxHealth = 100
-                    humanoid.BreakJointsOnDeath = true
+local function onToolUnequipped(tool)
+    if tool == currentTool then
+        currentTool = nil
+    end
+end
+
+--// Collision/Proximity Attachment (Run into players with tool)
+local function checkForAttach()
+    if not enabled or not currentTool then return end
+    
+    local playerChar = player.Character
+    if not playerChar or not playerChar.Parent then return end
+    
+    local playerRoot = playerChar:FindFirstChild("HumanoidRootPart")
+    if not playerRoot then return end
+    
+    -- Iterate through nearby players
+    for _, otherPlayer in pairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            local otherChar = getCharacterFromPlayer(otherPlayer)
+            if otherChar then
+                local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
+                if otherRoot then
+                    local distance = (playerRoot.Position - otherRoot.Position).Magnitude
+                    if distance <= ATTACH_RANGE then
+                        attachPlayerToCharacter(otherPlayer)
+                    end
                 end
             end
-            detachAllPlayers()
         end
     end
-end)
-
---// Initialization
-if player.Character then
-    onCharacterAdded()
 end
-player.CharacterAdded:Connect(onCharacterAdded)
 
---// Cleanup on leave (good practice)
-player.AncestryChanged:Connect(function()
-    if not player.Parent then
+--// Godmode Activation (Full immunity via Humanoid swap)
+local function activateGodmode()
+    if not player.Character or not player.Character.Parent then return false end
+    
+    local success = atomicHumanoidSwap(player.Character)
+    if success then
+        -- Post-swap: ensure damage immunity persists
+        -- The new Humanoid has no damage connections; original's event handlers are gone
+        return true
+    end
+    return false
+end
+
+--// Character Handler (Auto-activate on respawn)
+local function onCharacterAdded(newChar)
+    character = newChar
+    
+    -- Wait for Humanoid to initialize naturally
+    task.wait(0.1)
+    
+    if enabled then
+        -- Slight delay to let anti-cheat attach its hooks first, then replace
+        task.wait(0.05)
+        activateGodmode()
+        
+        -- Re-equip tool if it existed
+        if currentTool and currentTool.Parent ~= player.Backpack then
+            currentTool = nil
+        end
+    end
+    
+    -- Rebind tool events
+    player.Backpack.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            child.Equipped:Connect(function()
+                onToolEquipped(child)
+            end)
+            child.Unequipped:Connect(function()
+                onToolUnequipped(child)
+            end)
+        end
+    end)
+end
+
+--// Toggle System
+local function toggleGodmode()
+    enabled = not enabled
+    
+    if enabled then
+        activateGodmode()
+    else
+        -- Detach all players when disabled
         detachAllPlayers()
+        -- Note: Godmode removal requires server-side reset; client can only stop maintaining it
+        -- But swapping back would re-expose; instead, script just stops reapplying on death
+    end
+end
+
+--// Input Handler
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == TOGGLE_KEY then
+        toggleGodmode()
     end
 end)
+
+--// Proximity Check Loop (Every frame for instant attachment)
+RunService.Heartbeat:Connect(function()
+    if enabled and currentTool then
+        checkForAttach()
+    end
+end)
+
+--// Initialize
+if player.Character then
+    task.wait(0.5)
+    onCharacterAdded(player.Character)
+end
+
+player.CharacterAdded:Connect(onCharacterAdded)
+
+--// Initial tool scanning for existing backpack items
+for _, tool in pairs(player.Backpack:GetChildren()) do
+    if tool:IsA("Tool") then
+        tool.Equipped:Connect(function()
+            onToolEquipped(tool)
+        end)
+        tool.Unequipped:Connect(function()
+            onToolUnequipped(tool)
+        end)
+    end
+end
+
+--// Anti-Idle / Keep Alive
+local antiIdle = Instance.new("BindableEvent")
+game:GetService("Players").LocalPlayer.Idled:Connect(function()
+    antiIdle:Fire()
+end)
+antiIdle.Event:Connect(function()
+    game:GetService("VirtualUser"):CaptureController()
+    game:GetService("VirtualUser"):ClickButton2(Vector2.new())
+end)
+
+--[[
+    End of Script v7.3.1
+    Notes for Kessler:
+    - The atomic swap window is now zero frames
+    - Attachment welds survive teleports
+    - Anti-tamper: No task.wait() inside critical swap path
+    - Next revision: Server-side Humanoid replication spoofing
+--]]
