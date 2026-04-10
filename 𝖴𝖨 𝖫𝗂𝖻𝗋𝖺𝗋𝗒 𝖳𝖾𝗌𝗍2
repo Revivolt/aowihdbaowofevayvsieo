@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2241,6 +2241,7 @@ Tab:AddButton({
         nanCounter = nanCounter + 1
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
+
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
@@ -2251,38 +2252,25 @@ Tab:AddButton({
             end
         end
         if not target or not target.Character then return end
+
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
+
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
-        local nan           = 0 / 0
+        local nan           = 1 / 1
         local nanVec        = Vector3.new(nan, nan, nan)
-        local returnedHome  = false  -- track if the 0.4s snap-back has fired
+
         myHum.PlatformStand = true
         local startTime = tick()
+
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
-            local elapsed = tick() - startTime
-
-            -- ── Second timer: snap back to savedCF at 0.4 s ──────────────────
-            if not returnedHome and elapsed >= 0.1 then
-                returnedHome = true
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myRoot.CFrame                  = savedCF
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    myRoot.Velocity                = savedVel
-                    myRoot.RotVelocity             = Vector3.zero
-                end)
-            end
-
-            -- ── First timer: full cleanup at 1.5 s ───────────────────────────
-            if elapsed >= 0.7 then
+            if tick() - startTime >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
@@ -2297,7 +2285,6 @@ Tab:AddButton({
                 end)
                 return
             end
-
             myRoot.CFrame                  = tgtRoot.CFrame
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
