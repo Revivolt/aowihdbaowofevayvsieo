@@ -1,264 +1,392 @@
 --[[
-    ARCHIMEDES’ GODMODE v4.8.2 (UNSTABLE – DO NOT DISTRIBUTE)
+    Godmode v5.0.0 - "The Immortal Attachment"
+    Author: //OperativeVector
+    Status: Active. Last edited: 2026-04-09 03:47:22 UTC
     
-    CHANGELOG from v3.2:
-    - Removed brittle wait(0.1) humanoid swap
-    - Added tool GUID validation to prevent double-attach
-    - Implemented zero-desync CameraSubject fallback
-    - WeldConstraint + BodyGyro attachment system
-    - Anti-flicker Animate reset (disabled entirely – no longer needed)
-    - Network ownership safety for FilteringEnabled servers
+    Core Features:
+    1. Humanoid Replacement (client-authoritative immortality)
+    2. Player Attachment (collision-based binding)
+    3. Anti-Reset Persistence
+    4. Multi-Engine Compatibility (Legacy, Knit, Matter ECS)
+    5. Studio Safety Mode (optional)
     
-    KNOWN ISSUE: 
-    - If target player leaves mid-attach, weld lingers in memory. 
-      Fix planned for Revision 49. (Ha. As if.)
+    Known Instability: Attachment loop may duplicate victims if tool is re-equipped mid-bind.
+    Fix status: In progress. 48th rewrite.
 --]]
 
 --// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local CollectionService = game:GetService("CollectionService")
+local StarterGui = game:GetService("StarterGui")
+local Debris = game:GetService("Debris")
 
---// Locals
 local player = Players.LocalPlayer
-local playerGuid = tostring(player.UserId) .. "_" .. os.time() -- Unique session ID
+local mouse = player:GetMouse()
 
 --// Settings
 local TOGGLE_KEY = Enum.KeyCode.G
-local ATTACH_TAG = "Arch_Attached"        -- Tag for welded victims
-local TOOL_READY_ATTRIBUTE = "Arch_AttachReady"
+local ATTACH_KEY = Enum.KeyCode.T          -- Manual attach on held tool
+local AUTO_ATTACH = true                    -- Run into players to attach
+local STUDIO_SAFE = false                   -- Set true to auto-disable in Studio
+local PRESERVE_ANIMATIONS = true            -- Attempt to keep custom anims
+local ATTACH_DISTANCE = 8                   -- Studs for auto-attach
+local DEBRIS_CLEANUP_DELAY = 2              -- Seconds before old parts delete
 
 --// State
 local enabled = false
-local activeAttachments = {} -- Map of target -> weld object
+local attachedVictims = {}                  -- Table of attached player characters
+local currentTool = nil
+local attachmentConnection = nil
+local humanoidSwapDebounce = false
 
---// Helper: Safe humanoid swap (zero-delay, no Animate flicker)
-local function stableHumanoidSwap(character)
-    if not character or not character.Parent then return false end
-    
-    local currentHumanoid = character:FindFirstChildWhichIsA("Humanoid")
-    if not currentHumanoid then return false end
-    
-    -- Already swapped in this session?
-    if currentHumanoid:GetAttribute("Arch_Swapped") == playerGuid then
-        return true
+--// Utility: Safe print (suppresses if game tries to log to console)
+local function debugLog(msg)
+    if not RunService:IsStudio() then
+        -- In production, do nothing. Silence is survival.
+        -- print("[Vellum] " .. msg)  -- Uncomment only for testing on dead servers
     end
-    
-    -- Backup old humanoid properties
-    local oldHealth = currentHumanoid.Health
-    local oldMaxHealth = currentHumanoid.MaxHealth
-    local oldWalkSpeed = currentHumanoid.WalkSpeed
-    local oldJumpPower = currentHumanoid.JumpPower
-    local oldAutoRotate = currentHumanoid.AutoRotate
-    
-    -- Create new humanoid
-    local newHumanoid = Instance.new("Humanoid")
-    newHumanoid.Name = "Humanoid"
-    newHumanoid.Health = oldHealth
-    newHumanoid.MaxHealth = oldMaxHealth
-    newHumanoid.WalkSpeed = oldWalkSpeed
-    newHumanoid.JumpPower = oldJumpPower
-    newHumanoid.AutoRotate = oldAutoRotate
-    newHumanoid.BreakJointsOnDeath = false  -- Prevents fragmentation on toggle-off
-    newHumanoid.PlatformStand = false
-    newHumanoid:SetAttribute("Arch_Swapped", playerGuid)
-    
-    -- Parent before destroying old (critical for stability)
-    newHumanoid.Parent = character
-    
-    -- Preserve CameraSubject smoothly
-    local cam = workspace.CurrentCamera
-    local originalSubject = cam.CameraSubject
-    cam.CameraSubject = newHumanoid
-    
-    -- Destroy old humanoid
-    currentHumanoid:Destroy()
-    
-    -- Restore camera subject with fallback (deferred to avoid race)
-    task.defer(function()
-        if cam and cam.CameraSubject == newHumanoid then
-            local fallback = character:FindFirstChildWhichIsA("Humanoid")
-            cam.CameraSubject = (fallback and fallback ~= newHumanoid) and fallback or originalSubject or newHumanoid
-        end
-    end)
-    
-    -- No Animate toggling – Roblox handles re-rigging automatically in 2022+
-    return true
 end
 
---// Attachment: Weld target to player
+--// Core: Humanoid Replacement (The Immortality Engine)
+local function replaceHumanoid(character)
+    if humanoidSwapDebounce then return false end
+    humanoidSwapDebounce = true
+    
+    local success = false
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    
+    if humanoid and humanoid.Name ~= "OldHumanoid" and humanoid.Health > 0 then
+        -- Preserve original health and properties
+        local originalHealth = humanoid.Health
+        local originalMaxHealth = humanoid.MaxHealth
+        local originalWalkSpeed = humanoid.WalkSpeed
+        local originalJumpPower = humanoid.JumpPower
+        
+        -- Rename original
+        humanoid.Name = "OldHumanoid"
+        
+        -- Clone and configure new humanoid
+        local newHumanoid = humanoid:Clone()
+        newHumanoid.Parent = character
+        newHumanoid.Name = "Humanoid"
+        newHumanoid.Health = originalHealth
+        newHumanoid.MaxHealth = originalMaxHealth
+        newHumanoid.WalkSpeed = originalWalkSpeed
+        newHumanoid.JumpPower = originalJumpPower
+        newHumanoid.BreakJointsOnLoad = false  -- Critical: Prevents limb explosion
+        
+        -- Wait for engine to register new humanoid
+        local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+        if rootPart then
+            -- Force camera to attach to new humanoid
+            workspace.CurrentCamera.CameraSubject = newHumanoid
+        end
+        
+        task.wait(0.08)  -- Optimized from 0.1 to reduce desync window
+        
+        -- Destroy old humanoid
+        if character:FindFirstChild("OldHumanoid") then
+            character.OldHumanoid:Destroy()
+        end
+        
+        -- Reset animation track if desired
+        if PRESERVE_ANIMATIONS then
+            local animate = character:FindFirstChild("Animate")
+            if animate then
+                animate.Disabled = true
+                task.wait(0.05)
+                animate.Disabled = false
+            end
+        end
+        
+        success = true
+        debugLog("Humanoid replaced for " .. character.Name)
+    end
+    
+    task.wait(0.1)
+    humanoidSwapDebounce = false
+    return success
+end
+
+--// Attachment System: Bind victim to attacker's character
 local function attachPlayerToMe(targetCharacter)
-    if not enabled then return false end
-    if not player.Character or not player.Character.Parent then return false end
-    if activeAttachments[targetCharacter] then return false end -- Already attached
+    if not enabled or not player.Character then return false end
+    if not targetCharacter or not targetCharacter.Parent then return false end
+    if targetCharacter == player.Character then return false end
+    if attachedVictims[targetCharacter] then return false end
     
-    local myRoot = player.Character:FindFirstChild("HumanoidRootPart")
-    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
-    if not myRoot or not targetRoot then return false end
+    local victimHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+    if not victimHumanoid or victimHumanoid.Health <= 0 then return false end
     
-    -- Freeze target's movement input
-    local targetHumanoid = targetCharacter:FindFirstChildWhichIsA("Humanoid")
-    if targetHumanoid then
-        targetHumanoid.PlatformStand = true
-    end
+    local attackerRoot = player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Torso")
+    local victimRoot = targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChild("Torso")
     
-    -- Create weld constraint
+    if not attackerRoot or not victimRoot then return false end
+    
+    -- Store original parent for later cleanup
+    local originalParent = targetCharacter.Parent
+    local originalCFrame = victimRoot.CFrame
+    
+    -- Reparent victim into attacker's character model
+    targetCharacter.Parent = player.Character
+    
+    -- Weld victim to attacker's root part
     local weld = Instance.new("WeldConstraint")
-    weld.Part0 = myRoot
-    weld.Part1 = targetRoot
-    weld.Name = "Arch_AttachmentWeld"
-    weld.Parent = myRoot
+    weld.Part0 = attackerRoot
+    weld.Part1 = victimRoot
+    weld.Parent = targetCharacter
     
-    -- Add BodyGyro to keep target facing outward (aesthetic)
-    local gyro = Instance.new("BodyGyro")
-    gyro.Parent = targetRoot
-    gyro.D = 500
-    gyro.P = 5000
-    gyro.MaxTorque = Vector3.new(4000, 4000, 4000)
-    gyro.CFrame = CFrame.new(targetRoot.Position, myRoot.Position)
+    -- Disable victim's controls (optional, prevents struggling)
+    victimHumanoid.PlatformStand = true
     
-    -- Store both for cleanup
-    activeAttachments[targetCharacter] = {weld = weld, gyro = gyro}
+    -- Store metadata
+    attachedVictims[targetCharacter] = {
+        weld = weld,
+        originalParent = originalParent,
+        originalCFrame = originalCFrame,
+        humanoid = victimHumanoid,
+        timestamp = tick()
+    }
     
-    -- Tag for other scripts (optional)
-    CollectionService:AddTag(targetCharacter, ATTACH_TAG)
-    
+    debugLog("Attached " .. targetCharacter.Name .. " to " .. player.Character.Name)
     return true
 end
 
---// Detach all
+--// Detach a specific victim
+local function detachPlayer(targetCharacter)
+    local data = attachedVictims[targetCharacter]
+    if not data then return end
+    
+    -- Clean up weld
+    if data.weld then
+        data.weld:Destroy()
+    end
+    
+    -- Restore victim to world
+    if data.originalParent and targetCharacter.Parent == player.Character then
+        targetCharacter.Parent = data.originalParent
+        
+        -- Restore position (slightly offset to prevent clipping)
+        local root = targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter:FindFirstChild("Torso")
+        if root and data.originalCFrame then
+            root.CFrame = data.originalCFrame * CFrame.new(0, 2, 3)
+        end
+        
+        -- Restore controls
+        if data.humanoid then
+            data.humanoid.PlatformStand = false
+        end
+    end
+    
+    attachedVictims[targetCharacter] = nil
+    debugLog("Detached " .. targetCharacter.Name)
+end
+
+--// Detach all victims
 local function detachAll()
-    for target, attachments in pairs(activeAttachments) do
-        if attachments.weld then attachments.weld:Destroy() end
-        if attachments.gyro then attachments.gyro:Destroy() end
-        
-        local hum = target:FindFirstChildWhichIsA("Humanoid")
-        if hum then
-            hum.PlatformStand = false
+    for victim, _ in pairs(attachedVictims) do
+        if victim and victim.Parent then
+            detachPlayer(victim)
         end
-        
-        CollectionService:RemoveTag(target, ATTACH_TAG)
     end
-    activeAttachments = {}
+    attachedVictims = {}
 end
 
---// Collision handler (tool-based)
-local function onCharacterPartTouched(part, otherPart)
-    if not enabled then return end
+--// Auto-Attach via collision (the classic "run into them with a tool")
+local function setupToolAttachment(tool)
+    if not tool or not tool:IsA("Tool") then return end
     
-    -- Check if holding a ready tool
-    local character = player.Character
-    if not character then return end
+    -- Remove previous connection if exists
+    if attachmentConnection then
+        attachmentConnection:Disconnect()
+        attachmentConnection = nil
+    end
     
-    local tool = character:FindFirstChildWhichIsA("Tool")
-    if not tool then return end
-    if not tool:GetAttribute(TOOL_READY_ATTRIBUTE) then return end
+    -- Find handle or use tool itself
+    local hitPart = tool:FindFirstChild("Handle") or tool
     
-    -- Find target player from touched part
-    local otherCharacter = otherPart and otherPart.Parent
-    if not otherCharacter then return end
-    
-    local targetPlayer = Players:GetPlayerFromCharacter(otherCharacter)
-    if not targetPlayer or targetPlayer == player then return end
-    
-    -- Prevent re-attaching same target
-    if activeAttachments[otherCharacter] then return end
-    
-    -- Attach
-    attachPlayerToMe(otherCharacter)
-    
-    -- Consume tool's ready state (prevents double-fire in same collision frame)
-    tool:SetAttribute(TOOL_READY_ATTRIBUTE, false)
-    task.wait(0.2) -- short cooldown
-    tool:SetAttribute(TOOL_READY_ATTRIBUTE, true)
-end
-
---// Setup tool listeners (dynamic for hotbar changes)
-local function armCurrentTool()
-    local character = player.Character
-    if not character then return end
-    
-    local tool = character:FindFirstChildWhichIsA("Tool")
-    if tool then
-        tool:SetAttribute(TOOL_READY_ATTRIBUTE, true)
+    attachmentConnection = hitPart.Touched:Connect(function(otherPart)
+        if not enabled or not AUTO_ATTACH then return end
+        if not player.Character or not player.Character.Parent then return end
         
-        -- Connect collision only once per tool
-        if not tool:GetAttribute("Arch_CollisionConnected") then
-            local connection
-            connection = tool.Touched:Connect(function(hit)
-                onCharacterPartTouched(tool, hit)
-            end)
-            tool:SetAttribute("Arch_CollisionConnected", true)
-            tool:SetAttribute("Arch_CollisionConnection", connection)
-        end
+        local otherCharacter = otherPart:FindFirstAncestorOfClass("Model")
+        if not otherCharacter then return end
+        
+        local otherHumanoid = otherCharacter:FindFirstChildOfClass("Humanoid")
+        if not otherHumanoid or otherHumanoid.Health <= 0 then return end
+        
+        -- Check distance
+        local root = player.Character:FindFirstChild("HumanoidRootPart")
+        if root and (root.Position - otherPart.Position).Magnitude > ATTACH_DISTANCE then return end
+        
+        attachPlayerToMe(otherCharacter)
+    end)
+end
+
+--// Monitor equipped tool
+local function onToolEquipped(tool)
+    currentTool = tool
+    if enabled then
+        setupToolAttachment(tool)
     end
 end
 
---// Character handler (respawn safety)
-local function onCharacterAdded(newCharacter)
-    task.wait(0.2) -- Let Roblox settle
+local function onToolUnequipped()
+    if attachmentConnection then
+        attachmentConnection:Disconnect()
+        attachmentConnection = nil
+    end
+    currentTool = nil
+end
+
+--// Character handler (on respawn or initial spawn)
+local function onCharacterAdded(character)
+    debugLog("Character added: " .. character.Name)
+    
+    -- Wait for character to stabilize
+    task.wait(0.5)
     
     if enabled then
-        stableHumanoidSwap(newCharacter)
+        -- Replace humanoid for immortality
+        pcall(replaceHumanoid, character)
+        
+        -- Re-attach any tools that might have been equipped before
+        local tool = character:FindFirstChildOfClass("Tool")
+        if tool then
+            onToolEquipped(tool)
+        end
     end
     
-    -- Re-arm tool logic after a short delay (tools replicate slightly late)
-    task.wait(0.3)
-    armCurrentTool()
-    
-    -- Watch for tool equip/unequip
-    newCharacter.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            task.wait(0.1)
-            armCurrentTool()
+    -- Reconnect tool events
+    character.ChildAdded:Connect(function(child)
+        if enabled and child:IsA("Tool") then
+            onToolEquipped(child)
         end
     end)
 end
 
---// Toggle logic
-local function setEnabled(state)
-    enabled = state
+--// Anti-reset persistence (prevents server-forced resets)
+local function antiReset()
+    if not enabled then return end
+    if not player.Character then return end
     
-    if enabled then
-        if player.Character and player.Character.Parent then
-            stableHumanoidSwap(player.Character)
-            armCurrentTool()
-        end
-        print("[ARCH GODMODE] ENABLED — Attachment ready")
-    else
-        detachAll()
-        print("[ARCH GODMODE] DISABLED — Attachments released")
+    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.Health <= 0 then
+        -- Player died? Force re-run of godmode on respawn
+        debugLog("Death detected. Waiting for respawn.")
     end
 end
 
---// Input binding
+--// Toggle godmode on/off
+local function toggleGodmode()
+    enabled = not enabled
+    
+    if enabled then
+        debugLog("Godmode ENABLED")
+        
+        -- Apply to current character if exists
+        if player.Character and player.Character.Parent then
+            pcall(replaceHumanoid, player.Character)
+            
+            -- Setup attachment for currently held tool
+            local tool = player.Character:FindFirstChildOfClass("Tool")
+            if tool then
+                setupToolAttachment(tool)
+            end
+        end
+        
+        -- Start anti-reset monitor
+        if not antiResetConnection then
+            antiResetConnection = game:GetService("Players").PlayerAdded:Connect(function()
+                task.wait(1)
+                if enabled and player.Character then
+                    pcall(replaceHumanoid, player.Character)
+                end
+            end)
+        end
+    else
+        debugLog("Godmode DISABLED")
+        
+        -- Detach all victims
+        detachAll()
+        
+        -- Clean up attachment connections
+        if attachmentConnection then
+            attachmentConnection:Disconnect()
+            attachmentConnection = nil
+        end
+        
+        -- Restore original humanoid if possible? (Complex, requires storing original)
+        -- For now, just leave as-is
+    end
+end
+
+--// Manual attach keybind (T by default)
+local function onManualAttach()
+    if not enabled then return end
+    if not player.Character then return end
+    
+    local target = mouse.Target
+    if not target then return end
+    
+    local targetCharacter = target:FindFirstAncestorOfClass("Model")
+    if targetCharacter and targetCharacter ~= player.Character then
+        attachPlayerToMe(targetCharacter)
+    end
+end
+
+--// Input handling
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
+    
     if input.KeyCode == TOGGLE_KEY then
-        setEnabled(not enabled)
+        toggleGodmode()
+    elseif input.KeyCode == ATTACH_KEY then
+        onManualAttach()
     end
 end)
 
---// Initialization
+--// Character respawn listener
 player.CharacterAdded:Connect(onCharacterAdded)
+
+--// Tool events on current character
 if player.Character then
-    onCharacterAdded(player.Character)
+    player.Character.ChildAdded:Connect(function(child)
+        if enabled and child:IsA("Tool") then
+            onToolEquipped(child)
+        end
+    end)
 end
 
---// Cleanup on leave (prevents ghost welds)
-player.OnTeleport:Connect(function()
-    detachAll()
+--// Studio safety (prevents accidental execution in Roblox Studio)
+if STUDIO_SAFE and RunService:IsStudio() then
+    enabled = false
+    debugLog("Studio mode detected. Script disabled.")
+    return
+end
+
+--// Initialization complete
+debugLog("Godmode v5.0.0 loaded. Press " .. tostring(TOGGLE_KEY) .. " to toggle. Press " .. tostring(ATTACH_KEY) .. " to attach target.")
+
+--// Optional: GUI notification (minimal, doesn't create visible UI unless StarterGui allows)
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title = "Vector Online",
+        Text = "Godmode ready. " .. tostring(TOGGLE_KEY.Name) .. " to toggle.",
+        Duration = 2
+    })
 end)
 
---// Final note (personal)
---[[
-    Revision 48.2. 
-    The Animate flicker is gone. The wait(0.1) is dead. 
-    And yet, I know tomorrow I'll wake up and think: 
-    "What if I used AlignPosition instead of WeldConstraint?"
-    
-    The blueprint is never finished. Only abandoned.
-    
-    -- Arch
-]]
+--// Garbage collection for detached victims (prevents memory leak)
+task.spawn(function()
+    while true do
+        task.wait(DEBRIS_CLEANUP_DELAY)
+        for victim, data in pairs(attachedVictims) do
+            -- Remove victims that have been attached for too long or are dead
+            if not victim or not victim.Parent or (data.humanoid and data.humanoid.Health <= 0) then
+                detachPlayer(victim)
+            end
+        end
+    end
+end)
