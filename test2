@@ -1,14 +1,8 @@
 --[[
-    Script: Hegemony Godmode v0.2.0
-    Author: The Archivist (Dr. Alistair Finch)
-    Status: Production - Race condition patched, camera replication added.
-    
-    Core Functions:
-    1. Godmode (damage immunity via Humanoid swap + property lock)
-    2. Attachment-on-collision (tool-based; pulls target into character model)
-    3. Camera replication (attached players’ views are relayed to Finch’s client)
-    
-    Toggle: G key
+    GOD PRESERVE v8.3
+    Author: S-2077
+    Description: Legacy godmode + attachment system. Toggle with G.
+    WARNING: This script is a ritual. Not a tool.
 --]]
 
 --// Services
@@ -16,244 +10,403 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
 --// Settings
 local TOGGLE_KEY = Enum.KeyCode.G
+local ATTACH_RANGE = 8 -- studs
+local ATTACH_DURATION = 0.3 -- seconds for tween
+local GODMODE_REFRESH_RATE = 0.033 -- ~30fps health lock
 
 --// State
 local enabled = false
-local attachedPlayers = {} -- table of player -> camera connection
+local attachedVictims = {} -- table of {victim, joint, velocityController}
+local godmodeConnection = nil
+local currentCameraSubject = nil
 
---// Backup storage for anti-cheat recovery
-local backupContainer = Instance.new("Folder")
-backupContainer.Name = "HegemonyBackup"
-backupContainer.Parent = ReplicatedStorage
+--// Assets (uploaded by S-2077)
+local THREAT_SOUND_ID = "rbxassetid://18431723462" -- placeholder, user-owned
+local TOGGLE_SOUND_ID = "rbxassetid://9120372638" -- reversed oof bass
 
---// Helper: Fully clone Humanoid properties (fixes post-2023 jump power bug)
-local function fullHumanoidClone(sourceHumanoid, targetParent)
-    local cloned = Instance.new("Humanoid")
-    cloned.Parent = targetParent
-    
-    -- Manual property iteration to preserve everything
-    for _, prop in ipairs(sourceHumanoid:GetProperties()) do
-        local success, result = pcall(function()
-            local value = sourceHumanoid[prop]
-            if prop ~= "Parent" and prop ~= "Name" then
-                cloned[prop] = value
-            end
-        end)
-        if not success then
-            -- Silent fail: some properties are read-only
-        end
-    end
-    
-    -- Critical post-2023 fixes
-    cloned.JumpPower = sourceHumanoid.JumpPower
-    cloned.WalkSpeed = sourceHumanoid.WalkSpeed
-    cloned.MaxHealth = sourceHumanoid.MaxHealth
-    cloned.Health = sourceHumanoid.MaxHealth -- Full heal on swap
-    
-    return cloned
+--// UI Elements (created dynamically)
+local screenGui = nil
+local threatTint = nil
+
+--// Helper: Play sound locally
+local function playSound(soundId, volume, parent)
+    local sound = Instance.new("Sound")
+    sound.SoundId = soundId
+    sound.Volume = volume or 0.6
+    sound.Parent = parent or workspace.CurrentCamera
+    sound:Play()
+    task.delay(sound.TimeLength, function()
+        sound:Destroy()
+    end)
+    return sound
 end
 
---// Core godmode function (revised with Heartbeat timing)
-local function applyGodmode()
+--// Helper: Screen tint effect (fear UI)
+local function createThreatTint()
+    if screenGui and screenGui.Parent then
+        screenGui:Destroy()
+    end
+    
+    screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "GodPreserveUI"
+    screenGui.IgnoreGuiInset = true
+    screenGui.Parent = player.PlayerGui
+    
+    threatTint = Instance.new("Frame")
+    threatTint.Name = "ThreatTint"
+    threatTint.Size = UDim2.new(1, 0, 1, 0)
+    threatTint.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    threatTint.BackgroundTransparency = 0.7
+    threatTint.BorderSizePixel = 0
+    threatTint.Visible = false
+    threatTint.Parent = screenGui
+end
+
+local function showThreatTint(visible)
+    if not threatTint then createThreatTint() end
+    threatTint.Visible = visible
+    if visible then
+        -- Pulse animation
+        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+        local tween = TweenService:Create(threatTint, tweenInfo, {BackgroundTransparency = 0.5})
+        tween:Play()
+    else
+        for _, tween in pairs(TweenService:GetTweens(threatTint)) do
+            tween:Cancel()
+        end
+        threatTint.BackgroundTransparency = 0.7
+    end
+end
+
+--// Core: Godmode implementation (anti-anti-tamper)
+local function enableGodmode(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    
+    -- Hook health changes without cloning (detection-resistant)
+    local originalHealth = humanoid.Health
+    local hookConnection
+    
+    hookConnection = humanoid.Changed:Connect(function(property)
+        if property == "Health" then
+            if humanoid.Health < humanoid.MaxHealth then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        elseif property == "BreakJointsOnDeath" then
+            humanoid.BreakJointsOnDeath = false
+        end
+    end)
+    
+    -- Prevent death event firing
+    local deathConnection
+    deathConnection = humanoid.Died:Connect(function()
+        humanoid.Health = humanoid.MaxHealth
+        humanoid:BreakJointsOnDeath(false)
+        -- Force respawn prevention
+        task.wait()
+        if character.Parent then
+            humanoid.Health = humanoid.MaxHealth
+        end
+    end)
+    
+    -- Store connections for cleanup
+    if not character:FindFirstChild("GodmodeConnections") then
+        local folder = Instance.new("Folder")
+        folder.Name = "GodmodeConnections"
+        folder.Parent = character
+    end
+    local folder = character.GodmodeConnections
+    hookConnection.Parent = folder
+    deathConnection.Parent = folder
+    
+    -- Camera subject stabilization
+    if workspace.CurrentCamera then
+        currentCameraSubject = workspace.CurrentCamera.CameraSubject
+        workspace.CurrentCamera.CameraSubject = humanoid
+    end
+    
+    return true
+end
+
+local function disableGodmode(character)
+    local folder = character:FindFirstChild("GodmodeConnections")
+    if folder then
+        for _, conn in pairs(folder:GetChildren()) do
+            if conn:IsA("RBXScriptConnection") then
+                conn:Disconnect()
+            end
+        end
+        folder:Destroy()
+    end
+    
+    if workspace.CurrentCamera and currentCameraSubject then
+        workspace.CurrentCamera.CameraSubject = currentCameraSubject
+        currentCameraSubject = nil
+    end
+end
+
+--// Core: Attachment system (LinearVelocity + network ownership)
+local function attachVictim(victimCharacter)
+    if not enabled then return false end
+    if not player.Character or not player.Character.Parent then return false end
+    if attachedVictims[victimCharacter] then return false end
+    
+    local attackerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+    local victimRoot = victimCharacter:FindFirstChild("HumanoidRootPart")
+    if not attackerRoot or not victimRoot then return false end
+    
+    -- Create attachments on both root parts
+    local att1 = Instance.new("Attachment")
+    att1.Parent = attackerRoot
+    att1.Position = Vector3.new(0, 0, 2) -- In front of attacker
+    
+    local att2 = Instance.new("Attachment")
+    att2.Parent = victimRoot
+    att2.Position = Vector3.new(0, 0, 0)
+    
+    -- LinearVelocity constraint (smoother than welds)
+    local velocityConstraint = Instance.new("LinearVelocity")
+    velocityConstraint.Attachment0 = att1
+    velocityConstraint.Attachment1 = att2
+    velocityConstraint.RelativeTo = Enum.ActuatorRelativeTo.World
+    velocityConstraint.VectorVelocity = Vector3.new(0, 0, 0)
+    velocityConstraint.MaxForce = 10000
+    velocityConstraint.Enabled = true
+    velocityConstraint.Parent = attackerRoot
+    
+    -- Transfer network ownership to client for smooth dragging
+    local success, err = pcall(function()
+        victimRoot:SetNetworkOwner(player)
+    end)
+    if not success then
+        -- Fallback: no ownership transfer, but constraint still works partially
+    end
+    
+    -- Store state
+    attachedVictims[victimCharacter] = {
+        victim = victimCharacter,
+        att1 = att1,
+        att2 = att2,
+        constraint = velocityConstraint,
+        originalOwner = victimRoot:GetNetworkOwner()
+    }
+    
+    -- Visual feedback: victim tint red
+    local victimHumanoid = victimCharacter:FindFirstChildOfClass("Humanoid")
+    if victimHumanoid then
+        local originalColor = victimHumanoid:GetAttribute("OriginalColor") or victimHumanoid.RigType
+        victimHumanoid:SetAttribute("OriginalColor", victimHumanoid.RigType)
+    end
+    
+    -- Audio cue for victim (local player hears it)
+    playSound(THREAT_SOUND_ID, 0.5, victimCharacter:FindFirstChild("Head") or victimCharacter)
+    
+    return true
+end
+
+local function detachVictim(victimCharacter)
+    local data = attachedVictims[victimCharacter]
+    if not data then return end
+    
+    if data.constraint then data.constraint:Destroy() end
+    if data.att1 then data.att1:Destroy() end
+    if data.att2 then data.att2:Destroy() end
+    
+    -- Restore network ownership if possible
+    local victimRoot = victimCharacter:FindFirstChild("HumanoidRootPart")
+    if victimRoot and data.originalOwner then
+        pcall(function()
+            victimRoot:SetNetworkOwner(data.originalOwner)
+        end)
+    end
+    
+    attachedVictims[victimCharacter] = nil
+end
+
+local function detachAllVictims()
+    for victim, _ in pairs(attachedVictims) do
+        if victim and victim.Parent then
+            detachVictim(victim)
+        end
+    end
+    attachedVictims = {}
+end
+
+--// Core: Raycast-based attachment detection (replaces old Touched method)
+local function scanForVictims()
+    if not enabled then return end
+    if not player.Character or not player.Character.Parent then return end
+    
+    local character = player.Character
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    local tool = character:FindFirstChildOfClass("Tool")
+    
+    -- Requirement: Must have a tool in hand (legacy mechanic preserved)
+    if not tool then return end
+    
+    if not rootPart then return end
+    
+    -- Raycast in a sphere around player
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {character}
+    
+    local origin = rootPart.Position
+    local results = workspace:GetPartBoundsInBox(
+        Region3.new(origin - Vector3.new(ATTACH_RANGE, ATTACH_RANGE, ATTACH_RANGE),
+                    origin + Vector3.new(ATTACH_RANGE, ATTACH_RANGE, ATTACH_RANGE)),
+        params
+    )
+    
+    for _, part in pairs(results) do
+        local victimCharacter = part:FindFirstAncestorOfClass("Model")
+        if victimCharacter and victimCharacter:FindFirstChildOfClass("Humanoid") then
+            if victimCharacter ~= character and not attachedVictims[victimCharacter] then
+                -- Check if victim is a player
+                local victimPlayer = Players:GetPlayerFromCharacter(victimCharacter)
+                if victimPlayer then
+                    attachVictim(victimCharacter)
+                end
+            end
+        end
+    end
+end
+
+--// Core: Humanoid resurrection ritual (legacy testfunc evolution)
+local function performRitual()
     if not player.Character or not player.Character.Parent then return end
     
     local character = player.Character
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     
-    if humanoid and humanoid.Name ~= "OldHumanoid" then
+    if not humanoid then return end
+    
+    -- Legacy naming ritual preserved
+    if humanoid.Name ~= "OldHumanoid" then
+        -- Disable godmode temporarily to avoid conflicts
+        if godmodeConnection then
+            disableGodmode(character)
+        end
+        
         humanoid.Name = "OldHumanoid"
         
-        -- Use Heartbeat for deterministic timing
-        local heartbeatConnection
-        heartbeatConnection = RunService.Heartbeat:Connect(function()
-            heartbeatConnection:Disconnect()
-            
-            if not character.Parent then return end
-            
-            local newHumanoid = fullHumanoidClone(humanoid, character)
-            newHumanoid.Name = "Humanoid"
-            
-            -- Destroy old humanoid after new one is active
-            task.wait(0.05)
-            local oldHumanoid = character:FindFirstChild("OldHumanoid")
-            if oldHumanoid then
-                oldHumanoid:Destroy()
-            end
-            
-            workspace.CurrentCamera.CameraSubject = newHumanoid
-            
-            -- Reset animation track
-            local animate = character:FindFirstChild("Animate")
-            if animate then
-                animate.Disabled = true
-                task.wait(0.1)
-                animate.Disabled = false
-            end
-        end)
-    end
-end
-
---// Attachment logic (run into player with a tool)
-local function attachPlayer(targetPlayer)
-    if targetPlayer == player then return end
-    if attachedPlayers[targetPlayer] then return end
-    
-    local targetChar = targetPlayer.Character
-    if not targetChar or not targetChar.Parent then return end
-    
-    local myChar = player.Character
-    if not myChar then return end
-    
-    -- Weld target to my character's HumanoidRootPart
-    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    if myRoot and targetRoot then
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = myRoot
-        weld.Part1 = targetRoot
-        weld.Parent = myChar
+        local newHumanoid = humanoid:Clone()
+        newHumanoid.Parent = character
+        newHumanoid.Name = "Humanoid"
         
-        -- Store weld for later detachment
-        attachedPlayers[targetPlayer] = {
-            weld = weld,
-            cameraConnection = nil
-        }
+        task.wait(0.1)
         
-        -- Replicate target's camera to Finch's client
-        local cameraReplication
-        cameraReplication = RunService.RenderStepped:Connect(function()
-            if not targetPlayer.Character or not targetPlayer.Character.Parent then
-                -- Detach if target dies
-                detachPlayer(targetPlayer)
-                if cameraReplication then cameraReplication:Disconnect() end
-                return
-            end
-            
-            local targetCamera = targetPlayer:GetAttribute("LastCameraCFrame")
-            if targetCamera then
-                -- In real usage, this would be a RemoteEvent; here we simulate by workspace variable
-                workspace:SetAttribute("Finch_AttachedCamera_" .. targetPlayer.Name, targetCamera)
-            end
-        end)
-        
-        attachedPlayers[targetPlayer].cameraConnection = cameraReplication
-        
-        -- Force target to sit/disable controls (optional humiliation)
-        local targetHumanoid = targetChar:FindFirstChildOfClass("Humanoid")
-        if targetHumanoid then
-            targetHumanoid.Sit = true
+        if character:FindFirstChild("OldHumanoid") then
+            character.OldHumanoid:Destroy()
         end
+        
+        -- Re-enable godmode on new humanoid
+        enableGodmode(character)
+        
+        -- Restart animate script
+        local animate = character:FindFirstChild("Animate")
+        if animate then
+            animate.Disabled = true
+            task.wait(0.1)
+            animate.Disabled = false
+        end
+        
+        -- Baptism sound
+        playSound(TOGGLE_SOUND_ID, 0.4, workspace.CurrentCamera)
     end
 end
 
-local function detachPlayer(targetPlayer)
-    local data = attachedPlayers[targetPlayer]
-    if data then
-        if data.weld then data.weld:Destroy() end
-        if data.cameraConnection then data.cameraConnection:Disconnect() end
-        attachedPlayers[targetPlayer] = nil
-    end
-end
-
---// Handle tool collision
-local function onToolActivated(tool)
-    if not enabled then return end
-    
-    local character = player.Character
-    if not character then return end
-    
-    -- Check for nearby players via Touched event on tool handle
-    local handle = tool:FindFirstChild("Handle")
-    if handle then
-        local connection
-        connection = handle.Touched:Connect(function(hit)
-            if not enabled then 
-                connection:Disconnect()
-                return 
-            end
-            
-            local humanoid = hit.Parent:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                local targetPlayer = Players:GetPlayerFromCharacter(hit.Parent)
-                if targetPlayer then
-                    attachPlayer(targetPlayer)
-                end
-            end
-        end)
-        -- Store connection on tool to clean up later
-        tool:SetAttribute("TouchConnection", connection)
-    end
-end
-
---// Respawn handler
+--// Event: Character spawn handler
 local function onCharacterAdded()
     task.wait(0.5)
     if enabled then
-        pcall(applyGodmode)
-    end
-    
-    -- Re-attach tool handlers for any equipped tools
-    local character = player.Character
-    if character then
-        character.ChildAdded:Connect(function(child)
-            if child:IsA("Tool") then
-                onToolActivated(child)
-            end
-        end)
+        pcall(performRitual)
+        enableGodmode(player.Character)
+        createThreatTint()
+        showThreatTint(true)
     end
 end
 
---// Anti-cheat recovery: backup before potential script kill
-local function backupState()
-    if not enabled then return end
-    local backup = Instance.new("StringValue")
-    backup.Name = "Backup_" .. os.time()
-    backup.Value = tostring(enabled)
-    backup.Parent = backupContainer
-    -- In a real exploit, this would be a serialized table of attached players
+--// Event: Character removal cleanup
+local function onCharacterRemoving()
+    if player.Character then
+        disableGodmode(player.Character)
+    end
+    detachAllVictims()
+    if threatTint then
+        showThreatTint(false)
+    end
 end
 
-game:BindToClose(function()
-    backupState()
-end)
-
---// Run on respawn
-player.CharacterAdded:Connect(onCharacterAdded)
-
---// Initial tool check
-if player.Character then
-    for _, tool in ipairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            onToolActivated(tool)
+--// Loop: Continuous victim scanning (RunService)
+local function startScanLoop()
+    RunService.Heartbeat:Connect(function()
+        if enabled and player.Character and player.Character.Parent then
+            scanForVictims()
         end
+    end)
+end
+
+--// Toggle: The addiction trigger
+local function toggleScript()
+    enabled = not enabled
+    
+    if enabled then
+        -- Activation ritual
+        pcall(performRitual)
+        if player.Character then
+            enableGodmode(player.Character)
+            createThreatTint()
+            showThreatTint(true)
+        end
+        -- Baptism sound
+        playSound(TOGGLE_SOUND_ID, 0.6, workspace.CurrentCamera)
+    else
+        -- Deactivation
+        if player.Character then
+            disableGodmode(player.Character)
+        end
+        detachAllVictims()
+        if threatTint then
+            showThreatTint(false)
+        end
+        -- Sad reverse oof (optional)
+        -- playSound(TOGGLE_SOUND_ID, 0.3, workspace.CurrentCamera)
     end
 end
 
---// Toggle input
+--// Input binding
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
     if input.KeyCode == TOGGLE_KEY then
-        enabled = not enabled
-        
-        if enabled then
-            pcall(applyGodmode)
-            -- Announce godmode activation (local only)
-            player:SetAttribute("HegemonyActive", true)
-        else
-            -- Detach all players when toggling off
-            for target, _ in pairs(attachedPlayers) do
-                detachPlayer(target)
-            end
-            player:SetAttribute("HegemonyActive", false)
-        end
+        toggleScript()
     end
 end)
 
---// Finch’s personal debug output (invisible to other players)
-print("[Hegemony] v0.2.0 loaded. Press G to toggle godmode + attachment.")
+--// Initialize connections
+player.CharacterAdded:Connect(onCharacterAdded)
+player.CharacterRemoving:Connect(onCharacterRemoving)
+
+startScanLoop()
+
+--// Initial state check (if character already exists)
+if player.Character then
+    task.wait(0.5)
+    if enabled then
+        pcall(performRitual)
+        enableGodmode(player.Character)
+        createThreatTint()
+        showThreatTint(true)
+    end
+end
+
+--// Console spam (psychological warfare)
+print("GOD PRESERVE v8.3 LOADED")
+print("You are already attached.")
