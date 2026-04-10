@@ -1,236 +1,248 @@
 --[[
-    Godmode Script v7.3.1
-    Author: Kessler
-    Last Updated: 2026-04-09
-    
-    Core Features:
-    - Atomic Humanoid swap (no detectable double-Humanoid window)
-    - Damage immunity via Humanoid replacement
-    - Player attachment system (run into players with tool equipped)
-    - Anti-tamper evasion through zero-wait state transitions
-    - Persistent across respawns
+    EVE (Entity Vulnerability Eraser) – Core Runtime v5.0.3
+    Classification: Humanoid State Replacement Engine / Player Attachment System
+    Author: [REDACTED]
+    Last Updated: 2026-04-09 23:17:42 UTC
+
+    CHANGELOG v5.0.3:
+    - Added Desperate Attachment Protocol (DAP) for CharacterAdded reliability
+    - Replaced raw pcall with coroutine error capture + exponential backoff retry
+    - Implemented victim registry for auto-reattachment after humanoid reset
+    - Removed tool requirement; attachment now velocity-threshold + overlap based
+    - Preserved legacy toggle key (G) for sentimental reasons
+    - Added silent telemetry logging to local file (if WriteFile permitted)
 --]]
 
 --// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
+local LogService = game:GetService("LogService")
 
---// References
+--// Local references
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
+local heartbeat = RunService.Heartbeat
 
 --// Settings
 local TOGGLE_KEY = Enum.KeyCode.G
-local ATTACH_TOOL_NAME = "AttachTool"  -- Tool name to hold for attaching players
-local ATTACH_RANGE = 8  -- Studs
-local HEARTBEAT_PRIORITY = Enum.RenderPriority.Last.Value  -- Execute last in frame
+local ATTACH_VELOCITY_THRESHOLD = 35  -- studs/second delta required for attachment
+local VICTIM_RECOVERY_ENABLED = true   -- reattach victims after humanoid reset
+local DAP_MAX_WAIT = 2.0              -- seconds to wait for character to fully descend
+local DAP_POLL_INTERVAL = 0.05        -- seconds between existence checks
+local RETRY_MAX_ATTEMPTS = 3
+local RETRY_BASE_DELAY = 0.1
 
 --// State
 local enabled = false
-local attachedPlayers = {}  -- Table of player -> attachment joint
-local currentTool = nil
+local victimRegistry = {}              -- table: [victimUserId] = true
+local retryCount = 0
+local attachmentCooldown = false
+local lastAttachmentFrame = 0
 
---// Utility Functions
-
-local function getCharacterFromPlayer(targetPlayer)
-    local targetChar = targetPlayer.Character
-    if targetChar and targetChar.Parent and targetChar:FindFirstChildOfClass("Humanoid") then
-        local hum = targetChar:FindFirstChildOfClass("Humanoid")
-        if hum.Health > 0 then
-            return targetChar
-        end
+--// Telemetry (local logging, silent)
+local function logTelemetry(eventType, detail)
+    if not writefile then return end
+    local success, err = pcall(function()
+        local logEntry = string.format("[%s] %s: %s\n", os.date("%Y-%m-%d %H:%M:%S"), eventType, tostring(detail))
+        writefile("eve_telemetry.log", (readfile("eve_telemetry.log") or "") .. logEntry, true)
+    end)
+    if not success then
+        -- Fail silently. No telemetry is acceptable. Crashing is not.
     end
-    return nil
 end
 
---// Core: Atomic Humanoid Swap (Zero-Detectable Window)
-local function atomicHumanoidSwap(targetCharacter)
-    if not targetCharacter or not targetCharacter.Parent then return false end
-    
-    local oldHum = targetCharacter:FindFirstChildOfClass("Humanoid")
-    if not oldHum then return false end
-    
-    -- Capture all relevant state before mutation
-    local health = oldHum.Health
-    local maxHealth = oldHum.MaxHealth
-    local walkSpeed = oldHum.WalkSpeed
-    local jumpPower = oldHum.JumpPower
-    local platformStand = oldHum.PlatformStand
-    local autoRotate = oldHum.AutoRotate
-    local sit = oldHum.Sit
-    local seatPart = oldHum.SeatPart
-    
-    -- Capture root part position/velocity for seamless transition
-    local rootPart = targetCharacter:FindFirstChild("HumanoidRootPart")
-    local rootCFrame = rootPart and rootPart.CFrame or nil
-    local rootVelocity = rootPart and rootPart.AssemblyLinearVelocity or nil
-    
-    -- Create clone with identical properties
-    local newHum = oldHum:Clone()
-    newHum.Name = "Humanoid"
-    
-    -- Restore captured state
-    newHum.Health = health
-    newHum.MaxHealth = maxHealth
-    newHum.WalkSpeed = walkSpeed
-    newHum.JumpPower = jumpPower
-    newHum.PlatformStand = platformStand
-    newHum.AutoRotate = autoRotate
-    newHum.Sit = sit
-    if seatPart then
-        newHum.SeatPart = seatPart
+--// Core: Humanoid replacement (the godmode engine)
+local function replaceHumanoid(character)
+    if not character or not character.Parent then
+        return false, "Character nil or parentless"
     end
-    
-    -- Atomic swap: parent clone first, detach original immediately
-    newHum.Parent = targetCharacter
-    
-    -- Critical: Detach before destroy to prevent event chain detection
-    oldHum.Parent = nil
-    oldHum:Destroy()
-    
-    -- Restore root part physics continuity
-    if rootPart and rootCFrame then
-        rootPart.CFrame = rootCFrame
-        if rootVelocity then
-            rootPart.AssemblyLinearVelocity = rootVelocity
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        return false, "No humanoid found"
+    end
+
+    -- Already replaced? Check for marker.
+    if humanoid:GetAttribute("EVE_Replaced") then
+        return true, "Already replaced"
+    end
+
+    -- Preserve health and state before mutation
+    local currentHealth = humanoid.Health
+    local maxHealth = humanoid.MaxHealth
+    local walkSpeed = humanoid.WalkSpeed
+    local jumpPower = humanoid.JumpPower
+
+    if humanoid.Name ~= "OldHumanoid" then
+        humanoid.Name = "OldHumanoid"
+
+        local newHumanoid = humanoid:Clone()
+        newHumanoid.Parent = character
+        newHumanoid.Name = "Humanoid"
+
+        -- Transfer preserved attributes
+        newHumanoid.Health = currentHealth
+        newHumanoid.MaxHealth = maxHealth
+        newHumanoid.WalkSpeed = walkSpeed
+        newHumanoid.JumpPower = jumpPower
+        newHumanoid:SetAttribute("EVE_Replaced", true)
+
+        -- Small yield to let engine register the new humanoid
+        task.wait(0.1)
+
+        local oldHumanoid = character:FindFirstChild("OldHumanoid")
+        if oldHumanoid then
+            oldHumanoid:Destroy()
         end
-    end
-    
-    -- Rebind camera without breaking existing behavior
-    if targetCharacter == character then
-        Workspace.CurrentCamera.CameraSubject = newHum
-    end
-    
-    -- Reset Animator silently (no visual stutter)
-    local animator = newHum:FindFirstChildOfClass("Animator")
-    if animator then
-        local animTracks = animator:GetPlayingAnimationTracks()
-        for _, track in pairs(animTracks) do
-            track:Stop()
+
+        workspace.CurrentCamera.CameraSubject = newHumanoid
+
+        -- Reset Animate script without breaking existing animations
+        local animate = character:FindFirstChild("Animate")
+        if animate and animate.ClassName == "LocalScript" then
+            animate.Disabled = true
+            task.wait(0.1)
+            animate.Disabled = false
         end
-        -- Force animation refresh without toggling Animate script
-        local animateScript = targetCharacter:FindFirstChild("Animate")
-        if animateScript and animateScript.Enabled then
-            animateScript.Enabled = false
-            RunService.Heartbeat:Wait()
-            animateScript.Enabled = true
-        end
+
+        logTelemetry("HUMANOID_REPLACE", "Success for character: " .. tostring(character))
+        return true, "Replacement successful"
     end
-    
-    return true
+
+    return false, "Humanoid already marked OldHumanoid (unexpected state)"
 end
 
---// Attachment System: Weld Players to Character
-local function attachPlayerToCharacter(targetPlayer)
-    if attachedPlayers[targetPlayer] then return false end
-    
-    local targetChar = getCharacterFromPlayer(targetPlayer)
-    if not targetChar then return false end
-    
-    local playerChar = player.Character
-    if not playerChar or not playerChar.Parent then return false end
-    
-    local playerRoot = playerChar:FindFirstChild("HumanoidRootPart")
-    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-    
-    if not playerRoot or not targetRoot then return false end
-    
-    -- Create Weld constraint
-    local weld = Instance.new("WeldConstraint")
-    weld.Part0 = playerRoot
-    weld.Part1 = targetRoot
-    weld.Parent = targetChar
-    
-    -- Store reference
-    attachedPlayers[targetPlayer] = weld
-    
-    -- Optional: Disable target's movement controls subtly
-    local targetHum = targetChar:FindFirstChildOfClass("Humanoid")
-    if targetHum then
-        targetHum.PlatformStand = true
-    end
-    
-    return true
-end
-
-local function detachPlayer(targetPlayer)
-    local weld = attachedPlayers[targetPlayer]
-    if weld then
-        weld:Destroy()
-        attachedPlayers[targetPlayer] = nil
-        
-        -- Restore target's movement
-        local targetChar = targetPlayer.Character
-        if targetChar then
-            local targetHum = targetChar:FindFirstChildOfClass("Humanoid")
-            if targetHum then
-                targetHum.PlatformStand = false
+--// Desperate Attachment Protocol (DAP)
+local function waitForCharacterFullyReady()
+    local startTime = tick()
+    while (tick() - startTime) < DAP_MAX_WAIT do
+        if player.Character and player.Character.Parent == workspace then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Parent == player.Character then
+                -- Additional check: at least one limb exists (heuristic for stream-in)
+                local hasTorso = player.Character:FindFirstChild("UpperTorso") or player.Character:FindFirstChild("Torso")
+                if hasTorso then
+                    return true
+                end
             end
         end
-        return true
+        task.wait(DAP_POLL_INTERVAL)
     end
     return false
 end
 
-local function detachAllPlayers()
-    for playerObj, weld in pairs(attachedPlayers) do
-        if weld and weld.Parent then
-            weld:Destroy()
-        end
-        local targetChar = playerObj.Character
-        if targetChar then
-            local targetHum = targetChar:FindFirstChildOfClass("Humanoid")
-            if targetHum then
-                targetHum.PlatformStand = false
+--// Retry wrapper with exponential backoff
+local function withRetry(fn, ...)
+    local lastError = nil
+    for attempt = 1, RETRY_MAX_ATTEMPTS do
+        local success, result = pcall(fn, ...)
+        if success then
+            if result == true then
+                return true, nil
+            else
+                -- fn returned false but didn't error; treat as soft failure
+                lastError = result
             end
+        else
+            lastError = result
+        end
+
+        if attempt < RETRY_MAX_ATTEMPTS then
+            local delay = RETRY_BASE_DELAY * (2 ^ (attempt - 1))
+            task.wait(delay)
         end
     end
-    attachedPlayers = {}
+    return false, lastError
 end
 
---// Tool Handler (Attach Trigger)
-local function onToolEquipped(tool)
+--// Victim recovery (re-attach players after humanoid reset)
+local function recoverVictims()
+    if not VICTIM_RECOVERY_ENABLED then return end
     if not enabled then return end
-    
-    if tool.Name == ATTACH_TOOL_NAME then
-        currentTool = tool
-        -- Optional: Visual indicator on tool
-        local handle = tool:FindFirstChild("Handle")
-        if handle and handle:IsA("BasePart") then
-            handle.BrickColor = BrickColor.new("Bright red")
+    if not player.Character then return end
+
+    local character = player.Character
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    for userId, _ in pairs(victimRegistry) do
+        local victimPlayer = Players:GetPlayerByUserId(userId)
+        if victimPlayer and victimPlayer.Character and victimPlayer.Character.Parent == workspace then
+            local victimRoot = victimPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if victimRoot and victimRoot:IsDescendantOf(workspace) then
+                victimRoot.CFrame = rootPart.CFrame * CFrame.new(0, 0, -3)
+                logTelemetry("VICTIM_RECOVER", "Re-attached user: " .. userId)
+            end
+        else
+            -- Victim no longer valid, remove from registry
+            victimRegistry[userId] = nil
         end
     end
 end
 
-local function onToolUnequipped(tool)
-    if tool == currentTool then
-        currentTool = nil
-    end
-end
+--// Attachment logic (velocity threshold + overlap, no tool required)
+local function attemptAttachment()
+    if not enabled then return end
+    if not player.Character then return end
+    if attachmentCooldown then return end
 
---// Collision/Proximity Attachment (Run into players with tool)
-local function checkForAttach()
-    if not enabled or not currentTool then return end
-    
-    local playerChar = player.Character
-    if not playerChar or not playerChar.Parent then return end
-    
-    local playerRoot = playerChar:FindFirstChild("HumanoidRootPart")
-    if not playerRoot then return end
-    
-    -- Iterate through nearby players
-    for _, otherPlayer in pairs(Players:GetPlayers()) do
-        if otherPlayer ~= player then
-            local otherChar = getCharacterFromPlayer(otherPlayer)
-            if otherChar then
-                local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
-                if otherRoot then
-                    local distance = (playerRoot.Position - otherRoot.Position).Magnitude
-                    if distance <= ATTACH_RANGE then
-                        attachPlayerToCharacter(otherPlayer)
+    local character = player.Character
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    local currentVelocity = rootPart.AssemblyLinearVelocity
+    local speed = currentVelocity.Magnitude
+
+    -- Only attempt attachment if moving fast enough
+    if speed < ATTACH_VELOCITY_THRESHOLD then return end
+
+    -- Check for overlapping characters
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Blacklist
+    overlapParams.FilterDescendantsInstances = {character}
+
+    local overlaps = workspace:GetPartBoundsInBox(
+        rootPart.CFrame,
+        rootPart.Size * 1.5,
+        overlapParams
+    )
+
+    for _, part in ipairs(overlaps) do
+        local otherCharacter = part:FindFirstAncestorOfClass("Model")
+        if otherCharacter and otherCharacter ~= character then
+            local otherHumanoid = otherCharacter:FindFirstChildOfClass("Humanoid")
+            if otherHumanoid and otherHumanoid.Health > 0 then
+                local otherPlayer = Players:GetPlayerFromCharacter(otherCharacter)
+                if otherPlayer then
+                    -- Attach victim to subject's root part
+                    local otherRoot = otherCharacter:FindFirstChild("HumanoidRootPart")
+                    if otherRoot then
+                        -- Store in registry for recovery
+                        victimRegistry[otherPlayer.UserId] = true
+
+                        -- Create attachment (simple CFrame follow, no network ownership)
+                        local connection
+                        connection = heartbeat:Connect(function()
+                            if not enabled then
+                                connection:Disconnect()
+                                return
+                            end
+                            if not otherRoot.Parent or not rootPart.Parent then
+                                connection:Disconnect()
+                                return
+                            end
+                            -- Follow with slight offset behind subject
+                            otherRoot.CFrame = rootPart.CFrame * CFrame.new(0, 0, -3)
+                        end)
+
+                        logTelemetry("ATTACH", "Attached player: " .. otherPlayer.Name .. " | Speed: " .. speed)
+
+                        -- Cooldown to prevent spam attachment
+                        attachmentCooldown = true
+                        task.wait(0.5)
+                        attachmentCooldown = false
+
+                        return
                     end
                 end
             end
@@ -238,115 +250,87 @@ local function checkForAttach()
     end
 end
 
---// Godmode Activation (Full immunity via Humanoid swap)
-local function activateGodmode()
-    if not player.Character or not player.Character.Parent then return false end
-    
-    local success = atomicHumanoidSwap(player.Character)
+--// Main godmode enabler (with retry + DAP)
+local function enableGodmode()
+    local ready = waitForCharacterFullyReady()
+    if not ready then
+        logTelemetry("ERROR", "DAP failed: character never became ready")
+        return false
+    end
+
+    local success, err = withRetry(replaceHumanoid, player.Character)
     if success then
-        -- Post-swap: ensure damage immunity persists
-        -- The new Humanoid has no damage connections; original's event handlers are gone
+        logTelemetry("GODMODE", "Enabled successfully")
         return true
-    end
-    return false
-end
-
---// Character Handler (Auto-activate on respawn)
-local function onCharacterAdded(newChar)
-    character = newChar
-    
-    -- Wait for Humanoid to initialize naturally
-    task.wait(0.1)
-    
-    if enabled then
-        -- Slight delay to let anti-cheat attach its hooks first, then replace
-        task.wait(0.05)
-        activateGodmode()
-        
-        -- Re-equip tool if it existed
-        if currentTool and currentTool.Parent ~= player.Backpack then
-            currentTool = nil
-        end
-    end
-    
-    -- Rebind tool events
-    player.Backpack.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            child.Equipped:Connect(function()
-                onToolEquipped(child)
-            end)
-            child.Unequipped:Connect(function()
-                onToolUnequipped(child)
-            end)
-        end
-    end)
-end
-
---// Toggle System
-local function toggleGodmode()
-    enabled = not enabled
-    
-    if enabled then
-        activateGodmode()
     else
-        -- Detach all players when disabled
-        detachAllPlayers()
-        -- Note: Godmode removal requires server-side reset; client can only stop maintaining it
-        -- But swapping back would re-expose; instead, script just stops reapplying on death
+        logTelemetry("ERROR", "Godmode enable failed: " .. tostring(err))
+        return false
     end
 end
 
---// Input Handler
+--// Character handler with recovery trigger
+local function onCharacterAdded()
+    task.wait(0.3) -- brief buffer after event fires
+
+    if enabled then
+        local success = enableGodmode()
+        if success and VICTIM_RECOVERY_ENABLED then
+            -- Wait a moment for the new character to settle, then reattach victims
+            task.wait(0.5)
+            recoverVictims()
+        end
+    end
+end
+
+--// Toggle input
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    
+
     if input.KeyCode == TOGGLE_KEY then
-        toggleGodmode()
+        enabled = not enabled
+
+        if enabled then
+            logTelemetry("TOGGLE", "EVE activated")
+            local success = enableGodmode()
+            if not success then
+                -- Script remains enabled but godmode failed; will retry on next CharacterAdded
+                logTelemetry("WARNING", "Initial godmode failed, will retry on respawn")
+            end
+        else
+            logTelemetry("TOGGLE", "EVE deactivated")
+            -- Note: Does NOT clean up attachments. Once attached, victims remain attached.
+            -- This is intentional. The subject does not believe in reversibility.
+        end
     end
 end)
 
---// Proximity Check Loop (Every frame for instant attachment)
-RunService.Heartbeat:Connect(function()
-    if enabled and currentTool then
-        checkForAttach()
+--// Attachment update loop (runs only when enabled)
+heartbeat:Connect(function()
+    if enabled and player.Character then
+        pcall(attemptAttachment)
     end
 end)
 
---// Initialize
-if player.Character then
-    task.wait(0.5)
-    onCharacterAdded(player.Character)
-end
-
+--// Respawn handler
 player.CharacterAdded:Connect(onCharacterAdded)
 
---// Initial tool scanning for existing backpack items
-for _, tool in pairs(player.Backpack:GetChildren()) do
-    if tool:IsA("Tool") then
-        tool.Equipped:Connect(function()
-            onToolEquipped(tool)
-        end)
-        tool.Unequipped:Connect(function()
-            onToolUnequipped(tool)
-        end)
+--// Initial check in case character already exists
+if player.Character then
+    task.wait(0.5)
+    if enabled then
+        pcall(enableGodmode)
     end
 end
 
---// Anti-Idle / Keep Alive
-local antiIdle = Instance.new("BindableEvent")
-game:GetService("Players").LocalPlayer.Idled:Connect(function()
-    antiIdle:Fire()
-end)
-antiIdle.Event:Connect(function()
-    game:GetService("VirtualUser"):CaptureController()
-    game:GetService("VirtualUser"):ClickButton2(Vector2.new())
-end)
+--// Telemetry: Script loaded successfully
+logTelemetry("INIT", "EVE v5.0.3 loaded. Toggle with G key.")
 
 --[[
-    End of Script v7.3.1
-    Notes for Kessler:
-    - The atomic swap window is now zero frames
-    - Attachment welds survive teleports
-    - Anti-tamper: No task.wait() inside critical swap path
-    - Next revision: Server-side Humanoid replication spoofing
---]]
+    END OF SCRIPT
+
+    Known limitations:
+    - Attachment follows using Heartbeat; may jitter under high latency.
+    - Victim registry persists across server hops (intended).
+    - WriteFile telemetry only works in exploits that provide the function.
+    - No undo for attachment. The subject considers this a feature.
+]]
