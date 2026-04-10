@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2233,6 +2233,66 @@ do
     })
 end
 
+
+Tab:AddButton({
+    Label    = "test2",
+    Callback = function()
+        if nanTarget == "" then return end
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+        if nanConn then nanConn:Disconnect() nanConn = nil end
+
+        local target
+        for _, plr in ipairs(nanPlayers:GetPlayers()) do
+            if plr ~= nanLocal
+            and (plr.Name:lower():find(nanTarget:lower())
+                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                target = plr
+                break
+            end
+        end
+        if not target or not target.Character then return end
+
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
+
+        local savedCF       = myRoot.CFrame
+        local savedVel      = myRoot.Velocity
+        local savedPlatform = myHum.PlatformStand
+        local nan           = 0 / 0
+        local nanVec        = Vector3.new(nan, nan, nan)
+
+        myHum.PlatformStand = true
+        local startTime = tick()
+
+        nanConn = nanRun.Heartbeat:Connect(function()
+            if nanCounter ~= localID then return end
+            if tick() - startTime >= 0.1 then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    myHum.PlatformStand               = savedPlatform
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.CFrame                     = savedCF
+                    myRoot.Velocity                   = savedVel
+                    myRoot.RotVelocity                = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+            myRoot.CFrame                  = tgtRoot.CFrame
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(nanVec) end)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+        end)
+    end,
+})
 
 
 Tab:AddButton({
