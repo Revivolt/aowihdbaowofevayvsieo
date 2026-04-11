@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2241,81 +2241,64 @@ Tab:AddButton({
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
-        local jumpConn = nil
-        local function rebindJump(humanoid)
-            if jumpConn then jumpConn:Disconnect() jumpConn = nil end
-            humanoid.JumpRequest = nil
-            -- Disable auto jump
-            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-            jumpConn = UserInputService.JumpRequest:Connect(function()
-                if humanoid and humanoid.Parent then
-                    local state = humanoid:GetState()
-                    if state == Enum.HumanoidStateType.Running
-                    or state == Enum.HumanoidStateType.RunningNoPhysics
-                    or state == Enum.HumanoidStateType.Landed then
-                        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                    end
-                end
-            end)
-        end
-
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
 
-        local savedCF           = myRoot.CFrame
-        local savedVel          = myRoot.Velocity
-        local savedPlatform     = myHum.PlatformStand
-        local savedJumpPower    = myHum.JumpPower
-        local savedJumpHeight   = myHum.JumpHeight
-        local savedUseJumpPower = myHum.UseJumpPower
-        local nan               = 0 / 0
-        local nanVec            = Vector3.new(nan, nan, nan)
+        local savedCF       = myRoot.CFrame
+        local savedVel      = myRoot.Velocity
+        local savedPlatform = myHum.PlatformStand
+        local nan           = 0 / 0
+        local nanVec        = Vector3.new(nan, nan, nan)
+        local midFired      = false
+
+        local function doHumanoidSwap()
+            if not myChar or not myChar.Parent then return end
+            if myHum.Name ~= "OldHumanoid" then
+                local savedJumpPower    = myHum.JumpPower
+                local savedJumpHeight   = myHum.JumpHeight
+                local savedUseJumpPower = myHum.UseJumpPower
+
+                myHum.Name = "OldHumanoid"
+                local newHumanoid = myHum:Clone()
+                newHumanoid.Parent = myChar
+                newHumanoid.Name   = "Humanoid"
+
+                newHumanoid.UseJumpPower = savedUseJumpPower
+                if savedUseJumpPower then
+                    newHumanoid.JumpPower  = savedJumpPower
+                else
+                    newHumanoid.JumpHeight = savedJumpHeight
+                end
+
+                task.wait(0.1)
+                if myChar:FindFirstChild("OldHumanoid") then
+                    myChar.OldHumanoid:Destroy()
+                end
+
+                workspace.CurrentCamera.CameraSubject = newHumanoid
+
+                local animate = myChar:FindFirstChild("Animate")
+                if animate then
+                    animate.Disabled = true
+                    task.wait(0.1)
+                    animate.Disabled = false
+                end
+            end
+        end
 
         myHum.PlatformStand = true
-        local startTime     = tick()
-        local didRename     = false
+        local startTime = tick()
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
 
             local elapsed = tick() - startTime
 
-            if not didRename and elapsed >= 0.75 then
-                didRename = true
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    if not myChar or not myChar.Parent then return end
-
-                    myHum.Name = "OldHumanoid"
-                    local newHum = myHum:Clone()
-                    newHum.Parent = myChar
-                    newHum.Name = "Humanoid"
-
-                    newHum.UseJumpPower = savedUseJumpPower
-                    if savedUseJumpPower then
-                        newHum.JumpPower = savedJumpPower
-                    else
-                        newHum.JumpHeight = savedJumpHeight
-                    end
-
-                    task.wait(0.1)
-                    if myChar:FindFirstChild("OldHumanoid") then
-                        myChar.OldHumanoid:Destroy()
-                    end
-
-                    workspace.CurrentCamera.CameraSubject = newHum
-
-                    local animate = myChar:FindFirstChild("Animate")
-                    if animate then
-                        animate.Disabled = true
-                        task.wait(0.1)
-                        animate.Disabled = false
-                    end
-
-                    rebindJump(newHum)
-                    myHum = newHum
-                end)
+            -- Fire humanoid swap at the midpoint
+            if not midFired and elapsed >= 0.75 then
+                midFired = true
+                task.spawn(doHumanoidSwap)
             end
 
             if elapsed >= 1.5 then
@@ -2323,7 +2306,8 @@ Tab:AddButton({
                 nanConn = nil
                 task.defer(function()
                     if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
+                    local freshHum = myChar:FindFirstChildOfClass("Humanoid")
+                    if freshHum then freshHum.PlatformStand = savedPlatform end
                     myRoot.AssemblyLinearVelocity     = Vector3.zero
                     myRoot.AssemblyAngularVelocity    = Vector3.zero
                     myRoot.CFrame                     = savedCF
