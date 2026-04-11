@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -214,7 +214,7 @@ do
     local lastChar  = nil
 
     local cpUp        =  2.5
-    local cpForward   =  -0.2
+    local cpForward   =  -0.5
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
@@ -2241,7 +2241,6 @@ Tab:AddButton({
         nanCounter = nanCounter + 1
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
-
         local target
         for _, plr in ipairs(nanPlayers:GetPlayers()) do
             if plr ~= nanLocal
@@ -2252,25 +2251,43 @@ Tab:AddButton({
             end
         end
         if not target or not target.Character then return end
-
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
         local tgtRoot = target.Character:FindFirstChild("HumanoidRootPart")
         if not tgtRoot then return end
-
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
-        local nan           = -9e9 / -9e9
+        local nan           = 0 / 0
         local nanVec        = Vector3.new(nan, nan, nan)
-
         myHum.PlatformStand = true
         local startTime = tick()
+        local activeEffect = true  -- controls the NaN effect phase
 
         nanConn = nanRun.Heartbeat:Connect(function()
             if nanCounter ~= localID then return end
-            if tick() - startTime >= 1.5 then
+
+            local elapsed = tick() - startTime
+
+            -- Phase 1 (0 – 0.4s): apply NaN teleport effect
+            if activeEffect and elapsed < 0.4 then
+                myRoot.CFrame                  = tgtRoot.CFrame
+                myRoot.AssemblyLinearVelocity  = nanVec
+                myRoot.AssemblyAngularVelocity = nanVec
+                pcall(function() myHum:Move(nanVec) end)
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
+
+            -- At 0.4s: stop the active effect
+            elseif activeEffect and elapsed >= 0.4 then
+                activeEffect = false
+
+            -- Phase 2 (0.4s – 1.5s): idle, just hold until cleanup time
+            elseif not activeEffect and elapsed < 1.5 then
+                -- waiting for cleanup window
+
+            -- At 1.5s: full cleanup and disconnect
+            elseif not activeEffect and elapsed >= 1.5 then
                 nanConn:Disconnect()
                 nanConn = nil
                 task.defer(function()
@@ -2283,13 +2300,7 @@ Tab:AddButton({
                     myRoot.RotVelocity                = Vector3.zero
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                 end)
-                return
             end
-            myRoot.CFrame                  = tgtRoot.CFrame
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
         end)
     end,
 })
