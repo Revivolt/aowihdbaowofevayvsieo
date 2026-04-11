@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2241,53 +2241,20 @@ Tab:AddButton({
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
-        -- Jump connections
-        local jumpConnection    = nil
-        local jumpEndConnection = nil
-        local landedConnection  = nil
-        local isJumping         = false
-
+        local jumpConn = nil
         local function rebindJump(humanoid)
-            if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
-            if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
-            if landedConnection then landedConnection:Disconnect() landedConnection = nil end
-
-            landedConnection = humanoid.StateChanged:Connect(function(_, newState)
-                if newState == Enum.HumanoidStateType.Landed
-                or newState == Enum.HumanoidStateType.Running
-                or newState == Enum.HumanoidStateType.RunningNoPhysics then
-                    isJumping = false
-                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                        local state = humanoid:GetState()
-                        if state == Enum.HumanoidStateType.Landed
-                        or state == Enum.HumanoidStateType.Running
-                        or state == Enum.HumanoidStateType.RunningNoPhysics then
-                            isJumping = true
-                            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                        end
+            if jumpConn then jumpConn:Disconnect() jumpConn = nil end
+            humanoid.JumpRequest = nil
+            -- Disable auto jump
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            jumpConn = UserInputService.JumpRequest:Connect(function()
+                if humanoid and humanoid.Parent then
+                    local state = humanoid:GetState()
+                    if state == Enum.HumanoidStateType.Running
+                    or state == Enum.HumanoidStateType.RunningNoPhysics
+                    or state == Enum.HumanoidStateType.Landed then
+                        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
                     end
-                end
-            end)
-
-            jumpConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                if gameProcessed then return end
-                if input.KeyCode == Enum.KeyCode.Space then
-                    if isJumping then return end
-                    if humanoid and humanoid.Parent then
-                        local state = humanoid:GetState()
-                        if state == Enum.HumanoidStateType.Running
-                        or state == Enum.HumanoidStateType.RunningNoPhysics
-                        or state == Enum.HumanoidStateType.Landed then
-                            isJumping = true
-                            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                        end
-                    end
-                end
-            end)
-
-            jumpEndConnection = UserInputService.InputEnded:Connect(function(input)
-                if input.KeyCode == Enum.KeyCode.Space then
-                    isJumping = false
                 end
             end)
         end
