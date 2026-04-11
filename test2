@@ -10,35 +10,23 @@ local TOGGLE_KEY = Enum.KeyCode.G
 --// State
 local enabled = false
 
---// test Function
+--// Reset Function (no longer replaces the Humanoid)
 local function testfunc()
     if not player.Character or not player.Character.Parent then return end
-
     local character = player.Character
     local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
 
-    if humanoid and humanoid.Name ~= "OldHumanoid" then
-        humanoid.Name = "OldHumanoid"
-
-        local newHumanoid = humanoid:Clone()
-        newHumanoid.Parent = character
-        newHumanoid.Name = "Humanoid"
-
+    -- Safely restart the Animate script without touching the Humanoid
+    local animate = character:FindFirstChild("Animate")
+    if animate then
+        animate.Disabled = true
         task.wait(0.1)
-
-        if character:FindFirstChild("OldHumanoid") then
-            character.OldHumanoid:Destroy()
-        end
-
-        workspace.CurrentCamera.CameraSubject = newHumanoid
-
-        local animate = character:FindFirstChild("Animate")
-        if animate then
-            animate.Disabled = true
-            task.wait(0.1)
-            animate.Disabled = false
-        end
+        animate.Disabled = false
     end
+
+    -- Re-point the camera (safe, non-destructive)
+    workspace.CurrentCamera.CameraSubject = humanoid
 end
 
 --// Character handler
@@ -49,17 +37,13 @@ local function onCharacterAdded()
     end
 end
 
--- Run on respawn
 player.CharacterAdded:Connect(onCharacterAdded)
 
 --// Toggle input
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-
     if input.KeyCode == TOGGLE_KEY then
         enabled = not enabled
-
-
         if enabled then
             pcall(testfunc)
         end
