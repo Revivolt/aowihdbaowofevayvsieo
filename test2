@@ -1,4 +1,4 @@
---// a
+--// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
@@ -10,12 +10,33 @@ local TOGGLE_KEY = Enum.KeyCode.G
 local enabled = false
 local jumpConnection = nil
 local jumpEndConnection = nil
+local landedConnection = nil
 local isJumping = false
 
 --// Rebind jump input manually
 local function rebindJump(humanoid)
     if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
     if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
+    if landedConnection then landedConnection:Disconnect() landedConnection = nil end
+
+    -- Reset jump lock when character lands
+    landedConnection = humanoid.StateChanged:Connect(function(_, newState)
+        if newState == Enum.HumanoidStateType.Landed
+        or newState == Enum.HumanoidStateType.Running
+        or newState == Enum.HumanoidStateType.RunningNoPhysics then
+            isJumping = false
+            -- If Space is still held when landing, jump again immediately
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                local state = humanoid:GetState()
+                if state == Enum.HumanoidStateType.Landed
+                or state == Enum.HumanoidStateType.Running
+                or state == Enum.HumanoidStateType.RunningNoPhysics then
+                    isJumping = true
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end
+    end)
 
     jumpConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -23,7 +44,6 @@ local function rebindJump(humanoid)
             if isJumping then return end
             if humanoid and humanoid.Parent then
                 local state = humanoid:GetState()
-                -- Only jump if grounded
                 if state == Enum.HumanoidStateType.Running
                 or state == Enum.HumanoidStateType.RunningNoPhysics
                 or state == Enum.HumanoidStateType.Landed then
@@ -34,7 +54,7 @@ local function rebindJump(humanoid)
         end
     end)
 
-    -- Reset jump lock when Space is released
+    -- Reset jump lock on Space release as a fallback
     jumpEndConnection = UserInputService.InputEnded:Connect(function(input)
         if input.KeyCode == Enum.KeyCode.Space then
             isJumping = false
@@ -86,6 +106,7 @@ end
 local function onCharacterAdded()
     if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
     if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
+    if landedConnection then landedConnection:Disconnect() landedConnection = nil end
     isJumping = false
     task.wait(0.5)
     if enabled then
