@@ -1,289 +1,67 @@
---[[
-    NULLBODY KERNEL v48.0.0
-    ------------------------
-    Core functions:
-    1. Damage immunity via infinite health heartbeat (no Humanoid rename race condition)
-    2. Player attachment via AlignPosition + network ownership override
-    3. Respawn persistence without delay exploits
-    4. Invisible execution – no observable Humanoid mutations
-    
-    Toggle: G (default)
-    Magnet toggle (while godmode enabled): M
---]]
-
 --// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
---// Local references
 local player = Players.LocalPlayer
-local character = nil
-local humanoid = nil
+
+--// Settings
+local TOGGLE_KEY = Enum.KeyCode.G
 
 --// State
-local state = {
-    godmode = false,
-    magnetMode = false,
-    attachedPlayers = {},     -- [Player] = AlignPosition
-    heartbeatConnection = nil,
-    originalHealth = nil
-}
+local enabled = false
 
---// Constants
-local TOGGLE_KEY = Enum.KeyCode.G
-local MAGNET_TOGGLE_KEY = Enum.KeyCode.M
-local ATTACHMENT_RANGE = 12  -- studs
-local BREAK_FORCE = 1e8       -- effectively unbreakable
+--// test Function
+local function testfunc()
+    if not player.Character or not player.Character.Parent then return end
 
---// Helper: Clean up attachments for a specific player
-local function detachPlayer(targetPlayer)
-    local att = state.attachedPlayers[targetPlayer]
-    if att then
-        att:Destroy()
-        state.attachedPlayers[targetPlayer] = nil
-    end
-end
+    local character = player.Character
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
 
---// Helper: Detach all players
-local function detachAll()
-    for targetPlayer, att in pairs(state.attachedPlayers) do
-        if att and att.Parent then
-            att:Destroy()
+    if humanoid and humanoid.Name ~= "OldHumanoid" then
+        humanoid.Name = "OldHumanoid"
+
+        local newHumanoid = humanoid:Clone()
+        newHumanoid.Parent = character
+        newHumanoid.Name = "Humanoid"
+
+        task.wait(0.1)
+
+        if character:FindFirstChild("OldHumanoid") then
+            character.OldHumanoid:Destroy()
         end
-    end
-    state.attachedPlayers = {}
-end
 
---// Core: Apply infinite health heartbeat
-local function applyGodmode()
-    if not character or not humanoid then return end
-    
-    -- Store original health only once
-    if state.originalHealth == nil then
-        state.originalHealth = humanoid.Health
-    end
-    
-    -- Kill any existing heartbeat to prevent duplicates
-    if state.heartbeatConnection then
-        state.heartbeatConnection:Disconnect()
-        state.heartbeatConnection = nil
-    end
-    
-    -- Heartbeat: set health to max every frame before damage can register
-    state.heartbeatConnection = RunService.Heartbeat:Connect(function()
-        if not state.godmode then return end
-        if not humanoid or humanoid.Parent ~= character then return end
-        
-        -- Infinite health
-        local maxHealth = humanoid.MaxHealth
-        if humanoid.Health < maxHealth then
-            humanoid.Health = maxHealth
-        end
-        
-        -- Prevent death entirely (bypass BreakJointsOnDeath)
-        if humanoid.Health <= 0 then
-            humanoid.Health = maxHealth
-        end
-    end)
-end
+        workspace.CurrentCamera.CameraSubject = newHumanoid
 
---// Core: Remove godmode heartbeat
-local function removeGodmode()
-    if state.heartbeatConnection then
-        state.heartbeatConnection:Disconnect()
-        state.heartbeatConnection = nil
-    end
-    
-    -- Restore original health if we stored it and humanoid still exists
-    if humanoid and state.originalHealth then
-        humanoid.Health = math.min(state.originalHealth, humanoid.MaxHealth)
-    end
-end
-
---// Attachment: Attach target player to local character using AlignPosition
-local function attachPlayer(targetPlayer)
-    if not state.godmode then
-        warn("[Nullbody] Cannot attach: godmode disabled")
-        return false
-    end
-    
-    if not character or not character.PrimaryPart then
-        warn("[Nullbody] No character root part")
-        return false
-    end
-    
-    local targetChar = targetPlayer.Character
-    if not targetChar or not targetChar.PrimaryPart then
-        return false
-    end
-    
-    -- Remove existing attachment if any
-    detachPlayer(targetPlayer)
-    
-    -- Create attachments on both characters
-    local localAtt = Instance.new("Attachment")
-    localAtt.Parent = character.PrimaryPart
-    localAtt.Position = Vector3.new(0, 0, 0)
-    
-    local targetAtt = Instance.new("Attachment")
-    targetAtt.Parent = targetChar.PrimaryPart
-    targetAtt.Position = Vector3.new(0, 0, 0)
-    
-    -- AlignPosition: maintains relative position with force
-    local alignPos = Instance.new("AlignPosition")
-    alignPos.Parent = character.PrimaryPart
-    alignPos.Attachment0 = localAtt
-    alignPos.Attachment1 = targetAtt
-    alignPos.RigidityEnabled = true
-    alignPos.MaxForce = BREAK_FORCE
-    alignPos.ReactionForceEnabled = false
-    alignPos.Responsiveness = 200  -- Very responsive attachment
-    
-    -- Store reference
-    state.attachedPlayers[targetPlayer] = alignPos
-    
-    return true
-end
-
---// Core: Toggle magnet mode (attaches all players within range)
-local function updateMagnetMode()
-    if not state.godmode then
-        if state.magnetMode then
-            state.magnetMode = false
-            detachAll()
-        end
-        return
-    end
-    
-    if not state.magnetMode then
-        detachAll()
-        return
-    end
-    
-    -- Magnet mode active: scan and attach all nearby players
-    if not character or not character.PrimaryPart then return end
-    
-    local rootPos = character.PrimaryPart.Position
-    local allPlayers = Players:GetPlayers()
-    
-    for _, otherPlayer in ipairs(allPlayers) do
-        if otherPlayer ~= player then
-            local otherChar = otherPlayer.Character
-            if otherChar and otherChar.PrimaryPart then
-                local dist = (otherChar.PrimaryPart.Position - rootPos).Magnitude
-                if dist <= ATTACHMENT_RANGE then
-                    if not state.attachedPlayers[otherPlayer] then
-                        attachPlayer(otherPlayer)
-                    end
-                else
-                    -- Out of range, detach
-                    detachPlayer(otherPlayer)
-                end
-            end
+        local animate = character:FindFirstChild("Animate")
+        if animate then
+            animate.Disabled = true
+            task.wait(0.1)
+            animate.Disabled = false
         end
     end
 end
 
---// Core: Apply godmode to current character
-local function enableGodmode()
-    if state.godmode then return end
-    
-    state.godmode = true
-    character = player.Character
-    humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    
-    if not character or not humanoid then
-        state.godmode = false
-        return
-    end
-    
-    -- Prevent natural respawn loops
-    humanoid.BreakJointsOnDeath = false
-    
-    applyGodmode()
-    
-    -- If magnet mode was pending, re-enable after godmode
-    if state.magnetMode then
-        updateMagnetMode()
+--// Character handler
+local function onCharacterAdded()
+    task.wait(0.5)
+    if enabled then
+        pcall(testfunc)
     end
 end
 
---// Core: Disable godmode
-local function disableGodmode()
-    if not state.godmode then return end
-    
-    state.godmode = false
-    removeGodmode()
-    detachAll()
-    state.magnetMode = false
-end
-
---// Character handler (no delay, immediate hijack)
-local function onCharacterAdded(newChar)
-    character = newChar
-    humanoid = character:WaitForChild("Humanoid", 2)
-    
-    if not humanoid then return end
-    
-    if state.godmode then
-        -- Reapply godmode on new character
-        humanoid.BreakJointsOnDeath = false
-        applyGodmode()
-        
-        -- Re-scan magnet mode if active
-        if state.magnetMode then
-            task.wait(0.2)  -- Brief wait for character to fully load
-            updateMagnetMode()
-        end
-    end
-end
+-- Run on respawn
+player.CharacterAdded:Connect(onCharacterAdded)
 
 --// Toggle input
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    
-    -- Godmode toggle (G)
+
     if input.KeyCode == TOGGLE_KEY then
-        if state.godmode then
-            disableGodmode()
-        else
-            enableGodmode()
+        enabled = not enabled
+
+
+        if enabled then
+            pcall(testfunc)
         end
     end
-    
-    -- Magnet toggle (M) – only works if godmode enabled
-    if input.KeyCode == MAGNET_TOGGLE_KEY then
-        if not state.godmode then
-            warn("[Nullbody] Enable godmode before using magnet")
-            return
-        end
-        
-        state.magnetMode = not state.magnetMode
-        updateMagnetMode()
-    end
 end)
-
---// Continuous magnet scanning (if magnet mode active)
-RunService.Heartbeat:Connect(function()
-    if state.godmode and state.magnetMode then
-        updateMagnetMode()
-    end
-end)
-
---// Respawn handler
-if player.Character then
-    onCharacterAdded(player.Character)
-end
-player.CharacterAdded:Connect(onCharacterAdded)
-
---// Cleanup on player leave (optional, prevents memory leaks)
-Players.PlayerRemoving:Connect(function(leavingPlayer)
-    if state.attachedPlayers[leavingPlayer] then
-        detachPlayer(leavingPlayer)
-    end
-end)
-
---// Print status to console (for debugging – remove in production)
-print("[Nullbody Kernel v48.0.0] Loaded. Press G for godmode, M for magnet (while godmode on).")
