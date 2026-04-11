@@ -1,4 +1,4 @@
---// Services
+--// a
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
@@ -9,20 +9,35 @@ local TOGGLE_KEY = Enum.KeyCode.G
 --// State
 local enabled = false
 local jumpConnection = nil
+local jumpEndConnection = nil
+local isJumping = false
 
 --// Rebind jump input manually
 local function rebindJump(humanoid)
-    if jumpConnection then
-        jumpConnection:Disconnect()
-        jumpConnection = nil
-    end
+    if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
+    if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
 
     jumpConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if input.KeyCode == Enum.KeyCode.Space then
+            if isJumping then return end
             if humanoid and humanoid.Parent then
-                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                local state = humanoid:GetState()
+                -- Only jump if grounded
+                if state == Enum.HumanoidStateType.Running
+                or state == Enum.HumanoidStateType.RunningNoPhysics
+                or state == Enum.HumanoidStateType.Landed then
+                    isJumping = true
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
             end
+        end
+    end)
+
+    -- Reset jump lock when Space is released
+    jumpEndConnection = UserInputService.InputEnded:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.Space then
+            isJumping = false
         end
     end)
 end
@@ -63,18 +78,15 @@ local function testfunc()
             animate.Disabled = false
         end
 
-        -- Rebind jump to new humanoid
         rebindJump(newHumanoid)
     end
 end
 
 --// Character handler
 local function onCharacterAdded()
-    -- Clean up old jump binding on respawn
-    if jumpConnection then
-        jumpConnection:Disconnect()
-        jumpConnection = nil
-    end
+    if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
+    if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
+    isJumping = false
     task.wait(0.5)
     if enabled then
         pcall(testfunc)
