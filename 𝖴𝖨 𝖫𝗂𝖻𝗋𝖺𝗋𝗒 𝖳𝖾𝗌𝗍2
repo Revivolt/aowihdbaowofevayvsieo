@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2241,6 +2241,57 @@ Tab:AddButton({
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
 
+        -- Jump connections
+        local jumpConnection    = nil
+        local jumpEndConnection = nil
+        local landedConnection  = nil
+        local isJumping         = false
+
+        local function rebindJump(humanoid)
+            if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
+            if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
+            if landedConnection then landedConnection:Disconnect() landedConnection = nil end
+
+            landedConnection = humanoid.StateChanged:Connect(function(_, newState)
+                if newState == Enum.HumanoidStateType.Landed
+                or newState == Enum.HumanoidStateType.Running
+                or newState == Enum.HumanoidStateType.RunningNoPhysics then
+                    isJumping = false
+                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                        local state = humanoid:GetState()
+                        if state == Enum.HumanoidStateType.Landed
+                        or state == Enum.HumanoidStateType.Running
+                        or state == Enum.HumanoidStateType.RunningNoPhysics then
+                            isJumping = true
+                            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                        end
+                    end
+                end
+            end)
+
+            jumpConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if gameProcessed then return end
+                if input.KeyCode == Enum.KeyCode.Space then
+                    if isJumping then return end
+                    if humanoid and humanoid.Parent then
+                        local state = humanoid:GetState()
+                        if state == Enum.HumanoidStateType.Running
+                        or state == Enum.HumanoidStateType.RunningNoPhysics
+                        or state == Enum.HumanoidStateType.Landed then
+                            isJumping = true
+                            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                        end
+                    end
+                end
+            end)
+
+            jumpEndConnection = UserInputService.InputEnded:Connect(function(input)
+                if input.KeyCode == Enum.KeyCode.Space then
+                    isJumping = false
+                end
+            end)
+        end
+
         local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
@@ -2263,7 +2314,6 @@ Tab:AddButton({
 
             local elapsed = tick() - startTime
 
-            -- At the midpoint (~0.75s), fire the humanoid rename + animate trick
             if not didRename and elapsed >= 0.75 then
                 didRename = true
                 task.defer(function()
@@ -2296,7 +2346,7 @@ Tab:AddButton({
                         animate.Disabled = false
                     end
 
-                    -- Update myHum reference for cleanup
+                    rebindJump(newHum)
                     myHum = newHum
                 end)
             end
@@ -2317,52 +2367,6 @@ Tab:AddButton({
                 return
             end
 
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
-        end)
-    end,
-})
-
-
-
-Tab:AddButton({
-    Label    = "test3",
-    Callback = function()
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
-        if nanConn then nanConn:Disconnect() nanConn = nil end
-
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
-        local nan           = 0 / 0
-        local nanVec        = Vector3.new(9e9, 9e9, 9e9)
-
-        myHum.PlatformStand = true
-        local startTime = tick()
-        nanConn = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then return end
-            if tick() - startTime >= 1.5 then
-                nanConn:Disconnect()
-                nanConn = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand               = savedPlatform
-                    myRoot.AssemblyLinearVelocity     = Vector3.zero
-                    myRoot.AssemblyAngularVelocity    = Vector3.zero
-                    myRoot.CFrame                     = savedCF
-                    myRoot.Velocity                   = savedVel
-                    myRoot.RotVelocity                = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-                return
-            end
             myRoot.AssemblyLinearVelocity  = nanVec
             myRoot.AssemblyAngularVelocity = nanVec
             pcall(function() myHum:Move(nanVec) end)
