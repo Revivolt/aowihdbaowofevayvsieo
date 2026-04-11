@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2245,11 +2245,104 @@ Tab:AddButton({
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
 
+        local savedCF           = myRoot.CFrame
+        local savedVel          = myRoot.Velocity
+        local savedPlatform     = myHum.PlatformStand
+        local savedJumpPower    = myHum.JumpPower
+        local savedJumpHeight   = myHum.JumpHeight
+        local savedUseJumpPower = myHum.UseJumpPower
+        local nan               = 0 / 0
+        local nanVec            = Vector3.new(nan, nan, nan)
+
+        myHum.PlatformStand = true
+        local startTime     = tick()
+        local didRename     = false
+
+        nanConn = nanRun.Heartbeat:Connect(function()
+            if nanCounter ~= localID then return end
+
+            local elapsed = tick() - startTime
+
+            -- At the midpoint (~0.75s), fire the humanoid rename + animate trick
+            if not didRename and elapsed >= 0.75 then
+                didRename = true
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    if not myChar or not myChar.Parent then return end
+
+                    myHum.Name = "OldHumanoid"
+                    local newHum = myHum:Clone()
+                    newHum.Parent = myChar
+                    newHum.Name = "Humanoid"
+
+                    newHum.UseJumpPower = savedUseJumpPower
+                    if savedUseJumpPower then
+                        newHum.JumpPower = savedJumpPower
+                    else
+                        newHum.JumpHeight = savedJumpHeight
+                    end
+
+                    task.wait(0.1)
+                    if myChar:FindFirstChild("OldHumanoid") then
+                        myChar.OldHumanoid:Destroy()
+                    end
+
+                    workspace.CurrentCamera.CameraSubject = newHum
+
+                    local animate = myChar:FindFirstChild("Animate")
+                    if animate then
+                        animate.Disabled = true
+                        task.wait(0.1)
+                        animate.Disabled = false
+                    end
+
+                    -- Update myHum reference for cleanup
+                    myHum = newHum
+                end)
+            end
+
+            if elapsed >= 1.5 then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    myHum.PlatformStand               = savedPlatform
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.CFrame                     = savedCF
+                    myRoot.Velocity                   = savedVel
+                    myRoot.RotVelocity                = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(nanVec) end)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+        end)
+    end,
+})
+
+
+
+Tab:AddButton({
+    Label    = "test3",
+    Callback = function()
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+        if nanConn then nanConn:Disconnect() nanConn = nil end
+
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+
         local savedCF       = myRoot.CFrame
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
         local nan           = 0 / 0
-        local nanVec        = Vector3.new(nan, nan, nan)
+        local nanVec        = Vector3.new(9e9, 9e9, 9e9)
 
         myHum.PlatformStand = true
         local startTime = tick()
