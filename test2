@@ -1,5 +1,3 @@
--- a
-
 --// Services
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -10,6 +8,24 @@ local TOGGLE_KEY = Enum.KeyCode.G
 
 --// State
 local enabled = false
+local jumpConnection = nil
+
+--// Rebind jump input manually
+local function rebindJump(humanoid)
+    if jumpConnection then
+        jumpConnection:Disconnect()
+        jumpConnection = nil
+    end
+
+    jumpConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.Space then
+            if humanoid and humanoid.Parent then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end)
+end
 
 --// test Function
 local function testfunc()
@@ -17,8 +33,6 @@ local function testfunc()
     local character = player.Character
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid and humanoid.Name ~= "OldHumanoid" then
-
-        -- Preserve jump properties before cloning
         local savedJumpPower = humanoid.JumpPower
         local savedJumpHeight = humanoid.JumpHeight
         local savedUseJumpPower = humanoid.UseJumpPower
@@ -28,7 +42,6 @@ local function testfunc()
         newHumanoid.Parent = character
         newHumanoid.Name = "Humanoid"
 
-        -- Restore jump properties on the new humanoid
         newHumanoid.UseJumpPower = savedUseJumpPower
         if savedUseJumpPower then
             newHumanoid.JumpPower = savedJumpPower
@@ -49,11 +62,19 @@ local function testfunc()
             task.wait(0.1)
             animate.Disabled = false
         end
+
+        -- Rebind jump to new humanoid
+        rebindJump(newHumanoid)
     end
 end
 
 --// Character handler
 local function onCharacterAdded()
+    -- Clean up old jump binding on respawn
+    if jumpConnection then
+        jumpConnection:Disconnect()
+        jumpConnection = nil
+    end
     task.wait(0.5)
     if enabled then
         pcall(testfunc)
