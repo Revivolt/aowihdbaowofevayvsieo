@@ -10,23 +10,39 @@ local TOGGLE_KEY = Enum.KeyCode.G
 --// State
 local enabled = false
 
---// Reset Function (no longer replaces the Humanoid)
+--// test Function
 local function testfunc()
     if not player.Character or not player.Character.Parent then return end
     local character = player.Character
     local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
+    if humanoid and humanoid.Name ~= "OldHumanoid" then
+        humanoid.Name = "OldHumanoid"
+        local newHumanoid = humanoid:Clone()
+        newHumanoid.Parent = character
+        newHumanoid.Name = "Humanoid"
 
-    -- Safely restart the Animate script without touching the Humanoid
-    local animate = character:FindFirstChild("Animate")
-    if animate then
-        animate.Disabled = true
         task.wait(0.1)
-        animate.Disabled = false
-    end
 
-    -- Re-point the camera (safe, non-destructive)
-    workspace.CurrentCamera.CameraSubject = humanoid
+        if character:FindFirstChild("OldHumanoid") then
+            character.OldHumanoid:Destroy()
+        end
+
+        workspace.CurrentCamera.CameraSubject = newHumanoid
+
+        -- Fix animations for other players by waiting longer
+        -- before restarting Animate so the server recognizes the new Humanoid
+        local animate = character:FindFirstChild("Animate")
+        if animate then
+            task.wait(0.2)
+            animate.Disabled = true
+            task.wait(0.1)
+            animate.Disabled = false
+        end
+
+        -- Fix jump by re-seating the Humanoid's jump state
+        task.wait(0.1)
+        newHumanoid.JumpPower = newHumanoid.JumpPower
+    end
 end
 
 --// Character handler
