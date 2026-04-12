@@ -213,7 +213,7 @@ do
     local cpTrack   = nil
     local lastChar  = nil
 
-    local cpUp        =  2
+    local cpUp        =  -2
     local cpForward   =  0
     local cpSide      =  0
     local cpTiltX     =  0
