@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2852,10 +2852,10 @@ do
 
     local function snapToTarget(duration)
         local endTime = tick() + duration
-        while tick() < endTime do
+        while tick() < endTime and cycleEnabled do
             local tgtPlayer = getTarget()
-            local myChar = nanLocal.Character
-            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            local myChar    = nanLocal.Character
+            local myRoot    = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myChar and myRoot and tgtPlayer then
                 local tgtChar = tgtPlayer.Character
                 local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
@@ -2863,18 +2863,20 @@ do
                     pcall(function()
                         if cpNoCollide then
                             for _, part in ipairs(myChar:GetDescendants()) do
-                                if part:IsA("BasePart") then part.CanCollide = false end
+                                if part:IsA("BasePart") then
+                                    part.CanCollide = false
+                                end
                             end
                         end
                         local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                         local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                        myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                        local targetCF = CFrame.new(tgtRoot.Position)
                             * CFrame.Angles(0, yaw, 0)
                             * CFrame.new(cpSide, cpUp, -cpForward)
                             * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                        myRoot.CFrame                  = targetCF
                         myRoot.AssemblyLinearVelocity  = Vector3.zero
                         myRoot.AssemblyAngularVelocity = Vector3.zero
-                        sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                     end)
                 end
             end
@@ -2890,7 +2892,6 @@ do
                 myRoot.CFrame                  = savedCF
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", nil)
             end)
         end
     end
@@ -2995,15 +2996,20 @@ do
                 nanConn:Disconnect()
                 nanConn = nil
 
+                -- Fully clear PhysicsRepRootPart before anything else
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+
                 myHum.PlatformStand               = savedPlatform
                 myRoot.AssemblyLinearVelocity     = Vector3.zero
                 myRoot.AssemblyAngularVelocity    = Vector3.zero
                 myRoot.CFrame                     = savedCF
                 myRoot.Velocity                   = savedVel
                 myRoot.RotVelocity                = Vector3.zero
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
 
                 task.spawn(function()
+                    task.wait(0.1)
+                    -- Clear again after a frame to make sure it's gone
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                     task.wait(0.1)
                     runCycle()
                 end)
