@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2825,7 +2825,6 @@ do
     local landedConnection  = nil
     local charConnection    = nil
 
-    -- cp vars
     local cpConn      = nil
     local cpTrack     = nil
     local lastChar    = nil
@@ -2842,6 +2841,21 @@ do
 
     local cycleActive = false
     local cycleThread = nil
+
+    local function findPlayer(query)
+        query = query:lower()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Name:lower():sub(1, #query) == query then
+                return p
+            end
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Name:lower():find(query, 1, true) then
+                return p
+            end
+        end
+        return nil
+    end
 
     local function rebindJump(humanoid)
         if jumpConnection    then jumpConnection:Disconnect()    jumpConnection    = nil end
@@ -2894,9 +2908,8 @@ do
         lastChar = nil
     end
 
-    -- Snaps character next to target for `duration` seconds, then returns to savedCF
     local function snapToTarget(duration, savedCF)
-        local targetPlayer = Players:FindFirstChild(nanTarget)
+        local targetPlayer = findPlayer(nanTarget)
         if not targetPlayer then return end
 
         local myChar = nanLocal.Character
@@ -2921,7 +2934,6 @@ do
             if myChar ~= lastChar then
                 lastChar = myChar
                 if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                -- loadAnim helper (inline since we don't have the helper here)
                 local animator = myChar:FindFirstChildOfClass("Animator")
                     or myChar:FindFirstChild("Humanoid") and myChar.Humanoid:FindFirstChildOfClass("Animator")
                 if animator and cpAnimId ~= 0 then
@@ -2954,13 +2966,11 @@ do
             end)
         end)
 
-        -- Wait for snap duration to finish
         while cpConn ~= nil and cycleActive do
             task.wait(0.05)
         end
         stopCpConn()
 
-        -- Restore position
         if cycleActive then
             pcall(function()
                 myRoot.CFrame                  = savedCF
@@ -3037,7 +3047,6 @@ do
                     myRoot.RotVelocity                = Vector3.zero
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
 
-                    -- NaN phase done — start the snap cycle
                     if cycleActive then
                         startCycle()
                     end
@@ -3113,14 +3122,13 @@ do
         Default  = false,
         Callback = function(value)
             if value then
-                -- Validate target from text input
-                local targetPlayer = Players:FindFirstChild(nanTarget)
+                local targetPlayer = findPlayer(nanTarget)
                 if not targetPlayer then
                     warn("No player found with name: " .. nanTarget)
                     return
                 end
 
-                cycleActive = true  -- flag so applyAll's defer knows to proceed
+                cycleActive = true
 
                 pcall(applyAll)
 
