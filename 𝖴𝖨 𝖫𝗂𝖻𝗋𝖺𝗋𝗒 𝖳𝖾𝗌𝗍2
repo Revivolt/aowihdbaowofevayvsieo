@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2917,29 +2917,41 @@ do
         cycleActive = true
         cycleThread = task.spawn(function()
             local isAll = (nanTarget == "-")
-            local waitTime = isAll and 2 or 4
 
             while cycleActive do
                 local myChar = nanLocal.Character
                 local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 if myChar and myRoot then
                     if isAll then
-                        -- Snap to every player except ourselves
+                        local targets = {}
                         for _, p in ipairs(Players:GetPlayers()) do
-                            if not cycleActive then break end
                             if p ~= player then
-                                local savedCF = myRoot.CFrame
-                                snapToTarget(0.2, savedCF, p)
+                                table.insert(targets, p)
                             end
                         end
+
+                        local count = #targets
+                        -- Linear drop: 4s at 1 player, 0s at 20 players, clamped at 0
+                        local waitTime = math.max(0, 4 * (20 - count) / 19)
+
+                        for _, p in ipairs(targets) do
+                            if not cycleActive then break end
+                            local savedCF = myRoot.CFrame
+                            snapToTarget(0.2, savedCF, p)
+                        end
+
+                        if not cycleActive then break end
+                        task.wait(waitTime)
                     else
                         local targetPlayer = findPlayer(nanTarget)
                         local savedCF = myRoot.CFrame
                         snapToTarget(0.2, savedCF, targetPlayer)
+                        if not cycleActive then break end
+                        task.wait(4)
                     end
+                else
+                    task.wait(0.1)
                 end
-                if not cycleActive then break end
-                task.wait(waitTime)
             end
         end)
     end
