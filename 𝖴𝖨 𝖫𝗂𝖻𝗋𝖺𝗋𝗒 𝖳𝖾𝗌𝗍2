@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2835,8 +2835,6 @@ do
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
-    local cpFreezeAt  = 0
-    local cpAnimId    = 0
 
     local function rebindJump(humanoid)
         if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
@@ -2890,48 +2888,64 @@ do
         task.spawn(function()
             while cpLoopId == localLoopId do
                 local myChar = player.Character
-                if myChar then
-                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-                    if myRoot then
-                        local targetPlayer = nil
-                        for _, p in ipairs(Players:GetPlayers()) do
-                            if p ~= player and p.Name:lower():find(nanTarget:lower(), 1, true) then
-                                targetPlayer = p
-                                break
-                            end
-                        end
-                        if targetPlayer then
-                            local targetChar = targetPlayer.Character
-                            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-                            if targetRoot then
-                                local savedCF = myRoot.CFrame
-                                local targetCF = targetRoot.CFrame
-                                local right = cpFaceBack and -targetCF.RightVector or targetCF.RightVector
-                                local offsetCF = CFrame.new(targetRoot.Position + right * cpSide + targetCF.UpVector * cpUp + targetCF.LookVector * cpForward)
-                                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
 
+                if myChar and myRoot then
+                    local targetPlayer = nil
+                    for _, p in ipairs(Players:GetPlayers()) do
+                        if p ~= player and p.Name:lower():find(nanTarget:lower(), 1, true) then
+                            targetPlayer = p
+                            break
+                        end
+                    end
+
+                    if targetPlayer then
+                        local targetChar = targetPlayer.Character
+                        local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+
+                        if targetRoot then
+                            local savedCF = myRoot.CFrame
+
+                            -- Teleport beside target using yaw-based method
+                            pcall(function()
                                 if cpNoCollide then
                                     for _, part in ipairs(myChar:GetDescendants()) do
                                         if part:IsA("BasePart") then part.CanCollide = false end
                                     end
                                 end
 
-                                myRoot.CFrame = offsetCF
-                                task.wait(0.5)
+                                local _, tgtYaw, _ = targetRoot.CFrame:ToEulerAnglesYXZ()
+                                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                                myRoot.CFrame = CFrame.new(targetRoot.Position)
+                                    * CFrame.Angles(0, yaw, 0)
+                                    * CFrame.new(cpSide, cpUp, -cpForward)
+                                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                                myRoot.AssemblyAngularVelocity = Vector3.zero
+                                sethiddenproperty(myRoot, "PhysicsRepRootPart", targetRoot)
+                            end)
 
-                                if cpLoopId == localLoopId then
+                            task.wait(0.3)
+
+                            -- Return to saved position
+                            if cpLoopId == localLoopId then
+                                pcall(function()
                                     myRoot.CFrame = savedCF
-                                end
+                                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                                    sethiddenproperty(myRoot, "PhysicsRepRootPart", myRoot)
+                                end)
+                            end
 
-                                if cpNoCollide then
-                                    for _, part in ipairs(myChar:GetDescendants()) do
-                                        if part:IsA("BasePart") then part.CanCollide = true end
-                                    end
+                            if cpNoCollide then
+                                for _, part in ipairs(myChar:GetDescendants()) do
+                                    if part:IsA("BasePart") then part.CanCollide = true end
                                 end
                             end
                         end
                     end
                 end
+
                 task.wait(4)
             end
         end)
@@ -2982,7 +2996,6 @@ do
                     myRoot.RotVelocity                = Vector3.zero
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
 
-                    -- Start cp loop after nan phase completes
                     startCpLoop()
                 end)
                 return
