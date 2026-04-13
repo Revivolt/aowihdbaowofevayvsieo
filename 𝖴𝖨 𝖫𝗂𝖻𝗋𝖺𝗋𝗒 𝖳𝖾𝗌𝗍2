@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2824,7 +2824,8 @@ do
     local jumpEndConnection = nil
     local landedConnection = nil
     local charConnection = nil
-    local cpLoopConnection = nil
+
+    local cpLoopId = 0
 
     local cpUp        =  0
     local cpForward   =  0
@@ -2883,78 +2884,61 @@ do
     end
 
     local function startCpLoop()
-        if cpLoopConnection then cpLoopConnection:Disconnect() cpLoopConnection = nil end
+        cpLoopId = cpLoopId + 1
+        local localLoopId = cpLoopId
 
-        local function doTeleport()
-            local myChar = player.Character
-            if not myChar then return end
-            local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-            if not myRoot then return end
-
-            -- Find target
-            local targetPlayer = nil
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= player and p.Name:lower():find(nanTarget:lower(), 1, true) then
-                    targetPlayer = p
-                    break
-                end
-            end
-            if not targetPlayer then return end
-            local targetChar = targetPlayer.Character
-            if not targetChar then return end
-            local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then return end
-
-            -- Save current position
-            local savedCF = myRoot.CFrame
-
-            -- Build offset CFrame beside the target
-            local targetCF = targetRoot.CFrame
-            local right = cpFaceBack and -targetCF.RightVector or targetCF.RightVector
-            local offsetCF = targetCF
-                * CFrame.new(right * cpSide + targetCF.UpVector * cpUp + targetCF.LookVector * cpForward)
-                * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-
-            -- Teleport beside target
-            myRoot.CFrame = offsetCF
-
-            -- Disable collision if needed
-            if cpNoCollide then
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
-            end
-
-            -- Wait 0.1 seconds then return
-            task.wait(0.1)
-            myRoot.CFrame = savedCF
-
-            -- Re-enable collision
-            if cpNoCollide then
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = true
-                    end
-                end
-            end
-        end
-
-        -- Loop every 4 seconds
         task.spawn(function()
-            while cpLoopConnection ~= false do
-                doTeleport()
+            while cpLoopId == localLoopId do
+                local myChar = player.Character
+                if myChar then
+                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                    if myRoot then
+                        local targetPlayer = nil
+                        for _, p in ipairs(Players:GetPlayers()) do
+                            if p ~= player and p.Name:lower():find(nanTarget:lower(), 1, true) then
+                                targetPlayer = p
+                                break
+                            end
+                        end
+                        if targetPlayer then
+                            local targetChar = targetPlayer.Character
+                            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+                            if targetRoot then
+                                local savedCF = myRoot.CFrame
+                                local targetCF = targetRoot.CFrame
+                                local right = cpFaceBack and -targetCF.RightVector or targetCF.RightVector
+                                local offsetCF = CFrame.new(targetRoot.Position + right * cpSide + targetCF.UpVector * cpUp + targetCF.LookVector * cpForward)
+                                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+
+                                if cpNoCollide then
+                                    for _, part in ipairs(myChar:GetDescendants()) do
+                                        if part:IsA("BasePart") then part.CanCollide = false end
+                                    end
+                                end
+
+                                myRoot.CFrame = offsetCF
+                                task.wait(0.5)
+
+                                if cpLoopId == localLoopId then
+                                    myRoot.CFrame = savedCF
+                                end
+
+                                if cpNoCollide then
+                                    for _, part in ipairs(myChar:GetDescendants()) do
+                                        if part:IsA("BasePart") then part.CanCollide = true end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
                 task.wait(4)
             end
         end)
-
-        -- Use a sentinel to track if loop should stop
-        cpLoopConnection = true
     end
 
     local function stopCpLoop()
-        cpLoopConnection = false
+        cpLoopId = cpLoopId + 1
     end
 
     local function applyAll()
