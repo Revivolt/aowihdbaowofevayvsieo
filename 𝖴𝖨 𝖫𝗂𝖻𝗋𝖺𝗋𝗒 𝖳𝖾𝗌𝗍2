@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -215,7 +215,7 @@ do
 
     local cpUp        =  0
     local cpForward   =  0
-    local cpSide      =  2
+    local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
     local cpTiltZ     =  0
@@ -3178,6 +3178,59 @@ do
         end,
     })
 end
+
+
+Tab:AddButton({
+    Label    = "test3",
+    Callback = function()
+        if not selectedTarget then return end
+
+        local myChar = weldLocal.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myChar or not myRoot then return end
+
+        local tgtChar = selectedTarget.Character
+        local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+        if not tgtChar or not tgtRoot then return end
+
+        -- Load animation if needed
+        if myChar ~= lastChar then
+            lastChar = myChar
+            if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+            cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+        end
+
+        -- Teleport loop for 0.2 seconds
+        local elapsed = 0
+        local conn
+        conn = weldRun.Heartbeat:Connect(function(dt)
+            elapsed = elapsed + dt
+            if elapsed >= 0.2 then
+                conn:Disconnect()
+                return
+            end
+
+            if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                conn:Disconnect()
+                return
+            end
+
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                end
+                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                    * CFrame.new(cpSide, cpUp, -cpForward)
+                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end)
+    end,
+})
 
 
 local Tab = Window:AddTab("Admin")
