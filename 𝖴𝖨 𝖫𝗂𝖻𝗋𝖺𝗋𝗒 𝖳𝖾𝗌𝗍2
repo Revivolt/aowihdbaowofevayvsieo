@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2841,8 +2841,7 @@ do
         lastChar = nil
     end
 
-    local function snapToTarget(duration, savedCF)
-        local targetPlayer = findPlayer(nanTarget)
+    local function snapToTarget(duration, savedCF, targetPlayer)
         if not targetPlayer then return end
 
         local myChar = nanLocal.Character
@@ -2917,15 +2916,30 @@ do
     local function startCycle()
         cycleActive = true
         cycleThread = task.spawn(function()
+            local isAll = (nanTarget == "-")
+            local waitTime = isAll and 2 or 4
+
             while cycleActive do
                 local myChar = nanLocal.Character
                 local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 if myChar and myRoot then
-                    local savedCF = myRoot.CFrame
-                    snapToTarget(0.2, savedCF)
+                    if isAll then
+                        -- Snap to every player except ourselves
+                        for _, p in ipairs(Players:GetPlayers()) do
+                            if not cycleActive then break end
+                            if p ~= player then
+                                local savedCF = myRoot.CFrame
+                                snapToTarget(0.2, savedCF, p)
+                            end
+                        end
+                    else
+                        local targetPlayer = findPlayer(nanTarget)
+                        local savedCF = myRoot.CFrame
+                        snapToTarget(0.2, savedCF, targetPlayer)
+                    end
                 end
                 if not cycleActive then break end
-                task.wait(4)
+                task.wait(waitTime)
             end
         end)
     end
@@ -3056,7 +3070,7 @@ do
         Callback = function(value)
             if value then
                 local targetPlayer = findPlayer(nanTarget)
-                if not targetPlayer then
+                if nanTarget ~= "-" and not targetPlayer then
                     warn("No player found with name: " .. nanTarget)
                     return
                 end
@@ -3076,371 +3090,6 @@ do
                 if charConnection then charConnection:Disconnect() charConnection = nil end
                 stopCycle()
                 resetCharacter()
-            end
-        end,
-    })
-end
-
-
-do
-    local Players      = game:GetService("Players")
-    local UserInputService = game:GetService("UserInputService")
-
-    local isActive     = false
-    local mainTask     = nil
-    local nanConn2     = nil
-    local charConn     = nil
-
-    local isJumping    = false
-    local jumpConn     = nil
-    local jumpEndConn  = nil
-    local landedConn   = nil
-
-    -- ── jump rebinding ──────────────────────────────────────────────
-    local function rebindJump(humanoid)
-        if jumpConn     then jumpConn:Disconnect()     jumpConn     = nil end
-        if jumpEndConn  then jumpEndConn:Disconnect()  jumpEndConn  = nil end
-        if landedConn   then landedConn:Disconnect()   landedConn   = nil end
-
-        landedConn = humanoid.StateChanged:Connect(function(_, newState)
-            if newState == Enum.HumanoidStateType.Landed
-            or newState == Enum.HumanoidStateType.Running
-            or newState == Enum.HumanoidStateType.RunningNoPhysics then
-                isJumping = false
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                    local state = humanoid:GetState()
-                    if state == Enum.HumanoidStateType.Landed
-                    or state == Enum.HumanoidStateType.Running
-                    or state == Enum.HumanoidStateType.RunningNoPhysics then
-                        isJumping = true
-                        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                    end
-                end
-            end
-        end)
-
-        jumpConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-            if gameProcessed then return end
-            if input.KeyCode == Enum.KeyCode.Space then
-                if isJumping then return end
-                if humanoid and humanoid.Parent then
-                    local state = humanoid:GetState()
-                    if state == Enum.HumanoidStateType.Running
-                    or state == Enum.HumanoidStateType.RunningNoPhysics
-                    or state == Enum.HumanoidStateType.Landed then
-                        isJumping = true
-                        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                    end
-                end
-            end
-        end)
-
-        jumpEndConn = UserInputService.InputEnded:Connect(function(input)
-            if input.KeyCode == Enum.KeyCode.Space then
-                isJumping = false
-            end
-        end)
-    end
-
-    -- ── apply "test" phase (anim freeze + nan self + humanoid swap) ─
-    local function applyTestPhase(localID)
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-
-        local animator = myHum:FindFirstChildOfClass("Animator") or myHum:WaitForChild("Animator")
-        local anim     = Instance.new("Animation")
-        anim.AnimationId = "rbxassetid://102940155040466"
-        local animTrack  = animator:LoadAnimation(anim)
-        animTrack:Play()
-        animTrack.TimePosition = 0
-        animTrack:AdjustSpeed(0)
-
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
-        local nan           = 0/0
-        local nanVec        = Vector3.new(nan, nan, nan)
-
-        myHum.PlatformStand = true
-        local startTime = tick()
-
-        if nanConn2 then nanConn2:Disconnect() nanConn2 = nil end
-        nanConn2 = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then nanConn2:Disconnect() nanConn2 = nil return end
-            if tick() - startTime >= 1.5 then
-                nanConn2:Disconnect()
-                nanConn2 = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand            = savedPlatform
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    myRoot.CFrame                  = savedCF
-                    myRoot.Velocity                = savedVel
-                    myRoot.RotVelocity             = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-                return
-            end
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
-        end)
-
-        -- humanoid swap after 0.2s
-        task.delay(0.2, function()
-            if not isActive then return end
-            local character = nanLocal.Character
-            if not character or not character.Parent then return end
-            local humanoid  = character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Name ~= "OldHumanoid" then
-                local savedJumpPower    = humanoid.JumpPower
-                local savedJumpHeight   = humanoid.JumpHeight
-                local savedUseJumpPower = humanoid.UseJumpPower
-
-                humanoid.Name = "OldHumanoid"
-                local newHumanoid = humanoid:Clone()
-                newHumanoid.Parent = character
-                newHumanoid.Name   = "Humanoid"
-
-                newHumanoid.UseJumpPower = savedUseJumpPower
-                if savedUseJumpPower then
-                    newHumanoid.JumpPower  = savedJumpPower
-                else
-                    newHumanoid.JumpHeight = savedJumpHeight
-                end
-
-                task.wait(0.1)
-                if character:FindFirstChild("OldHumanoid") then
-                    character.OldHumanoid:Destroy()
-                end
-
-                workspace.CurrentCamera.CameraSubject = newHumanoid
-
-                local animate = character:FindFirstChild("Animate")
-                if animate then
-                    animate.Disabled = true
-                    task.wait(0.1)
-                    animate.Disabled = false
-                end
-
-                rebindJump(newHumanoid)
-            end
-        end)
-    end
-
-    -- ── nan-lock a single target until dead or timeout ──────────────
-    local function doNanUntilDead(target, maxTime, localID)
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-        local tgtChar = target.Character
-        local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-        local tgtHum  = tgtChar and tgtChar:FindFirstChildOfClass("Humanoid")
-        if not tgtRoot or not tgtHum then return end
-
-        local savedCF       = myRoot.CFrame
-        local savedVel      = myRoot.Velocity
-        local savedPlatform = myHum.PlatformStand
-        local nan           = 0/0
-        local nanVec        = Vector3.new(nan, nan, nan)
-
-        myHum.PlatformStand = true
-        local startTime = tick()
-
-        if nanConn2 then nanConn2:Disconnect() nanConn2 = nil end
-        nanConn2 = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then nanConn2:Disconnect() nanConn2 = nil return end
-            local isDead   = tgtHum.Health <= 0 or not tgtHum.Parent
-            local timedOut = tick() - startTime >= maxTime
-            if isDead or timedOut then
-                nanConn2:Disconnect()
-                nanConn2 = nil
-                task.defer(function()
-                    if nanCounter ~= localID then return end
-                    myHum.PlatformStand            = savedPlatform
-                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                    myRoot.CFrame                  = savedCF
-                    myRoot.Velocity                = savedVel
-                    myRoot.RotVelocity             = Vector3.zero
-                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                end)
-                return
-            end
-            myRoot.CFrame                  = tgtRoot.CFrame
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-        end)
-
-        -- wait for death/timeout/toggle-off
-        local loopStart = tick()
-        while isActive and nanConn2 do
-            if not tgtHum.Parent or tgtHum.Health <= 0 then break end
-            if tick() - loopStart >= maxTime then break end
-            task.wait(0)
-        end
-    end
-
-    -- ── double-tap helper ────────────────────────────────────────────
-    local function doDoubleTap(firstTarget, localID)
-        if not firstTarget or not firstTarget.Character then return end
-        for _ = 1, 2 do
-            local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-            local myHum   = myChar:WaitForChild("Humanoid")
-            local myRoot  = myChar:WaitForChild("HumanoidRootPart")
-            local tgtRoot = firstTarget.Character and firstTarget.Character:FindFirstChild("HumanoidRootPart")
-            if not tgtRoot then break end
-
-            local savedCF       = myRoot.CFrame
-            local savedVel      = myRoot.Velocity
-            local savedPlatform = myHum.PlatformStand
-            local nan           = 0/0
-            local nanVec        = Vector3.new(nan, nan, nan)
-
-            myHum.PlatformStand = true
-            local startTime = tick()
-
-            if nanConn2 then nanConn2:Disconnect() nanConn2 = nil end
-            nanConn2 = nanRun.Heartbeat:Connect(function()
-                if nanCounter ~= localID then nanConn2:Disconnect() nanConn2 = nil return end
-                if tick() - startTime >= 1.5 then
-                    nanConn2:Disconnect()
-                    nanConn2 = nil
-                    task.defer(function()
-                        if nanCounter ~= localID then return end
-                        myHum.PlatformStand            = savedPlatform
-                        myRoot.AssemblyLinearVelocity  = Vector3.zero
-                        myRoot.AssemblyAngularVelocity = Vector3.zero
-                        myRoot.CFrame                  = savedCF
-                        myRoot.Velocity                = savedVel
-                        myRoot.RotVelocity             = Vector3.zero
-                        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-                    end)
-                    return
-                end
-                myRoot.CFrame                  = tgtRoot.CFrame
-                myRoot.AssemblyLinearVelocity  = nanVec
-                myRoot.AssemblyAngularVelocity = nanVec
-                pcall(function() myHum:Move(nanVec) end)
-                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", tgtRoot)
-            end)
-            task.wait(0)
-        end
-    end
-
-    -- ── target resolver ──────────────────────────────────────────────
-    local function getTargets()
-        local targets = {}
-        if nanTarget == "-" then
-            for _, plr in ipairs(nanPlayers:GetPlayers()) do
-                if plr ~= nanLocal then table.insert(targets, plr) end
-            end
-        else
-            for _, plr in ipairs(nanPlayers:GetPlayers()) do
-                if plr ~= nanLocal
-                and (plr.Name:lower():find(nanTarget:lower())
-                     or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                    table.insert(targets, plr)
-                    break
-                end
-            end
-        end
-        return targets
-    end
-
-    -- ── cleanup ──────────────────────────────────────────────────────
-    local function cleanup()
-        isActive = false
-
-        if mainTask  then task.cancel(mainTask)  mainTask  = nil end
-        if nanConn2  then nanConn2:Disconnect()  nanConn2  = nil end
-        if jumpConn  then jumpConn:Disconnect()  jumpConn  = nil end
-        if jumpEndConn then jumpEndConn:Disconnect() jumpEndConn = nil end
-        if landedConn  then landedConn:Disconnect()  landedConn  = nil end
-        if charConn  then charConn:Disconnect()  charConn  = nil end
-        isJumping = false
-
-        local myChar = nanLocal.Character
-        local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if myHum  then myHum.PlatformStand = false end
-        if myRoot then
-            myRoot.AssemblyLinearVelocity  = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
-            myRoot.RotVelocity             = Vector3.zero
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
-        end
-        if myHum then myHum.Health = myHum.MaxHealth end
-    end
-
-    -- ── main loop ────────────────────────────────────────────────────
-    local function runLoop()
-        -- 1) Run the "test" phase first (anim freeze + self nan + humanoid swap)
-        nanCounter = nanCounter + 1
-        local localID = nanCounter
-        pcall(applyTestPhase, localID)
-
-        -- Wait for the test phase nan window to finish (1.5s) plus the humanoid swap (0.3s)
-        task.wait(1.8)
-        if not isActive then return end
-
-        -- 2) Now loop through targets just like test2
-        while isActive do
-            pcall(function()
-                nanCounter = nanCounter + 1
-                localID    = nanCounter
-
-                local targets     = getTargets()
-                local firstTarget = targets[1]
-
-                doDoubleTap(firstTarget, localID)
-
-                for _, target in ipairs(targets) do
-                    if not isActive then break end
-                    if not target.Character then continue end
-
-                    if firstTarget and firstTarget.Character and firstTarget ~= target then
-                        nanCounter = nanCounter + 1
-                        localID    = nanCounter
-                        doDoubleTap(firstTarget, localID)
-                    end
-
-                    if not isActive then break end
-                    nanCounter = nanCounter + 1
-                    localID    = nanCounter
-                    doNanUntilDead(target, 2, localID)
-                    task.wait(0)
-                end
-            end)
-
-            task.wait(0)
-        end
-    end
-
-    -- ── toggle ───────────────────────────────────────────────────────
-    Tab:AddToggle({
-        Label    = "test",
-        Default  = false,
-        Callback = function(value)
-            if value then
-                isActive = true
-
-                mainTask = task.spawn(runLoop)
-
-                charConn = nanLocal.CharacterAdded:Connect(function()
-                    task.wait(0.5)
-                    if not isActive then return end
-                    nanCounter = nanCounter + 1
-                    local localID = nanCounter
-                    pcall(applyTestPhase, localID)
-                end)
-            else
-                cleanup()
             end
         end,
     })
