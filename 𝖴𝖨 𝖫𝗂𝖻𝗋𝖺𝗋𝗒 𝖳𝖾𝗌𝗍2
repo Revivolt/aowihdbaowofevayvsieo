@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2825,8 +2825,10 @@ do
     local landedConnection = nil
     local charConnection = nil
 
-    local cpLoopId = 0
-
+    -- cp (position) vars
+    local cpConn    = nil
+    local cpTrack   = nil
+    local lastChar  = nil
     local cpUp        =  0
     local cpForward   =  0
     local cpSide      =  2
@@ -2835,6 +2837,96 @@ do
     local cpTiltZ     =  0
     local cpFaceBack  = false
     local cpNoCollide = true
+    local cpFreezeAt  = 0
+    local cpAnimId    = 0
+
+    local cycleEnabled = false
+    local cycleThread  = nil
+
+    local function stopCpCycle()
+        cycleEnabled = false
+        if cycleThread then
+            task.cancel(cycleThread)
+            cycleThread = nil
+        end
+        if cpConn then
+            cpConn:Disconnect()
+            cpConn = nil
+        end
+        cpTrack = nil
+        lastChar = nil
+    end
+
+    local function runCpFor(duration)
+        -- Runs the cp heartbeat for `duration` seconds, then disconnects
+        if not selectedTarget then return end
+        local done = false
+        cpConn = weldRun.Heartbeat:Connect(function()
+            if done then return end
+            if not cycleEnabled then done = true return end
+            if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                cycleEnabled = false
+                done = true
+                return
+            end
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+            if myChar ~= lastChar then
+                lastChar = myChar
+                if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
+            end
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                end
+                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                    * CFrame.new(cpSide, cpUp, -cpForward)
+                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end)
+        task.wait(duration)
+        done = true
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+    end
+
+    local function startCycle()
+        cycleThread = task.spawn(function()
+            while cycleEnabled do
+                -- Save current position before snapping
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local savedCF = myRoot and myRoot.CFrame
+
+                -- Snap to target for 0.2 seconds
+                runCpFor(0.2)
+
+                if not cycleEnabled then break end
+
+                -- Return to saved position
+                if savedCF and myRoot and myRoot.Parent then
+                    pcall(function()
+                        myRoot.CFrame = savedCF
+                        myRoot.AssemblyLinearVelocity  = Vector3.zero
+                        myRoot.AssemblyAngularVelocity = Vector3.zero
+                        pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                    end)
+                end
+
+                -- Wait 4 seconds before next snap
+                task.wait(4)
+            end
+        end)
+    end
 
     local function rebindJump(humanoid)
         if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
@@ -2881,80 +2973,6 @@ do
         end)
     end
 
-    local function startCpLoop()
-        cpLoopId = cpLoopId + 1
-        local localLoopId = cpLoopId
-
-        task.spawn(function()
-            while cpLoopId == localLoopId do
-                local myChar = player.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-
-                if myChar and myRoot then
-                    local targetPlayer = nil
-                    for _, p in ipairs(Players:GetPlayers()) do
-                        if p ~= player and p.Name:lower():find(nanTarget:lower(), 1, true) then
-                            targetPlayer = p
-                            break
-                        end
-                    end
-
-                    if targetPlayer then
-                        local targetChar = targetPlayer.Character
-                        local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-
-                        if targetRoot then
-                            local savedCF = myRoot.CFrame
-
-                            -- Teleport beside target using yaw-based method
-                            pcall(function()
-                                if cpNoCollide then
-                                    for _, part in ipairs(myChar:GetDescendants()) do
-                                        if part:IsA("BasePart") then part.CanCollide = false end
-                                    end
-                                end
-
-                                local _, tgtYaw, _ = targetRoot.CFrame:ToEulerAnglesYXZ()
-                                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                                myRoot.CFrame = CFrame.new(targetRoot.Position)
-                                    * CFrame.Angles(0, yaw, 0)
-                                    * CFrame.new(cpSide, cpUp, -cpForward)
-                                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                                myRoot.AssemblyAngularVelocity = Vector3.zero
-                                sethiddenproperty(myRoot, "PhysicsRepRootPart", targetRoot)
-                            end)
-
-                            task.wait(0.3)
-
-                            -- Return to saved position
-                            if cpLoopId == localLoopId then
-                                pcall(function()
-                                    myRoot.CFrame = savedCF
-                                    myRoot.AssemblyLinearVelocity  = Vector3.zero
-                                    myRoot.AssemblyAngularVelocity = Vector3.zero
-                                    sethiddenproperty(myRoot, "PhysicsRepRootPart", myRoot)
-                                end)
-                            end
-
-                            if cpNoCollide then
-                                for _, part in ipairs(myChar:GetDescendants()) do
-                                    if part:IsA("BasePart") then part.CanCollide = true end
-                                end
-                            end
-                        end
-                    end
-                end
-
-                task.wait(4)
-            end
-        end)
-    end
-
-    local function stopCpLoop()
-        cpLoopId = cpLoopId + 1
-    end
-
     local function applyAll()
         nanCounter = nanCounter + 1
         local localID = nanCounter
@@ -2964,7 +2982,6 @@ do
         local myHum   = myChar:WaitForChild("Humanoid")
         local myRoot  = myChar:WaitForChild("HumanoidRootPart")
 
-        -- Play and freeze animation at 0 seconds
         local animator = myHum:FindFirstChildOfClass("Animator") or myHum:WaitForChild("Animator")
         local anim = Instance.new("Animation")
         anim.AnimationId = "rbxassetid://102940155040466"
@@ -2996,7 +3013,10 @@ do
                     myRoot.RotVelocity                = Vector3.zero
                     pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
 
-                    startCpLoop()
+                    -- NaN phase done, now start the cp cycle
+                    if cycleEnabled then
+                        startCycle()
+                    end
                 end)
                 return
             end
@@ -3055,8 +3075,6 @@ do
         if landedConnection then landedConnection:Disconnect() landedConnection = nil end
         isJumping = false
 
-        stopCpLoop()
-
         local character = player.Character
         if character then
             local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -3067,19 +3085,24 @@ do
     end
 
     Tab:AddToggle({
-        Label    = "Lag Player Character",
+        Label    = "test",
         Default  = false,
         Callback = function(value)
             if value then
+                cycleEnabled = true
+
                 pcall(applyAll)
 
                 charConnection = player.CharacterAdded:Connect(function()
                     task.wait(0.5)
-                    stopCpLoop()
                     pcall(applyAll)
                 end)
             else
+                cycleEnabled = false
+                stopCpCycle()
+
                 if charConnection then charConnection:Disconnect() charConnection = nil end
+
                 resetCharacter()
             end
         end,
