@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -3359,44 +3359,83 @@ do
     local function startDetect()
         cycleActive = true
         lastTgtPos  = nil
-
+    
+        local lastTgtVel    = Vector3.zero
+        local preFired      = false
+        local preFireCooldown = 0
+    
         detectConn = nanRun.Heartbeat:Connect(function()
             if not cycleActive then
                 stopDetect()
                 return
             end
-
+    
             local targetPlayer = findPlayer(nanTarget)
             if not targetPlayer then return end
-
+    
             local tgtChar = targetPlayer.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtRoot then lastTgtPos = nil return end
-
+    
             local currentPos = tgtRoot.Position
-
+            local currentVel = tgtRoot.AssemblyLinearVelocity
+    
+            local now = tick()
+    
+            -- Prediction signal: velocity was meaningful last frame but is now
+            -- near-zero, which is a common server-side pre-teleport signal
+            local wasMoving   = lastTgtVel.Magnitude > 8
+            local nowStopped  = currentVel.Magnitude < 1
+            local cooldownOk  = now - preFireCooldown > 2
+    
+            if wasMoving and nowStopped and cooldownOk and not preFired then
+                local myChar = nanLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myChar and myRoot then
+                    preFired       = true
+                    preFireCooldown = now
+                    local savedCF  = myRoot.CFrame
+                    if detectConn then detectConn:Disconnect() detectConn = nil end
+                    lastTgtPos = nil
+    
+                    task.spawn(function()
+                        snapToTarget(0.2, savedCF)
+                        preFired = false
+                        if cycleActive then
+                            startDetect()
+                        end
+                    end)
+                    lastTgtVel = currentVel
+                    return
+                end
+            end
+    
+            -- Fallback: catch any teleport we missed with the position delta
             if lastTgtPos then
                 local delta = (currentPos - lastTgtPos).Magnitude
-                if delta >= TELEPORT_THRESHOLD then
+                if delta >= TELEPORT_THRESHOLD and cooldownOk then
                     local myChar = nanLocal.Character
                     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                     if myChar and myRoot then
                         local savedCF = myRoot.CFrame
                         if detectConn then detectConn:Disconnect() detectConn = nil end
                         lastTgtPos = nil
-
+    
                         task.spawn(function()
                             snapToTarget(0.2, savedCF)
+                            preFired = false
                             if cycleActive then
                                 startDetect()
                             end
                         end)
+                        lastTgtVel = currentVel
                         return
                     end
                 end
             end
-
+    
             lastTgtPos = currentPos
+            lastTgtVel = currentVel
         end)
     end
 
