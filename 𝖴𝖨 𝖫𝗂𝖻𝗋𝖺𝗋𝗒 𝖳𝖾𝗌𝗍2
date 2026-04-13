@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2824,9 +2824,6 @@ do
     local landedConnection  = nil
     local charConnection    = nil
 
-    -- cp state
-    local cpTrack     = nil
-    local lastChar    = nil
     local cpUp        =  0
     local cpForward   =  0
     local cpSide      =  2
@@ -2836,7 +2833,6 @@ do
     local cpFaceBack  = false
     local cpNoCollide = true
 
-    -- cycle state
     local cycleEnabled = false
     local cycleThread  = nil
     local savedCF      = nil
@@ -2847,87 +2843,61 @@ do
             task.cancel(cycleThread)
             cycleThread = nil
         end
-        if cpTrack then cpTrack:Stop() pcall(function() cpTrack:Destroy() end) cpTrack = nil end
-        lastChar = nil
     end
 
-    local function runCycle()
-        if cycleEnabled then return end
-        cycleEnabled = true
-
-        cycleThread = task.spawn(function()
-            while cycleEnabled do
-
-                -- === SNAP TO TARGET FOR 0.2s ===
-                local snapActive = true
-                local snapConn = nanRun.Heartbeat:Connect(function()
-                    if not snapActive or not cycleEnabled then return end
-
-                    local tgtPlayer = Players:FindFirstChild(selectedTarget and selectedTarget.Name or "")
-                    if not tgtPlayer then
-                        cycleEnabled = false
-                        snapActive = false
-                        return
-                    end
-
-                    local myChar = nanLocal.Character
-                    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                    if not myChar or not myRoot then return end
-
-                    local tgtChar = tgtPlayer.Character
-                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                    if not tgtChar or not tgtRoot then return end
-
-                    if myChar ~= lastChar then
-                        lastChar = myChar
-                    end
-
+    local function snapToTarget(duration)
+        local endTime = tick() + duration
+        while tick() < endTime do
+            local myChar = nanLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myChar and myRoot and selectedTarget then
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if tgtRoot then
                     pcall(function()
                         if cpNoCollide then
                             for _, part in ipairs(myChar:GetDescendants()) do
-                                if part:IsA("BasePart") then
-                                    part.CanCollide = false
-                                end
+                                if part:IsA("BasePart") then part.CanCollide = false end
                             end
                         end
-
                         local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                         local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-
                         myRoot.CFrame = CFrame.new(tgtRoot.Position)
                             * CFrame.Angles(0, yaw, 0)
                             * CFrame.new(cpSide, cpUp, -cpForward)
                             * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-
                         myRoot.AssemblyLinearVelocity  = Vector3.zero
                         myRoot.AssemblyAngularVelocity = Vector3.zero
                         sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
                     end)
-                end)
-
-                task.wait(0.2)
-
-                snapActive = false
-                snapConn:Disconnect()
-                snapConn = nil
-
-                if not cycleEnabled then break end
-
-                -- === RETURN TO SAVED POSITION ===
-                local myChar = nanLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if myRoot and savedCF then
-                    pcall(function()
-                        myRoot.CFrame                  = savedCF
-                        myRoot.AssemblyLinearVelocity  = Vector3.zero
-                        myRoot.AssemblyAngularVelocity = Vector3.zero
-                        sethiddenproperty(myRoot, "PhysicsRepRootPart", nil)
-                    end)
                 end
+            end
+            task.wait()
+        end
+    end
 
+    local function returnToSaved()
+        local myChar = nanLocal.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if myRoot and savedCF then
+            pcall(function()
+                myRoot.CFrame                  = savedCF
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", nil)
+            end)
+        end
+    end
+
+    local function runCycle()
+        stopCycle()
+        cycleEnabled = true
+        cycleThread = task.spawn(function()
+            while cycleEnabled do
+                snapToTarget(0.2)
                 if not cycleEnabled then break end
-
-                -- === WAIT 4 SECONDS ===
+                returnToSaved()
+                if not cycleEnabled then break end
                 task.wait(4)
             end
         end)
@@ -2982,14 +2952,12 @@ do
         nanCounter = nanCounter + 1
         local localID = nanCounter
         if nanConn then nanConn:Disconnect() nanConn = nil end
-
         stopCycle()
 
-        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
-        local myHum   = myChar:WaitForChild("Humanoid")
-        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+        local myChar = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum  = myChar:WaitForChild("Humanoid")
+        local myRoot = myChar:WaitForChild("HumanoidRootPart")
 
-        -- Animation
         local animator = myHum:FindFirstChildOfClass("Animator") or myHum:WaitForChild("Animator")
         local anim = Instance.new("Animation")
         anim.AnimationId = "rbxassetid://102940155040466"
@@ -2998,36 +2966,29 @@ do
         animTrack.TimePosition = 0
         animTrack:AdjustSpeed(0)
 
-        -- Save position BEFORE nan starts
         savedCF = myRoot.CFrame
 
         local savedVel      = myRoot.Velocity
         local savedPlatform = myHum.PlatformStand
         local nan           = 0 / 0
         local nanVec        = Vector3.new(nan, nan, nan)
-        local nanDone       = false
 
         myHum.PlatformStand = true
         local startTime = tick()
+        local nanFinished = false
 
         nanConn = nanRun.Heartbeat:Connect(function()
-            if nanCounter ~= localID then
-                -- counter changed externally, bail
-                if not nanDone then
-                    nanDone = true
-                    nanConn:Disconnect()
-                    nanConn = nil
-                end
-                return
-            end
-
-            if tick() - startTime >= 1.5 then
-                if nanDone then return end
-                nanDone = true
+            if nanFinished then return end
+            if tick() - startTime < 1.5 then
+                myRoot.AssemblyLinearVelocity  = nanVec
+                myRoot.AssemblyAngularVelocity = nanVec
+                pcall(function() myHum:Move(nanVec) end)
+                pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+            else
+                nanFinished = true
                 nanConn:Disconnect()
                 nanConn = nil
 
-                -- Restore then start cycle
                 myHum.PlatformStand               = savedPlatform
                 myRoot.AssemblyLinearVelocity     = Vector3.zero
                 myRoot.AssemblyAngularVelocity    = Vector3.zero
@@ -3036,21 +2997,15 @@ do
                 myRoot.RotVelocity                = Vector3.zero
                 pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
 
-                -- Start the cycle now that nan is done
-                task.wait(0.1)
-                if nanCounter == localID then
+                task.spawn(function()
+                    task.wait(0.1)
                     runCycle()
-                end
-                return
+                end)
             end
-
-            myRoot.AssemblyLinearVelocity  = nanVec
-            myRoot.AssemblyAngularVelocity = nanVec
-            pcall(function() myHum:Move(nanVec) end)
-            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
         end)
 
         task.delay(0.2, function()
+            if nanCounter ~= localID then return end
             local character = player.Character
             if not character or not character.Parent then return end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -3111,7 +3066,7 @@ do
     end
 
     Tab:AddToggle({
-        Label    = "test",
+        Label    = "test3",
         Default  = false,
         Callback = function(value)
             if value then
