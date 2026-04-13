@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -3185,22 +3185,6 @@ Tab:AddButton({
     Callback = function()
         if not selectedTarget then return end
 
-        local myChar = weldLocal.Character
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myChar or not myRoot then return end
-
-        local tgtChar = selectedTarget.Character
-        local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-        if not tgtChar or not tgtRoot then return end
-
-        -- Load animation if needed
-        if myChar ~= lastChar then
-            lastChar = myChar
-            if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-            cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
-        end
-
-        -- Teleport loop for 0.2 seconds
         local elapsed = 0
         local conn
         conn = weldRun.Heartbeat:Connect(function(dt)
@@ -3213,6 +3197,20 @@ Tab:AddButton({
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 conn:Disconnect()
                 return
+            end
+
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+
+            if myChar ~= lastChar then
+                lastChar = myChar
+                if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
+                cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
             end
 
             pcall(function()
