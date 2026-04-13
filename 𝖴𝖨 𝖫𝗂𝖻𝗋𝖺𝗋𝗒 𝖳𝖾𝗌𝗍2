@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -3185,11 +3185,17 @@ Tab:AddButton({
     Callback = function()
         print("Button clicked")
 
-        if not selectedTarget then
-            print("No selectedTarget")
+        if nanTarget == "" then
+            print("No target entered")
             return
         end
-        print("Target:", selectedTarget.Name)
+
+        local targetPlayer = nanPlayers:FindFirstChild(nanTarget)
+        if not targetPlayer then
+            print("Player not found:", nanTarget)
+            return
+        end
+        print("Target:", targetPlayer.Name)
 
         local myChar = weldLocal.Character
         local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -3197,9 +3203,8 @@ Tab:AddButton({
             print("No local char/root")
             return
         end
-        print("My char:", myChar.Name)
 
-        local tgtChar = selectedTarget.Character
+        local tgtChar = targetPlayer.Character
         local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
         if not tgtChar or not tgtRoot then
             print("No target char/root")
@@ -3233,7 +3238,7 @@ Tab:AddButton({
             end
             local mc = weldLocal.Character
             local mr = mc and mc:FindFirstChild("HumanoidRootPart")
-            local tc = selectedTarget and selectedTarget.Character
+            local tc = targetPlayer.Character
             local tr = tc and tc:FindFirstChild("HumanoidRootPart")
             if not mr or not tr then conn:Disconnect() return end
             pcall(function()
