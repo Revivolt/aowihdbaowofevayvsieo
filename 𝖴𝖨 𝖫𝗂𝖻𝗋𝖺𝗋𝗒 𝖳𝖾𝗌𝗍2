@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2817,7 +2817,6 @@ end
 do
     local Players = game:GetService("Players")
     local UserInputService = game:GetService("UserInputService")
-    local player = Players.LocalPlayer
 
     local isJumping = false
     local jumpConnection = nil
@@ -2825,7 +2824,7 @@ do
     local landedConnection = nil
     local charConnection = nil
 
-    -- cp (position) vars
+    -- cp vars
     local cpConn    = nil
     local cpTrack   = nil
     local lastChar  = nil
@@ -2843,6 +2842,11 @@ do
     local cycleEnabled = false
     local cycleThread  = nil
 
+    local function getTarget()
+        if nanTarget == "" then return nil end
+        return Players:FindFirstChild(nanTarget)
+    end
+
     local function stopCpCycle()
         cycleEnabled = false
         if cycleThread then
@@ -2858,28 +2862,35 @@ do
     end
 
     local function runCpFor(duration)
-        -- Runs the cp heartbeat for `duration` seconds, then disconnects
-        if not selectedTarget then return end
+        local target = getTarget()
+        if not target then return end
+
         local done = false
-        cpConn = weldRun.Heartbeat:Connect(function()
+        cpConn = RunService.Heartbeat:Connect(function()
             if done then return end
             if not cycleEnabled then done = true return end
-            if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+
+            local tgt = getTarget()
+            if not tgt or not tgt.Character then
                 cycleEnabled = false
                 done = true
                 return
             end
-            local myChar = weldLocal.Character
+
+            local myChar = LocalPlayer.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myChar or not myRoot then return end
-            local tgtChar = selectedTarget.Character
+
+            local tgtChar = tgt.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
+
             if myChar ~= lastChar then
                 lastChar = myChar
                 if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
                 cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, true)
             end
+
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
@@ -2894,6 +2905,7 @@ do
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
             end)
         end)
+
         task.wait(duration)
         done = true
         if cpConn then cpConn:Disconnect() cpConn = nil end
@@ -2902,12 +2914,11 @@ do
     local function startCycle()
         cycleThread = task.spawn(function()
             while cycleEnabled do
-                -- Save current position before snapping
-                local myChar = weldLocal.Character
+                local myChar = LocalPlayer.Character
                 local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 local savedCF = myRoot and myRoot.CFrame
 
-                -- Snap to target for 0.2 seconds
+                -- Snap next to target for 0.2s
                 runCpFor(0.2)
 
                 if not cycleEnabled then break end
@@ -2921,6 +2932,8 @@ do
                         pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
                     end)
                 end
+
+                if not cycleEnabled then break end
 
                 -- Wait 4 seconds before next snap
                 task.wait(4)
@@ -3015,7 +3028,10 @@ do
 
                     -- NaN phase done, now start the cp cycle
                     if cycleEnabled then
-                        startCycle()
+                        task.wait(0.3)
+                        if cycleEnabled then
+                            startCycle()
+                        end
                     end
                 end)
                 return
@@ -3027,7 +3043,7 @@ do
         end)
 
         task.delay(0.2, function()
-            local character = player.Character
+            local character = LocalPlayer.Character
             if not character or not character.Parent then return end
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if humanoid and humanoid.Name ~= "OldHumanoid" then
@@ -3075,7 +3091,7 @@ do
         if landedConnection then landedConnection:Disconnect() landedConnection = nil end
         isJumping = false
 
-        local character = player.Character
+        local character = LocalPlayer.Character
         if character then
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             if humanoid then
@@ -3090,19 +3106,15 @@ do
         Callback = function(value)
             if value then
                 cycleEnabled = true
-
                 pcall(applyAll)
-
-                charConnection = player.CharacterAdded:Connect(function()
+                charConnection = LocalPlayer.CharacterAdded:Connect(function()
                     task.wait(0.5)
                     pcall(applyAll)
                 end)
             else
                 cycleEnabled = false
                 stopCpCycle()
-
                 if charConnection then charConnection:Disconnect() charConnection = nil end
-
                 resetCharacter()
             end
         end,
