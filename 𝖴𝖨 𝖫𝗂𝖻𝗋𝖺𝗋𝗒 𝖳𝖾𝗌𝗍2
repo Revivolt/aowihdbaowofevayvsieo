@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2772,15 +2772,21 @@ do
         -- Stop nan phase
         nanCounter = nanCounter + 1
         if nanConn then nanConn:Disconnect() nanConn = nil end
-
+    
         -- Disconnect jump binds
         if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
         if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
         if landedConnection then landedConnection:Disconnect() landedConnection = nil end
         isJumping = false
-
-        -- Respawn to reset character cleanly
-        player:LoadCharacter()
+    
+        -- Kill to force respawn
+        local character = player.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Health = 0
+            end
+        end
     end
 
     Tab:AddToggle({
