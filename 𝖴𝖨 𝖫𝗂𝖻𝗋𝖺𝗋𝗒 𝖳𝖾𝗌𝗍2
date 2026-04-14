@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -3245,6 +3245,65 @@ do
         end,
     })
 end
+
+
+Tab:AddButton({
+    Label    = "Teleport to Player",
+    Callback = function()
+        -- Resolve target player from nanTarget string
+        local targetPlayer = nil
+        for _, p in ipairs(nanPlayers:GetPlayers()) do
+            if p.Name:lower() == nanTarget:lower() or
+               p.DisplayName:lower() == nanTarget:lower() then
+                targetPlayer = p
+                break
+            end
+        end
+
+        if not targetPlayer then
+            warn("[Teleport] Player not found: " .. nanTarget)
+            return
+        end
+
+        local myChar = nanLocal.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myChar or not myRoot then
+            warn("[Teleport] Local character not found.")
+            return
+        end
+
+        local tgtChar = targetPlayer.Character
+        local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+        if not tgtChar or not tgtRoot then
+            warn("[Teleport] Target character not found.")
+            return
+        end
+
+        -- Save original CFrame before teleporting
+        local originalCFrame = myRoot.CFrame
+
+        -- Teleport to target
+        pcall(function()
+            local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+            myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
+            myRoot.AssemblyLinearVelocity  = Vector3.zero
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+        end)
+
+        -- Wait 0.2 seconds then return to original position
+        task.delay(0.2, function()
+            local stillMyChar = nanLocal.Character
+            local stillMyRoot = stillMyChar and stillMyChar:FindFirstChild("HumanoidRootPart")
+            if stillMyRoot then
+                pcall(function()
+                    stillMyRoot.CFrame = originalCFrame
+                    stillMyRoot.AssemblyLinearVelocity  = Vector3.zero
+                    stillMyRoot.AssemblyAngularVelocity = Vector3.zero
+                end)
+            end
+        end)
+    end,
+})
 
 
 local Tab = Window:AddTab("Admin")
