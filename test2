@@ -1,4 +1,4 @@
--- LocalScript (place in StarterPlayerScripts or StarterGui)
+-- test
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,300 +11,384 @@ screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
 -- Main Frame
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 380)
-mainFrame.Position = UDim2.new(0, 10, 0.5, -190)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.Size = UDim2.new(0, 310, 0, 420)
+mainFrame.Position = UDim2.new(0, 10, 0.5, -210)
+mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = mainFrame
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
 
--- Title
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
-title.TextColor3 = Color3.fromRGB(120, 200, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 16
-title.Text = "🎯 Spawn Predictor"
-title.BorderSizePixel = 0
-title.Parent = mainFrame
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 42)
+titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 55)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
-titleCorner.Parent = title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3 = Color3.fromRGB(120, 200, 255)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 15
+titleLabel.Text = "🎯  Spawn Predictor"
+titleLabel.Parent = titleBar
 
--- Target Label
-local targetLabel = Instance.new("TextLabel")
-targetLabel.Size = UDim2.new(1, -20, 0, 25)
-targetLabel.Position = UDim2.new(0, 10, 0, 48)
-targetLabel.BackgroundTransparency = 1
-targetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-targetLabel.Font = Enum.Font.Gotham
-targetLabel.TextSize = 13
-targetLabel.TextXAlignment = Enum.TextXAlignment.Left
-targetLabel.Text = "Target: None"
-targetLabel.Parent = mainFrame
+-- Helper to make a label
+local function makeLabel(parent, posY, text, color, size)
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, -20, 0, 22)
+	lbl.Position = UDim2.new(0, 10, 0, posY)
+	lbl.BackgroundTransparency = 1
+	lbl.TextColor3 = color or Color3.fromRGB(180, 180, 200)
+	lbl.Font = Enum.Font.Gotham
+	lbl.TextSize = size or 12
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Text = text or ""
+	lbl.Parent = parent
+	return lbl
+end
 
 -- Target Input
+makeLabel(mainFrame, 50, "Target Player:", Color3.fromRGB(140, 140, 160))
 local targetInput = Instance.new("TextBox")
 targetInput.Size = UDim2.new(1, -20, 0, 30)
-targetInput.Position = UDim2.new(0, 10, 0, 75)
-targetInput.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+targetInput.Position = UDim2.new(0, 10, 0, 70)
+targetInput.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
 targetInput.TextColor3 = Color3.fromRGB(255, 255, 255)
 targetInput.Font = Enum.Font.Gotham
 targetInput.TextSize = 13
 targetInput.PlaceholderText = "Enter player name..."
-targetInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 120)
+targetInput.PlaceholderColor3 = Color3.fromRGB(90, 90, 110)
 targetInput.Text = ""
 targetInput.BorderSizePixel = 0
+targetInput.ClearTextOnFocus = false
 targetInput.Parent = mainFrame
+Instance.new("UICorner", targetInput).CornerRadius = UDim.new(0, 6)
 
-local inputCorner = Instance.new("UICorner")
-inputCorner.CornerRadius = UDim.new(0, 6)
-inputCorner.Parent = targetInput
+local targetStatusLabel = makeLabel(mainFrame, 106, "Target: None", Color3.fromRGB(160, 160, 160))
 
--- Status Label
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -20, 0, 25)
-statusLabel.Position = UDim2.new(0, 10, 0, 115)
-statusLabel.BackgroundTransparency = 1
-statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 12
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.Text = "Status: Idle"
-statusLabel.Parent = mainFrame
+-- Divider
+local div1 = Instance.new("Frame")
+div1.Size = UDim2.new(1, -20, 0, 1)
+div1.Position = UDim2.new(0, 10, 0, 132)
+div1.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
+div1.BorderSizePixel = 0
+div1.Parent = mainFrame
 
--- Prediction Label
-local predictionLabel = Instance.new("TextLabel")
-predictionLabel.Size = UDim2.new(1, -20, 0, 50)
-predictionLabel.Position = UDim2.new(0, 10, 0, 145)
-predictionLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
-predictionLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
-predictionLabel.Font = Enum.Font.GothamBold
-predictionLabel.TextSize = 13
-predictionLabel.Text = "Predicted Spawn:\nWaiting..."
-predictionLabel.TextWrapped = true
-predictionLabel.BorderSizePixel = 0
-predictionLabel.Parent = mainFrame
+-- Status
+local statusLabel = makeLabel(mainFrame, 138, "Status: Idle — waiting for spawns...", Color3.fromRGB(100, 200, 100))
 
-local predCorner = Instance.new("UICorner")
-predCorner.CornerRadius = UDim.new(0, 6)
-predCorner.Parent = predictionLabel
+-- Prediction Box
+local predBox = Instance.new("Frame")
+predBox.Size = UDim2.new(1, -20, 0, 52)
+predBox.Position = UDim2.new(0, 10, 0, 165)
+predBox.BackgroundColor3 = Color3.fromRGB(28, 28, 45)
+predBox.BorderSizePixel = 0
+predBox.Parent = mainFrame
+Instance.new("UICorner", predBox).CornerRadius = UDim.new(0, 7)
 
--- Spawn List ScrollFrame
-local scrollLabel = Instance.new("TextLabel")
-scrollLabel.Size = UDim2.new(1, -20, 0, 18)
-scrollLabel.Position = UDim2.new(0, 10, 0, 205)
-scrollLabel.BackgroundTransparency = 1
-scrollLabel.TextColor3 = Color3.fromRGB(150, 150, 170)
-scrollLabel.Font = Enum.Font.GothamBold
-scrollLabel.TextSize = 12
-scrollLabel.TextXAlignment = Enum.TextXAlignment.Left
-scrollLabel.Text = "Detected Spawns:"
-scrollLabel.Parent = mainFrame
+local predTitle = Instance.new("TextLabel")
+predTitle.Size = UDim2.new(1, -10, 0, 18)
+predTitle.Position = UDim2.new(0, 8, 0, 4)
+predTitle.BackgroundTransparency = 1
+predTitle.TextColor3 = Color3.fromRGB(130, 130, 155)
+predTitle.Font = Enum.Font.GothamBold
+predTitle.TextSize = 11
+predTitle.TextXAlignment = Enum.TextXAlignment.Left
+predTitle.Text = "PREDICTED SPAWN"
+predTitle.Parent = predBox
+
+local predLabel = Instance.new("TextLabel")
+predLabel.Size = UDim2.new(1, -10, 0, 26)
+predLabel.Position = UDim2.new(0, 8, 0, 22)
+predLabel.BackgroundTransparency = 1
+predLabel.TextColor3 = Color3.fromRGB(255, 210, 70)
+predLabel.Font = Enum.Font.GothamBold
+predLabel.TextSize = 14
+predLabel.TextXAlignment = Enum.TextXAlignment.Left
+predLabel.Text = "Waiting for spawns..."
+predLabel.Parent = predBox
+
+-- Teleport Button
+local tpButton = Instance.new("TextButton")
+tpButton.Size = UDim2.new(1, -20, 0, 32)
+tpButton.Position = UDim2.new(0, 10, 0, 224)
+tpButton.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
+tpButton.TextColor3 = Color3.fromRGB(140, 140, 160)
+tpButton.Font = Enum.Font.GothamBold
+tpButton.TextSize = 13
+tpButton.Text = "⚡ Teleport to Predicted Spawn"
+tpButton.BorderSizePixel = 0
+tpButton.AutoButtonColor = false
+tpButton.Parent = mainFrame
+Instance.new("UICorner", tpButton).CornerRadius = UDim.new(0, 7)
+
+-- Spawn List
+local div2 = Instance.new("Frame")
+div2.Size = UDim2.new(1, -20, 0, 1)
+div2.Position = UDim2.new(0, 10, 0, 264)
+div2.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
+div2.BorderSizePixel = 0
+div2.Parent = mainFrame
+
+makeLabel(mainFrame, 270, "Recent Spawns (newest first):", Color3.fromRGB(130, 130, 155))
 
 local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -20, 0, 140)
-scrollFrame.Position = UDim2.new(0, 10, 0, 225)
-scrollFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+scrollFrame.Size = UDim2.new(1, -20, 0, 118)
+scrollFrame.Position = UDim2.new(0, 10, 0, 292)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 36)
 scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 4
-scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 120)
+scrollFrame.ScrollBarThickness = 3
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 130)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 scrollFrame.Parent = mainFrame
-
-local scrollCorner = Instance.new("UICorner")
-scrollCorner.CornerRadius = UDim.new(0, 6)
-scrollCorner.Parent = scrollFrame
+Instance.new("UICorner", scrollFrame).CornerRadius = UDim.new(0, 6)
 
 local listLayout = Instance.new("UIListLayout")
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Padding = UDim.new(0, 2)
 listLayout.Parent = scrollFrame
 
--- State
-local trackedSpawns = {}
-local targetPlayer = nil
-local predictionConnection = nil
+-- ══════════════════════════════════════════
+-- STATE
+-- ══════════════════════════════════════════
 
--- Utility: Find player by partial name
+local recentSpawns = {}   -- { part, addedAt } ordered newest-first
+local predictedSpawn = nil
+local targetPlayer = nil
+local MAX_TRACKED = 20
+local RECENCY_WINDOW = 8  -- seconds: spawns added within this window are "hot"
+
+-- ══════════════════════════════════════════
+-- UTILITIES
+-- ══════════════════════════════════════════
+
 local function findPlayer(name)
 	name = name:lower()
 	for _, p in ipairs(Players:GetPlayers()) do
-		if p.Name:lower():find(name) or p.DisplayName:lower():find(name) then
-			return p
+		if p ~= localPlayer then
+			if p.Name:lower():find(name, 1, true)
+				or p.DisplayName:lower():find(name, 1, true) then
+				return p
+			end
 		end
 	end
 	return nil
 end
 
--- Add a spawn entry to the scroll list
-local function addSpawnEntry(spawnPart, highlighted)
-	local entry = Instance.new("TextLabel")
-	entry.Size = UDim2.new(1, -4, 0, 22)
-	entry.BackgroundColor3 = highlighted
-		and Color3.fromRGB(60, 40, 10)
-		or Color3.fromRGB(35, 35, 55)
-	entry.TextColor3 = highlighted
-		and Color3.fromRGB(255, 200, 80)
-		or Color3.fromRGB(180, 180, 200)
-	entry.Font = Enum.Font.Gotham
-	entry.TextSize = 11
-	entry.TextXAlignment = Enum.TextXAlignment.Left
-	entry.Text = "  📍 " .. spawnPart.Name .. " @ " .. tostring(spawnPart.Position)
-	entry.BorderSizePixel = 0
-	entry.Name = spawnPart.Name
-	entry.Parent = scrollFrame
+local function setTeleportReady(spawn)
+	if spawn then
+		tpButton.BackgroundColor3 = Color3.fromRGB(60, 180, 80)
+		tpButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+		tpButton.Text = "⚡ Teleport to " .. spawn.Name
+	else
+		tpButton.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
+		tpButton.TextColor3 = Color3.fromRGB(140, 140, 160)
+		tpButton.Text = "⚡ Teleport to Predicted Spawn"
+	end
+end
 
-	local ec = Instance.new("UICorner")
-	ec.CornerRadius = UDim.new(0, 4)
-	ec.Parent = entry
+-- ══════════════════════════════════════════
+-- SPAWN LIST UI
+-- ══════════════════════════════════════════
+
+local function rebuildList()
+	for _, c in ipairs(scrollFrame:GetChildren()) do
+		if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end
+	end
+
+	local now = tick()
+	for i, data in ipairs(recentSpawns) do
+		local age = now - data.addedAt
+		local isHot = age <= RECENCY_WINDOW
+		local isPredicted = (data.part == predictedSpawn)
+
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, -4, 0, 24)
+		row.BackgroundColor3 = isPredicted
+			and Color3.fromRGB(70, 55, 10)
+			or (isHot and Color3.fromRGB(35, 50, 35) or Color3.fromRGB(28, 28, 42))
+		row.BorderSizePixel = 0
+		row.LayoutOrder = i
+		row.Parent = scrollFrame
+		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+		local rowLabel = Instance.new("TextLabel")
+		rowLabel.Size = UDim2.new(1, -8, 1, 0)
+		rowLabel.Position = UDim2.new(0, 6, 0, 0)
+		rowLabel.BackgroundTransparency = 1
+		rowLabel.TextXAlignment = Enum.TextXAlignment.Left
+		rowLabel.Font = Enum.Font.Gotham
+		rowLabel.TextSize = 11
+		rowLabel.TextColor3 = isPredicted
+			and Color3.fromRGB(255, 210, 60)
+			or (isHot and Color3.fromRGB(120, 220, 120) or Color3.fromRGB(150, 150, 170))
+
+		local icon = isPredicted and "🎯 " or (isHot and "🟢 " or "⚫ ")
+		local ageStr = string.format("%.1fs ago", age)
+		rowLabel.Text = icon .. data.part.Name .. "  (" .. ageStr .. ")"
+		rowLabel.Parent = row
+	end
 
 	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
-	return entry
 end
 
--- Rebuild spawn list UI
-local function rebuildSpawnList(predictedSpawn)
-	for _, child in ipairs(scrollFrame:GetChildren()) do
-		if child:IsA("TextLabel") then
-			child:Destroy()
-		end
-	end
-	for _, data in ipairs(trackedSpawns) do
-		local isHighlighted = predictedSpawn and data.part == predictedSpawn
-		addSpawnEntry(data.part, isHighlighted)
-	end
-end
+-- ══════════════════════════════════════════
+-- PREDICTION — purely recency based
+-- ══════════════════════════════════════════
 
--- Core prediction logic
-local function predictSpawn(player)
-	if #trackedSpawns == 0 then
-		return nil, "No spawns tracked yet"
-	end
-
-	local character = player.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-
-	-- Score each spawn
-	local bestSpawn = nil
-	local bestScore = math.huge
-
-	for _, data in ipairs(trackedSpawns) do
-		local spawnPos = data.part.Position
-		local score = 0
-
-		-- Factor 1: Distance from player's current position (closer = more likely)
-		if rootPart then
-			local dist = (rootPart.Position - spawnPos).Magnitude
-			score = score + dist
-		end
-
-		-- Factor 2: Recency — more recently added spawns get a bonus
-		local age = tick() - data.addedAt
-		score = score - (math.max(0, 5 - age) * 50) -- strong recency bonus within 5s
-
-		-- Factor 3: Prefer spawns close to the map center (heuristic)
-		local centerDist = spawnPos.Magnitude
-		score = score + centerDist * 0.05
-
-		if score < bestScore then
-			bestScore = score
-			bestSpawn = data.part
-		end
-	end
-
-	return bestSpawn, nil
-end
-
--- Update prediction display
-local function updatePrediction()
-	if not targetPlayer then
-		predictionLabel.Text = "Predicted Spawn:\nNo target set"
+local function runPrediction()
+	if #recentSpawns == 0 then
+		predLabel.Text = "No spawns detected yet"
+		predLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+		predictedSpawn = nil
+		setTeleportReady(nil)
+		rebuildList()
 		return
 	end
 
-	local predicted, err = predictSpawn(targetPlayer)
-	if predicted then
-		predictionLabel.Text = "Predicted Spawn:\n✅ " .. predicted.Name
-		rebuildSpawnList(predicted)
-	else
-		predictionLabel.Text = "Predicted Spawn:\n⚠️ " .. (err or "Unknown")
-		rebuildSpawnList(nil)
+	-- Pick the most recently added spawn within the recency window
+	-- If multiple spawns came in at nearly the same time (<0.3s apart),
+	-- treat them as a "batch" and pick the one added last in the batch.
+	local now = tick()
+	local hotSpawns = {}
+	for _, data in ipairs(recentSpawns) do
+		if (now - data.addedAt) <= RECENCY_WINDOW then
+			table.insert(hotSpawns, data)
+		end
 	end
+
+	local chosen = nil
+	if #hotSpawns > 0 then
+		-- Among hot spawns, pick the very newest
+		chosen = hotSpawns[1] -- list is newest-first
+	else
+		-- No hot spawns; fall back to the most recently added overall
+		chosen = recentSpawns[1]
+	end
+
+	predictedSpawn = chosen.part
+
+	local age = now - chosen.addedAt
+	predLabel.Text = "✅  " .. chosen.part.Name
+	predLabel.TextColor3 = Color3.fromRGB(255, 210, 70)
+	statusLabel.Text = string.format(
+		"Status: Predicted '%s'  (added %.1fs ago, %d tracked)",
+		chosen.part.Name, age, #recentSpawns
+	)
+	statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+
+	setTeleportReady(predictedSpawn)
+	rebuildList()
 end
 
--- Watch for new Spawn parts anywhere in the workspace
-local function watchForSpawns(parent)
-	parent.DescendantAdded:Connect(function(obj)
-		if obj.Name == "Spawn" and obj:IsA("BasePart") then
-			local data = { part = obj, addedAt = tick() }
-			table.insert(trackedSpawns, data)
+-- ══════════════════════════════════════════
+-- SPAWN WATCHER
+-- ══════════════════════════════════════════
 
-			statusLabel.Text = "Status: 🔴 Spawn detected! (" .. #trackedSpawns .. " total)"
-			statusLabel.TextColor3 = Color3.fromRGB(255, 120, 80)
+local function onSpawnAdded(obj)
+	if obj.Name ~= "Spawn" or not obj:IsA("BasePart") then return end
 
-			updatePrediction()
+	local data = { part = obj, addedAt = tick() }
+	table.insert(recentSpawns, 1, data) -- newest first
 
-			-- Clean up when removed
-			obj.AncestryChanged:Connect(function()
-				if not obj:IsDescendantOf(game) then
-					for i, d in ipairs(trackedSpawns) do
-						if d.part == obj then
-							table.remove(trackedSpawns, i)
-							break
-						end
-					end
-					updatePrediction()
-					statusLabel.Text = "Status: Monitoring... (" .. #trackedSpawns .. " spawns)"
-					statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+	-- Cap list size
+	if #recentSpawns > MAX_TRACKED then
+		table.remove(recentSpawns, #recentSpawns)
+	end
+
+	statusLabel.Text = "🔴 New Spawn added! Running prediction..."
+	statusLabel.TextColor3 = Color3.fromRGB(255, 120, 80)
+
+	runPrediction()
+
+	-- Remove from tracking when it leaves the game
+	obj.AncestryChanged:Connect(function()
+		if not obj:IsDescendantOf(game) then
+			for i, d in ipairs(recentSpawns) do
+				if d.part == obj then
+					table.remove(recentSpawns, i)
+					break
 				end
-			end)
+			end
+			if predictedSpawn == obj then
+				predictedSpawn = nil
+				predLabel.Text = "Predicted spawn was removed"
+				predLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
+				setTeleportReady(nil)
+			end
+			rebuildList()
 		end
 	end)
 end
 
--- Handle target input
-targetInput.FocusLost:Connect(function(enterPressed)
-	if not enterPressed then return end
-	local name = targetInput.Text
-	local found = findPlayer(name)
-	if found then
-		targetPlayer = found
-		targetLabel.Text = "Target: ✅ " .. found.Name
-		statusLabel.Text = "Status: Monitoring..."
-		statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
-		updatePrediction()
-	else
-		targetLabel.Text = "Target: ❌ Not found"
-		statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-	end
-end)
+workspace.DescendantAdded:Connect(onSpawnAdded)
 
--- Also scan existing Spawn parts already in workspace
+-- Pick up any Spawn parts already present
 for _, obj in ipairs(workspace:GetDescendants()) do
 	if obj.Name == "Spawn" and obj:IsA("BasePart") then
-		table.insert(trackedSpawns, { part = obj, addedAt = tick() })
+		local data = { part = obj, addedAt = tick() }
+		table.insert(recentSpawns, data)
 	end
 end
+if #recentSpawns > 0 then
+	statusLabel.Text = "Status: Found " .. #recentSpawns .. " existing spawn(s)"
+	runPrediction()
+end
 
--- Start watching
-watchForSpawns(workspace)
-statusLabel.Text = "Status: Monitoring... (" .. #trackedSpawns .. " spawns)"
+-- ══════════════════════════════════════════
+-- TARGET INPUT
+-- ══════════════════════════════════════════
 
--- Periodic refresh every 0.5s
-RunService.Heartbeat:Connect(function()
-	-- lightweight UI update throttle
+targetInput.FocusLost:Connect(function(enter)
+	if not enter then return end
+	local found = findPlayer(targetInput.Text)
+	if found then
+		targetPlayer = found
+		targetStatusLabel.Text = "Target: ✅  " .. found.Name .. " (" .. found.DisplayName .. ")"
+		targetStatusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+	else
+		targetPlayer = nil
+		targetStatusLabel.Text = "Target: ❌  Player not found"
+		targetStatusLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
+	end
 end)
+
+-- ══════════════════════════════════════════
+-- TELEPORT BUTTON
+-- ══════════════════════════════════════════
+
+tpButton.MouseButton1Click:Connect(function()
+	if not predictedSpawn then
+		statusLabel.Text = "No predicted spawn to teleport to!"
+		statusLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
+		return
+	end
+
+	local char = localPlayer.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then
+		statusLabel.Text = "Cannot teleport: no character found"
+		statusLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
+		return
+	end
+
+	-- Offset slightly above the spawn so we land on top of it
+	root.CFrame = CFrame.new(predictedSpawn.Position + Vector3.new(0, 5, 0))
+	statusLabel.Text = "✈️  Teleported to " .. predictedSpawn.Name
+	statusLabel.TextColor3 = Color3.fromRGB(80, 180, 255)
+end)
+
+-- ══════════════════════════════════════════
+-- PERIODIC UI REFRESH (age timers in list)
+-- ══════════════════════════════════════════
 
 task.spawn(function()
 	while true do
-		task.wait(0.5)
-		if targetPlayer and #trackedSpawns > 0 then
-			updatePrediction()
-		end
+		task.wait(0.25)
+		rebuildList()
 	end
 end)
