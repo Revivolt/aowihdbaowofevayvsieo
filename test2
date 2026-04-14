@@ -1,147 +1,310 @@
--- test
-local RunService = game:GetService("RunService")
+-- LocalScript (place in StarterPlayerScripts or StarterGui)
+
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local RunService = game:GetService("RunService")
 
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character = newChar
+local localPlayer = Players.LocalPlayer
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SpawnPredictor"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 300, 0, 380)
+mainFrame.Position = UDim2.new(0, 10, 0.5, -190)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = mainFrame
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+title.TextColor3 = Color3.fromRGB(120, 200, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.Text = "🎯 Spawn Predictor"
+title.BorderSizePixel = 0
+title.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = title
+
+-- Target Label
+local targetLabel = Instance.new("TextLabel")
+targetLabel.Size = UDim2.new(1, -20, 0, 25)
+targetLabel.Position = UDim2.new(0, 10, 0, 48)
+targetLabel.BackgroundTransparency = 1
+targetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+targetLabel.Font = Enum.Font.Gotham
+targetLabel.TextSize = 13
+targetLabel.TextXAlignment = Enum.TextXAlignment.Left
+targetLabel.Text = "Target: None"
+targetLabel.Parent = mainFrame
+
+-- Target Input
+local targetInput = Instance.new("TextBox")
+targetInput.Size = UDim2.new(1, -20, 0, 30)
+targetInput.Position = UDim2.new(0, 10, 0, 75)
+targetInput.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+targetInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+targetInput.Font = Enum.Font.Gotham
+targetInput.TextSize = 13
+targetInput.PlaceholderText = "Enter player name..."
+targetInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 120)
+targetInput.Text = ""
+targetInput.BorderSizePixel = 0
+targetInput.Parent = mainFrame
+
+local inputCorner = Instance.new("UICorner")
+inputCorner.CornerRadius = UDim.new(0, 6)
+inputCorner.Parent = targetInput
+
+-- Status Label
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -20, 0, 25)
+statusLabel.Position = UDim2.new(0, 10, 0, 115)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 12
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Text = "Status: Idle"
+statusLabel.Parent = mainFrame
+
+-- Prediction Label
+local predictionLabel = Instance.new("TextLabel")
+predictionLabel.Size = UDim2.new(1, -20, 0, 50)
+predictionLabel.Position = UDim2.new(0, 10, 0, 145)
+predictionLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+predictionLabel.TextColor3 = Color3.fromRGB(255, 200, 80)
+predictionLabel.Font = Enum.Font.GothamBold
+predictionLabel.TextSize = 13
+predictionLabel.Text = "Predicted Spawn:\nWaiting..."
+predictionLabel.TextWrapped = true
+predictionLabel.BorderSizePixel = 0
+predictionLabel.Parent = mainFrame
+
+local predCorner = Instance.new("UICorner")
+predCorner.CornerRadius = UDim.new(0, 6)
+predCorner.Parent = predictionLabel
+
+-- Spawn List ScrollFrame
+local scrollLabel = Instance.new("TextLabel")
+scrollLabel.Size = UDim2.new(1, -20, 0, 18)
+scrollLabel.Position = UDim2.new(0, 10, 0, 205)
+scrollLabel.BackgroundTransparency = 1
+scrollLabel.TextColor3 = Color3.fromRGB(150, 150, 170)
+scrollLabel.Font = Enum.Font.GothamBold
+scrollLabel.TextSize = 12
+scrollLabel.TextXAlignment = Enum.TextXAlignment.Left
+scrollLabel.Text = "Detected Spawns:"
+scrollLabel.Parent = mainFrame
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -20, 0, 140)
+scrollFrame.Position = UDim2.new(0, 10, 0, 225)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 120)
+scrollFrame.Parent = mainFrame
+
+local scrollCorner = Instance.new("UICorner")
+scrollCorner.CornerRadius = UDim.new(0, 6)
+scrollCorner.Parent = scrollFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 2)
+listLayout.Parent = scrollFrame
+
+-- State
+local trackedSpawns = {}
+local targetPlayer = nil
+local predictionConnection = nil
+
+-- Utility: Find player by partial name
+local function findPlayer(name)
+	name = name:lower()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Name:lower():find(name) or p.DisplayName:lower():find(name) then
+			return p
+		end
+	end
+	return nil
+end
+
+-- Add a spawn entry to the scroll list
+local function addSpawnEntry(spawnPart, highlighted)
+	local entry = Instance.new("TextLabel")
+	entry.Size = UDim2.new(1, -4, 0, 22)
+	entry.BackgroundColor3 = highlighted
+		and Color3.fromRGB(60, 40, 10)
+		or Color3.fromRGB(35, 35, 55)
+	entry.TextColor3 = highlighted
+		and Color3.fromRGB(255, 200, 80)
+		or Color3.fromRGB(180, 180, 200)
+	entry.Font = Enum.Font.Gotham
+	entry.TextSize = 11
+	entry.TextXAlignment = Enum.TextXAlignment.Left
+	entry.Text = "  📍 " .. spawnPart.Name .. " @ " .. tostring(spawnPart.Position)
+	entry.BorderSizePixel = 0
+	entry.Name = spawnPart.Name
+	entry.Parent = scrollFrame
+
+	local ec = Instance.new("UICorner")
+	ec.CornerRadius = UDim.new(0, 4)
+	ec.Parent = entry
+
+	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
+	return entry
+end
+
+-- Rebuild spawn list UI
+local function rebuildSpawnList(predictedSpawn)
+	for _, child in ipairs(scrollFrame:GetChildren()) do
+		if child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+	for _, data in ipairs(trackedSpawns) do
+		local isHighlighted = predictedSpawn and data.part == predictedSpawn
+		addSpawnEntry(data.part, isHighlighted)
+	end
+end
+
+-- Core prediction logic
+local function predictSpawn(player)
+	if #trackedSpawns == 0 then
+		return nil, "No spawns tracked yet"
+	end
+
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+	-- Score each spawn
+	local bestSpawn = nil
+	local bestScore = math.huge
+
+	for _, data in ipairs(trackedSpawns) do
+		local spawnPos = data.part.Position
+		local score = 0
+
+		-- Factor 1: Distance from player's current position (closer = more likely)
+		if rootPart then
+			local dist = (rootPart.Position - spawnPos).Magnitude
+			score = score + dist
+		end
+
+		-- Factor 2: Recency — more recently added spawns get a bonus
+		local age = tick() - data.addedAt
+		score = score - (math.max(0, 5 - age) * 50) -- strong recency bonus within 5s
+
+		-- Factor 3: Prefer spawns close to the map center (heuristic)
+		local centerDist = spawnPos.Magnitude
+		score = score + centerDist * 0.05
+
+		if score < bestScore then
+			bestScore = score
+			bestSpawn = data.part
+		end
+	end
+
+	return bestSpawn, nil
+end
+
+-- Update prediction display
+local function updatePrediction()
+	if not targetPlayer then
+		predictionLabel.Text = "Predicted Spawn:\nNo target set"
+		return
+	end
+
+	local predicted, err = predictSpawn(targetPlayer)
+	if predicted then
+		predictionLabel.Text = "Predicted Spawn:\n✅ " .. predicted.Name
+		rebuildSpawnList(predicted)
+	else
+		predictionLabel.Text = "Predicted Spawn:\n⚠️ " .. (err or "Unknown")
+		rebuildSpawnList(nil)
+	end
+end
+
+-- Watch for new Spawn parts anywhere in the workspace
+local function watchForSpawns(parent)
+	parent.DescendantAdded:Connect(function(obj)
+		if obj.Name == "Spawn" and obj:IsA("BasePart") then
+			local data = { part = obj, addedAt = tick() }
+			table.insert(trackedSpawns, data)
+
+			statusLabel.Text = "Status: 🔴 Spawn detected! (" .. #trackedSpawns .. " total)"
+			statusLabel.TextColor3 = Color3.fromRGB(255, 120, 80)
+
+			updatePrediction()
+
+			-- Clean up when removed
+			obj.AncestryChanged:Connect(function()
+				if not obj:IsDescendantOf(game) then
+					for i, d in ipairs(trackedSpawns) do
+						if d.part == obj then
+							table.remove(trackedSpawns, i)
+							break
+						end
+					end
+					updatePrediction()
+					statusLabel.Text = "Status: Monitoring... (" .. #trackedSpawns .. " spawns)"
+					statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+				end
+			end)
+		end
+	end)
+end
+
+-- Handle target input
+targetInput.FocusLost:Connect(function(enterPressed)
+	if not enterPressed then return end
+	local name = targetInput.Text
+	local found = findPlayer(name)
+	if found then
+		targetPlayer = found
+		targetLabel.Text = "Target: ✅ " .. found.Name
+		statusLabel.Text = "Status: Monitoring..."
+		statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
+		updatePrediction()
+	else
+		targetLabel.Text = "Target: ❌ Not found"
+		statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+	end
 end)
 
-local TARGET_NAME = "62_AM"
-local SCAN_INTERVAL = 0.05      -- How often to scan (seconds) - faster = more responsive
-local TELEPORT_THRESHOLD = 10   -- Stud jump to confirm a teleport occurred
-local PRE_TELEPORT_DIST = 50    -- How close target must be to a spawn to pre-teleport you there
-
-local function getAllSpawns()
-    local spawns = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "Spawn" and obj:IsA("BasePart") then
-            table.insert(spawns, obj)
-        end
-    end
-    return spawns
+-- Also scan existing Spawn parts already in workspace
+for _, obj in ipairs(workspace:GetDescendants()) do
+	if obj.Name == "Spawn" and obj:IsA("BasePart") then
+		table.insert(trackedSpawns, { part = obj, addedAt = tick() })
+	end
 end
 
-local function findClosestSpawn(targetPosition, spawns)
-    local closest, minDist = nil, math.huge
-    for _, spawn in ipairs(spawns) do
-        local dist = (spawn.Position - targetPosition).Magnitude
-        if dist < minDist then
-            minDist = dist
-            closest = spawn
-        end
-    end
-    return closest
-end
+-- Start watching
+watchForSpawns(workspace)
+statusLabel.Text = "Status: Monitoring... (" .. #trackedSpawns .. " spawns)"
 
-local function getTargetPlayer(targetName)
-    local lowerTarget = targetName:lower()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower():find(lowerTarget, 1, true) or
-           (p.DisplayName and p.DisplayName:lower():find(lowerTarget, 1, true)) then
-            return p
-        end
-    end
-    return nil
-end
-
-local function teleportToSpawn(spawn)
-    local hrp = Character and Character:FindFirstChild("HumanoidRootPart")
-    if hrp and spawn then
-        hrp.CFrame = spawn.CFrame + Vector3.new(0, 3, 0)
-        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        print("[Teleport] Pre-teleported to spawn: " .. spawn:GetFullName())
-    end
-end
-
-local lastScan = 0
-local lastTargetPos = nil
-local currentLockedSpawn = nil  -- The spawn we've already moved to
-local posHistory = {}
-local HISTORY_SIZE = 5
-
-RunService.Heartbeat:Connect(function(dt)
-    lastScan += dt
-    if lastScan < SCAN_INTERVAL then return end
-    lastScan = 0
-
-    local targetPlayer = getTargetPlayer(TARGET_NAME)
-    if not targetPlayer then return end
-
-    local targetChar = targetPlayer.Character
-    local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then
-        -- Target respawned/character removed, reset state
-        lastTargetPos = nil
-        posHistory = {}
-        currentLockedSpawn = nil
-        return
-    end
-
-    local currentPos = targetRoot.Position
-
-    -- Build position history
-    table.insert(posHistory, currentPos)
-    if #posHistory > HISTORY_SIZE then
-        table.remove(posHistory, 1)
-    end
-
-    local spawns = getAllSpawns()
-
-    -- === PREDICTION: Watch if target is being PULLED toward a spawn ===
-    -- This works by checking if the target is consistently getting closer to a specific spawn
-    if #posHistory == HISTORY_SIZE then
-        local oldPos = posHistory[1]
-        local newPos = posHistory[#posHistory]
-
-        -- Find which spawn the target is converging toward
-        local convergingSpawn = nil
-        local bestConverge = 0
-
-        for _, spawn in ipairs(spawns) do
-            local distOld = (oldPos - spawn.Position).Magnitude
-            local distNew = (newPos - spawn.Position).Magnitude
-            local closing = distOld - distNew -- positive = getting closer
-
-            -- They are actively closing in on this spawn
-            if closing > bestConverge and distNew < PRE_TELEPORT_DIST then
-                bestConverge = closing
-                convergingSpawn = spawn
-            end
-        end
-
-        if convergingSpawn and convergingSpawn ~= currentLockedSpawn then
-            print(string.format("[Teleport] Target converging on spawn (%.1f studs away) — moving ahead!", (newPos - convergingSpawn.Position).Magnitude))
-            teleportToSpawn(convergingSpawn)
-            currentLockedSpawn = convergingSpawn
-        end
-    end
-
-    -- === FALLBACK: Detect instant teleport (large position jump) ===
-    -- In case prediction missed it, still catch the teleport after it happens
-    if lastTargetPos then
-        local delta = (currentPos - lastTargetPos).Magnitude
-        if delta > TELEPORT_THRESHOLD then
-            local closestSpawn = findClosestSpawn(currentPos, spawns)
-            if closestSpawn and closestSpawn ~= currentLockedSpawn then
-                print(string.format("[Teleport] Teleport detected (%.1f studs) — catching up to spawn!", delta))
-                teleportToSpawn(closestSpawn)
-                currentLockedSpawn = closestSpawn
-            end
-        end
-    end
-
-    -- Reset locked spawn if target moves far away from it (they left that spawn)
-    if currentLockedSpawn then
-        local distFromLocked = (currentPos - currentLockedSpawn.Position).Magnitude
-        if distFromLocked > PRE_TELEPORT_DIST * 2 then
-            currentLockedSpawn = nil
-        end
-    end
-
-    lastTargetPos = currentPos
+-- Periodic refresh every 0.5s
+RunService.Heartbeat:Connect(function()
+	-- lightweight UI update throttle
 end)
 
-print("[Teleport] Script running. Tracking: " .. TARGET_NAME)
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		if targetPlayer and #trackedSpawns > 0 then
+			updatePrediction()
+		end
+	end
+end)
