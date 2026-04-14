@@ -1,3 +1,5 @@
+-- test
+
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -75,5 +77,5 @@ local function main(targetPlayerName)
     -- until some condition or for a certain duration
 end
 
--- Example usage: replace "62_AM" with the target player's name
-main("targetPlayerName")
+-- Example usage: replace "targetPlayerName" with the target player's name
+main("62_AM")
