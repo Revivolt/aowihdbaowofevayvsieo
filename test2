@@ -1,9 +1,18 @@
 -- test
-
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+
+-- Update character reference on respawn
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+end)
+
+local TARGET_NAME = "62_AM"
+local SCAN_INTERVAL = 0.1       -- How often to scan (seconds)
+local TELEPORT_THRESHOLD = 10   -- Distance change to consider a teleport happening
+local POSITION_HISTORY_SIZE = 3 -- Frames to track for movement prediction
 
 local function getAllSpawns()
     local spawns = {}
@@ -18,7 +27,7 @@ end
 local function findClosestSpawn(targetPosition, spawns)
     local closest, minDist = nil, math.huge
     for _, spawn in ipairs(spawns) do
-        local dist = (spawn.Position - targetPosition).magnitude
+        local dist = (spawn.Position - targetPosition).Magnitude
         if dist < minDist then
             minDist = dist
             closest = spawn
@@ -30,7 +39,8 @@ end
 local function getTargetPlayer(targetName)
     local lowerTarget = targetName:lower()
     for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower():find(lowerTarget, 1, true) or (p.DisplayName and p.DisplayName:lower():find(lowerTarget, 1, true)) then
+        if p.Name:lower():find(lowerTarget, 1, true) or
+           (p.DisplayName and p.DisplayName:lower():find(lowerTarget, 1, true)) then
             return p
         end
     end
@@ -40,42 +50,88 @@ end
 local function teleportToSpawn(spawn)
     local hrp = Character and Character:FindFirstChild("HumanoidRootPart")
     if hrp and spawn then
-        local targetCFrame = spawn.CFrame + Vector3.new(0, 3, 0) -- slightly above spawn to avoid clipping
-        hrp.CFrame = targetCFrame
+        hrp.CFrame = spawn.CFrame + Vector3.new(0, 3, 0)
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        print("[Teleport] Teleported to spawn: " .. spawn:GetFullName())
     end
 end
 
-local function main(targetPlayerName)
-    local targetPlayer = getTargetPlayer(targetPlayerName)
+-- Main loop
+local lastTargetPos = nil
+local lastScan = 0
+local posHistory = {}
+local lastTeleportedSpawn = nil
+
+RunService.Heartbeat:Connect(function(dt)
+    lastScan += dt
+    if lastScan < SCAN_INTERVAL then return end
+    lastScan = 0
+
+    -- Refresh character reference
+    local hrp = Character and Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    -- Find target player (re-checks every loop in case they join late)
+    local targetPlayer = getTargetPlayer(TARGET_NAME)
     if not targetPlayer then
-        warn("[Teleport] Player not found: " .. targetPlayerName)
+        warn("[Teleport] Waiting for player: " .. TARGET_NAME)
         return
     end
 
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then
-        warn("[Teleport] Target character not found.")
-        return
+    if not targetRoot then return end
+
+    local currentPos = targetRoot.Position
+
+    -- Track position history for prediction
+    table.insert(posHistory, currentPos)
+    if #posHistory > POSITION_HISTORY_SIZE then
+        table.remove(posHistory, 1)
     end
 
-    local spawns = getAllSpawns()
-    local targetPos = targetRoot.Position
-    local closestSpawn = findClosestSpawn(targetPos, spawns)
+    -- Detect large position jump (teleport event)
+    if lastTargetPos then
+        local delta = (currentPos - lastTargetPos).Magnitude
 
-    if not closestSpawn then
-        warn("[Teleport] No spawn points found.")
-        return
+        if delta > TELEPORT_THRESHOLD then
+            -- Target was just teleported — find closest spawn to their NEW position
+            print(string.format("[Teleport] Target jumped %.1f studs — intercepting spawn!", delta))
+            local spawns = getAllSpawns()
+            local closestSpawn = findClosestSpawn(currentPos, spawns)
+
+            if closestSpawn and closestSpawn ~= lastTeleportedSpawn then
+                teleportToSpawn(closestSpawn)
+                lastTeleportedSpawn = closestSpawn
+            end
+        end
     end
 
-    -- Teleport your character to the spawn point before the target arrives
-    teleportToSpawn(closestSpawn)
+    -- Also predict: if target is moving TOWARD a spawn, pre-teleport
+    if #posHistory == POSITION_HISTORY_SIZE then
+        local oldPos = posHistory[1]
+        local velocity = (currentPos - oldPos) / (SCAN_INTERVAL * POSITION_HISTORY_SIZE)
 
-    -- Optional: You can add a heartbeat loop if you want to keep your character at that spawn
-    -- until some condition or for a certain duration
-end
+        if velocity.Magnitude > 1 then
+            -- Project position slightly ahead
+            local predictedPos = currentPos + velocity * 0.5
 
--- Example usage: replace "targetPlayerName" with the target player's name
-main("62_AM")
+            local spawns = getAllSpawns()
+            local closestSpawn = findClosestSpawn(predictedPos, spawns)
+
+            if closestSpawn and closestSpawn ~= lastTeleportedSpawn then
+                local distToSpawn = (predictedPos - closestSpawn.Position).Magnitude
+                if distToSpawn < 15 then
+                    print("[Teleport] Predicting target heading to spawn — pre-teleporting!")
+                    teleportToSpawn(closestSpawn)
+                    lastTeleportedSpawn = closestSpawn
+                end
+            end
+        end
+    end
+
+    lastTargetPos = currentPos
+end)
+
+print("[Teleport] Script running. Tracking: " .. TARGET_NAME)
