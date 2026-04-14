@@ -1,57 +1,79 @@
-local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local CollectionService = game:GetService("CollectionService") -- if using tags
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
-local localPlayer = Players.LocalPlayer
-local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-local targetPlayerName = "62_AM" -- replace with actual target player name or logic
-
--- Function to get all teleport points
-local function getTeleportPoints()
-    local points = {}
-    -- Example: Get all parts with a specific name pattern
-    for _, part in pairs(workspace:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name:match("Spawn") then
-            table.insert(points, part)
+local function getAllSpawns()
+    local spawns = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Spawn") then
+            table.insert(spawns, obj)
         end
     end
-    return points
+    return spawns
 end
 
--- Function to predict target player's teleport point
-local function getTargetTeleportPoint()
-    local targetPlayer = Players:FindFirstChild(targetPlayerName)
-    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local targetHRP = targetPlayer.Character.HumanoidRootPart
-        -- Logic to determine which point the target will go to
-        -- For example, find the closest teleport point
-        local points = getTeleportPoints()
-        local closestPoint = nil
-        local closestDistance = math.huge
-        for _, point in pairs(points) do
-            local dist = (targetHRP.Position - point.Position).magnitude
-            if dist < closestDistance then
-                closestDistance = dist
-                closestPoint = point
-            end
+local function findClosestSpawn(targetPosition, spawns)
+    local closest, minDist = nil, math.huge
+    for _, spawn in ipairs(spawns) do
+        local dist = (spawn.Position - targetPosition).magnitude
+        if dist < minDist then
+            minDist = dist
+            closest = spawn
         end
-        return closestPoint
+    end
+    return closest
+end
+
+local function getTargetPlayer(targetName)
+    local lowerTarget = targetName:lower()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name:lower():find(lowerTarget, 1, true) or (p.DisplayName and p.DisplayName:lower():find(lowerTarget, 1, true)) then
+            return p
+        end
+    end
+    return nil
+end
+
+local function teleportToSpawn(spawn)
+    local hrp = Character and Character:FindFirstChild("HumanoidRootPart")
+    if hrp and spawn then
+        local targetCFrame = spawn.CFrame + Vector3.new(0, 3, 0) -- slightly above spawn to avoid clipping
+        hrp.CFrame = targetCFrame
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
     end
 end
 
--- Main loop
-RunService.Heartbeat:Connect(function()
-    local points = getTeleportPoints()
-    local targetPoint = getTargetTeleportPoint()
-
-    if targetPoint then
-        -- Teleport your character there first
-        humanoidRootPart.CFrame = targetPoint.CFrame + Vector3.new(0, 3, 0) -- offset to avoid clipping
-
-        -- Optionally, you can add a delay or check if the teleportation is confirmed
-        -- Then, proceed with teleporting the target player (if you have control over their teleport)
-        -- Note: As a client, you may not be able to teleport other players directly
-        -- This script assumes you're on the server or have the necessary permissions
+local function main(targetPlayerName)
+    local targetPlayer = getTargetPlayer(targetPlayerName)
+    if not targetPlayer then
+        warn("[Teleport] Player not found: " .. targetPlayerName)
+        return
     end
-end)
+
+    local targetChar = targetPlayer.Character
+    local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then
+        warn("[Teleport] Target character not found.")
+        return
+    end
+
+    local spawns = getAllSpawns()
+    local targetPos = targetRoot.Position
+    local closestSpawn = findClosestSpawn(targetPos, spawns)
+
+    if not closestSpawn then
+        warn("[Teleport] No spawn points found.")
+        return
+    end
+
+    -- Teleport your character to the spawn point before the target arrives
+    teleportToSpawn(closestSpawn)
+
+    -- Optional: You can add a heartbeat loop if you want to keep your character at that spawn
+    -- until some condition or for a certain duration
+end
+
+-- Example usage: replace "targetPlayerName" with the target player's name
+main("62_AM")
