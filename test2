@@ -1,167 +1,57 @@
--- Local Script to bring a target player to your location
-
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
--- Create RemoteEvent for teleport request
-local teleportRequestEvent = Instance.new("RemoteEvent")
-teleportRequestEvent.Name = "TeleportPlayerToMe"
-teleportRequestEvent.Parent = ReplicatedStorage
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService") -- if using tags
 
 local localPlayer = Players.LocalPlayer
-local playerList = {}
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local targetPlayerName = "62_AM" -- replace with actual target player name or logic
 
--- Function to update player list
-local function updatePlayerList()
-    playerList = {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= localPlayer then
-            table.insert(playerList, player)
+-- Function to get all teleport points
+local function getTeleportPoints()
+    local points = {}
+    -- Example: Get all parts with a specific name pattern
+    for _, part in pairs(workspace:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name:match("Spawn") then
+            table.insert(points, part)
         end
+    end
+    return points
+end
+
+-- Function to predict target player's teleport point
+local function getTargetTeleportPoint()
+    local targetPlayer = Players:FindFirstChild(targetPlayerName)
+    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local targetHRP = targetPlayer.Character.HumanoidRootPart
+        -- Logic to determine which point the target will go to
+        -- For example, find the closest teleport point
+        local points = getTeleportPoints()
+        local closestPoint = nil
+        local closestDistance = math.huge
+        for _, point in pairs(points) do
+            local dist = (targetHRP.Position - point.Position).magnitude
+            if dist < closestDistance then
+                closestDistance = dist
+                closestPoint = point
+            end
+        end
+        return closestPoint
     end
 end
 
--- Function to bring a target player to your location
-local function bringPlayerToMe(targetPlayer)
-    local myCharacter = localPlayer.Character
-    local myRootPart = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
-    
-    if not myRootPart then
-        warn("Your character is not loaded or has no HumanoidRootPart")
-        return false
-    end
-    
-    if not targetPlayer or not targetPlayer.Character then
-        warn("Target player not found or character not loaded")
-        return false
-    end
-    
-    local myPosition = myRootPart.Position
-    
-    -- Send request to server to teleport target player to your position
-    teleportRequestEvent:FireServer(targetPlayer, myPosition)
-    
-    print("Requested to bring " .. targetPlayer.Name .. " to your location at " .. tostring(myPosition))
-    return true
-end
+-- Main loop
+RunService.Heartbeat:Connect(function()
+    local points = getTeleportPoints()
+    local targetPoint = getTargetTeleportPoint()
 
--- Create GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TeleportOtherGUI"
-screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+    if targetPoint then
+        -- Teleport your character there first
+        humanoidRootPart.CFrame = targetPoint.CFrame + Vector3.new(0, 3, 0) -- offset to avoid clipping
 
--- Main Frame
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 400)
-mainFrame.Position = UDim2.new(0, 10, 0, 10)
-mainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-mainFrame.BackgroundTransparency = 0.2
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
--- Title
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.Position = UDim2.new(0, 0, 0, 0)
-title.Text = "Bring Player To Me"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.8)
-title.Font = Enum.Font.SourceSansBold
-title.TextSize = 20
-title.Parent = mainFrame
-
--- Player List Frame
-local listFrame = Instance.new("ScrollingFrame")
-listFrame.Size = UDim2.new(1, -20, 1, -100)
-listFrame.Position = UDim2.new(0, 10, 0, 50)
-listFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-listFrame.BackgroundTransparency = 0.5
-listFrame.BorderSizePixel = 0
-listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-listFrame.ScrollBarThickness = 8
-listFrame.Parent = mainFrame
-
--- UIListLayout for player buttons
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 5)
-listLayout.SortOrder = Enum.SortOrder.Name
-listLayout.Parent = listFrame
-
--- Function to refresh player list UI
-local function refreshPlayerList()
-    -- Clear existing buttons
-    for _, child in ipairs(listFrame:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
-        end
-    end
-    
-    updatePlayerList()
-    
-    -- Create button for each player
-    for _, player in ipairs(playerList) do
-        local playerButton = Instance.new("TextButton")
-        playerButton.Size = UDim2.new(1, -10, 0, 40)
-        playerButton.Text = player.Name
-        playerButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.8)
-        playerButton.TextColor3 = Color3.new(1, 1, 1)
-        playerButton.Font = Enum.Font.SourceSans
-        playerButton.TextSize = 16
-        playerButton.Parent = listFrame
-        
-        -- Store player reference
-        playerButton.Player = player
-        
-        playerButton.MouseButton1Click:Connect(function()
-            bringPlayerToMe(playerButton.Player)
-            
-            -- Visual feedback
-            playerButton.BackgroundColor3 = Color3.new(0, 1, 0)
-            task.wait(0.2)
-            playerButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.8)
-        end)
-    end
-    
-    -- Update canvas size
-    local count = #playerList
-    listFrame.CanvasSize = UDim2.new(0, 0, 0, count * 45 + 10)
-end
-
--- Refresh button
-local refreshButton = Instance.new("TextButton")
-refreshButton.Size = UDim2.new(1, -20, 0, 35)
-refreshButton.Position = UDim2.new(0, 10, 1, -45)
-refreshButton.Text = "Refresh Player List"
-refreshButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
-refreshButton.TextColor3 = Color3.new(1, 1, 1)
-refreshButton.Font = Enum.Font.SourceSans
-refreshButton.TextSize = 14
-refreshButton.Parent = mainFrame
-
-refreshButton.MouseButton1Click:Connect(refreshPlayerList)
-
--- Hotkey: Press 'B' to bring the nearest player to you
-local userInputService = game:GetService("UserInputService")
-
-userInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    
-    if input.KeyCode == Enum.KeyCode.B then
-        updatePlayerList()
-        if #playerList > 0 then
-            -- Bring the first player in the list
-            bringPlayerToMe(playerList[1])
-        else
-            print("No other players found to bring")
-        end
+        -- Optionally, you can add a delay or check if the teleportation is confirmed
+        -- Then, proceed with teleporting the target player (if you have control over their teleport)
+        -- Note: As a client, you may not be able to teleport other players directly
+        -- This script assumes you're on the server or have the necessary permissions
     end
 end)
-
--- Update player list when players join/leave
-Players.PlayerAdded:Connect(refreshPlayerList)
-Players.PlayerRemoving:Connect(refreshPlayerList)
-
--- Initial refresh
-refreshPlayerList()
-
-print("Script loaded! Click a player name to bring them to your location, or press 'B' to bring the first player")
