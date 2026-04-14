@@ -6,7 +6,7 @@ local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local function getAllSpawns()
     local spawns = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Spawn") then
+        if obj.Name == "Spawn" and obj:IsA("BasePart") then
             table.insert(spawns, obj)
         end
     end
@@ -75,5 +75,5 @@ local function main(targetPlayerName)
     -- until some condition or for a certain duration
 end
 
--- Example usage: replace "targetPlayerName" with the target player's name
-main("62_AM")
+-- Example usage: replace "62_AM" with the target player's name
+main("targetPlayerName")
