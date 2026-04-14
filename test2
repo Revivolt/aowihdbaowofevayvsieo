@@ -4,15 +4,14 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
--- Update character reference on respawn
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     Character = newChar
 end)
 
 local TARGET_NAME = "62_AM"
-local SCAN_INTERVAL = 0.1       -- How often to scan (seconds)
-local TELEPORT_THRESHOLD = 10   -- Distance change to consider a teleport happening
-local POSITION_HISTORY_SIZE = 3 -- Frames to track for movement prediction
+local SCAN_INTERVAL = 0.05      -- How often to scan (seconds) - faster = more responsive
+local TELEPORT_THRESHOLD = 10   -- Stud jump to confirm a teleport occurred
+local PRE_TELEPORT_DIST = 50    -- How close target must be to a spawn to pre-teleport you there
 
 local function getAllSpawns()
     local spawns = {}
@@ -53,81 +52,92 @@ local function teleportToSpawn(spawn)
         hrp.CFrame = spawn.CFrame + Vector3.new(0, 3, 0)
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        print("[Teleport] Teleported to spawn: " .. spawn:GetFullName())
+        print("[Teleport] Pre-teleported to spawn: " .. spawn:GetFullName())
     end
 end
 
--- Main loop
-local lastTargetPos = nil
 local lastScan = 0
+local lastTargetPos = nil
+local currentLockedSpawn = nil  -- The spawn we've already moved to
 local posHistory = {}
-local lastTeleportedSpawn = nil
+local HISTORY_SIZE = 5
 
 RunService.Heartbeat:Connect(function(dt)
     lastScan += dt
     if lastScan < SCAN_INTERVAL then return end
     lastScan = 0
 
-    -- Refresh character reference
-    local hrp = Character and Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    -- Find target player (re-checks every loop in case they join late)
     local targetPlayer = getTargetPlayer(TARGET_NAME)
-    if not targetPlayer then
-        warn("[Teleport] Waiting for player: " .. TARGET_NAME)
-        return
-    end
+    if not targetPlayer then return end
 
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return end
+    if not targetRoot then
+        -- Target respawned/character removed, reset state
+        lastTargetPos = nil
+        posHistory = {}
+        currentLockedSpawn = nil
+        return
+    end
 
     local currentPos = targetRoot.Position
 
-    -- Track position history for prediction
+    -- Build position history
     table.insert(posHistory, currentPos)
-    if #posHistory > POSITION_HISTORY_SIZE then
+    if #posHistory > HISTORY_SIZE then
         table.remove(posHistory, 1)
     end
 
-    -- Detect large position jump (teleport event)
+    local spawns = getAllSpawns()
+
+    -- === PREDICTION: Watch if target is being PULLED toward a spawn ===
+    -- This works by checking if the target is consistently getting closer to a specific spawn
+    if #posHistory == HISTORY_SIZE then
+        local oldPos = posHistory[1]
+        local newPos = posHistory[#posHistory]
+
+        -- Find which spawn the target is converging toward
+        local convergingSpawn = nil
+        local bestConverge = 0
+
+        for _, spawn in ipairs(spawns) do
+            local distOld = (oldPos - spawn.Position).Magnitude
+            local distNew = (newPos - spawn.Position).Magnitude
+            local closing = distOld - distNew -- positive = getting closer
+
+            -- They are actively closing in on this spawn
+            if closing > bestConverge and distNew < PRE_TELEPORT_DIST then
+                bestConverge = closing
+                convergingSpawn = spawn
+            end
+        end
+
+        if convergingSpawn and convergingSpawn ~= currentLockedSpawn then
+            print(string.format("[Teleport] Target converging on spawn (%.1f studs away) — moving ahead!", (newPos - convergingSpawn.Position).Magnitude))
+            teleportToSpawn(convergingSpawn)
+            currentLockedSpawn = convergingSpawn
+        end
+    end
+
+    -- === FALLBACK: Detect instant teleport (large position jump) ===
+    -- In case prediction missed it, still catch the teleport after it happens
     if lastTargetPos then
         local delta = (currentPos - lastTargetPos).Magnitude
-
         if delta > TELEPORT_THRESHOLD then
-            -- Target was just teleported — find closest spawn to their NEW position
-            print(string.format("[Teleport] Target jumped %.1f studs — intercepting spawn!", delta))
-            local spawns = getAllSpawns()
             local closestSpawn = findClosestSpawn(currentPos, spawns)
-
-            if closestSpawn and closestSpawn ~= lastTeleportedSpawn then
+            if closestSpawn and closestSpawn ~= currentLockedSpawn then
+                print(string.format("[Teleport] Teleport detected (%.1f studs) — catching up to spawn!", delta))
                 teleportToSpawn(closestSpawn)
-                lastTeleportedSpawn = closestSpawn
+                currentLockedSpawn = closestSpawn
             end
         end
     end
 
-    -- Also predict: if target is moving TOWARD a spawn, pre-teleport
-    if #posHistory == POSITION_HISTORY_SIZE then
-        local oldPos = posHistory[1]
-        local velocity = (currentPos - oldPos) / (SCAN_INTERVAL * POSITION_HISTORY_SIZE)
-
-        if velocity.Magnitude > 1 then
-            -- Project position slightly ahead
-            local predictedPos = currentPos + velocity * 0.5
-
-            local spawns = getAllSpawns()
-            local closestSpawn = findClosestSpawn(predictedPos, spawns)
-
-            if closestSpawn and closestSpawn ~= lastTeleportedSpawn then
-                local distToSpawn = (predictedPos - closestSpawn.Position).Magnitude
-                if distToSpawn < 15 then
-                    print("[Teleport] Predicting target heading to spawn — pre-teleporting!")
-                    teleportToSpawn(closestSpawn)
-                    lastTeleportedSpawn = closestSpawn
-                end
-            end
+    -- Reset locked spawn if target moves far away from it (they left that spawn)
+    if currentLockedSpawn then
+        local distFromLocked = (currentPos - currentLockedSpawn.Position).Magnitude
+        if distFromLocked > PRE_TELEPORT_DIST * 2 then
+            currentLockedSpawn = nil
         end
     end
 
