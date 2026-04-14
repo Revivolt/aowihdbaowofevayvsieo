@@ -1,128 +1,167 @@
---// Services
+-- Local Script to bring a target player to your location
+
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local player = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
---// Settings
-local TOGGLE_KEY = Enum.KeyCode.G
+-- Create RemoteEvent for teleport request
+local teleportRequestEvent = Instance.new("RemoteEvent")
+teleportRequestEvent.Name = "TeleportPlayerToMe"
+teleportRequestEvent.Parent = ReplicatedStorage
 
---// State
-local enabled = false
-local jumpConnection = nil
-local jumpEndConnection = nil
-local landedConnection = nil
-local isJumping = false
+local localPlayer = Players.LocalPlayer
+local playerList = {}
 
---// Rebind jump input manually
-local function rebindJump(humanoid)
-    if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
-    if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
-    if landedConnection then landedConnection:Disconnect() landedConnection = nil end
-
-    -- Reset jump lock when character lands
-    landedConnection = humanoid.StateChanged:Connect(function(_, newState)
-        if newState == Enum.HumanoidStateType.Landed
-        or newState == Enum.HumanoidStateType.Running
-        or newState == Enum.HumanoidStateType.RunningNoPhysics then
-            isJumping = false
-            -- If Space is still held when landing, jump again immediately
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-                local state = humanoid:GetState()
-                if state == Enum.HumanoidStateType.Landed
-                or state == Enum.HumanoidStateType.Running
-                or state == Enum.HumanoidStateType.RunningNoPhysics then
-                    isJumping = true
-                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                end
-            end
+-- Function to update player list
+local function updatePlayerList()
+    playerList = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= localPlayer then
+            table.insert(playerList, player)
         end
-    end)
-
-    jumpConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.KeyCode == Enum.KeyCode.Space then
-            if isJumping then return end
-            if humanoid and humanoid.Parent then
-                local state = humanoid:GetState()
-                if state == Enum.HumanoidStateType.Running
-                or state == Enum.HumanoidStateType.RunningNoPhysics
-                or state == Enum.HumanoidStateType.Landed then
-                    isJumping = true
-                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                end
-            end
-        end
-    end)
-
-    -- Reset jump lock on Space release as a fallback
-    jumpEndConnection = UserInputService.InputEnded:Connect(function(input)
-        if input.KeyCode == Enum.KeyCode.Space then
-            isJumping = false
-        end
-    end)
-end
-
---// test Function
-local function testfunc()
-    if not player.Character or not player.Character.Parent then return end
-    local character = player.Character
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Name ~= "OldHumanoid" then
-        local savedJumpPower = humanoid.JumpPower
-        local savedJumpHeight = humanoid.JumpHeight
-        local savedUseJumpPower = humanoid.UseJumpPower
-
-        humanoid.Name = "OldHumanoid"
-        local newHumanoid = humanoid:Clone()
-        newHumanoid.Parent = character
-        newHumanoid.Name = "Humanoid"
-
-        newHumanoid.UseJumpPower = savedUseJumpPower
-        if savedUseJumpPower then
-            newHumanoid.JumpPower = savedJumpPower
-        else
-            newHumanoid.JumpHeight = savedJumpHeight
-        end
-
-        task.wait(0.1)
-        if character:FindFirstChild("OldHumanoid") then
-            character.OldHumanoid:Destroy()
-        end
-
-        workspace.CurrentCamera.CameraSubject = newHumanoid
-
-        local animate = character:FindFirstChild("Animate")
-        if animate then
-            animate.Disabled = true
-            task.wait(0.1)
-            animate.Disabled = false
-        end
-
-        rebindJump(newHumanoid)
     end
 end
 
---// Character handler
-local function onCharacterAdded()
-    if jumpConnection then jumpConnection:Disconnect() jumpConnection = nil end
-    if jumpEndConnection then jumpEndConnection:Disconnect() jumpEndConnection = nil end
-    if landedConnection then landedConnection:Disconnect() landedConnection = nil end
-    isJumping = false
-    task.wait(0.5)
-    if enabled then
-        pcall(testfunc)
+-- Function to bring a target player to your location
+local function bringPlayerToMe(targetPlayer)
+    local myCharacter = localPlayer.Character
+    local myRootPart = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+    
+    if not myRootPart then
+        warn("Your character is not loaded or has no HumanoidRootPart")
+        return false
     end
+    
+    if not targetPlayer or not targetPlayer.Character then
+        warn("Target player not found or character not loaded")
+        return false
+    end
+    
+    local myPosition = myRootPart.Position
+    
+    -- Send request to server to teleport target player to your position
+    teleportRequestEvent:FireServer(targetPlayer, myPosition)
+    
+    print("Requested to bring " .. targetPlayer.Name .. " to your location at " .. tostring(myPosition))
+    return true
 end
 
-player.CharacterAdded:Connect(onCharacterAdded)
+-- Create GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TeleportOtherGUI"
+screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
 
---// Toggle input
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 300, 0, 400)
+mainFrame.Position = UDim2.new(0, 10, 0, 10)
+mainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+mainFrame.BackgroundTransparency = 0.2
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 40)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.Text = "Bring Player To Me"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.8)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+title.Parent = mainFrame
+
+-- Player List Frame
+local listFrame = Instance.new("ScrollingFrame")
+listFrame.Size = UDim2.new(1, -20, 1, -100)
+listFrame.Position = UDim2.new(0, 10, 0, 50)
+listFrame.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+listFrame.BackgroundTransparency = 0.5
+listFrame.BorderSizePixel = 0
+listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+listFrame.ScrollBarThickness = 8
+listFrame.Parent = mainFrame
+
+-- UIListLayout for player buttons
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 5)
+listLayout.SortOrder = Enum.SortOrder.Name
+listLayout.Parent = listFrame
+
+-- Function to refresh player list UI
+local function refreshPlayerList()
+    -- Clear existing buttons
+    for _, child in ipairs(listFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    
+    updatePlayerList()
+    
+    -- Create button for each player
+    for _, player in ipairs(playerList) do
+        local playerButton = Instance.new("TextButton")
+        playerButton.Size = UDim2.new(1, -10, 0, 40)
+        playerButton.Text = player.Name
+        playerButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.8)
+        playerButton.TextColor3 = Color3.new(1, 1, 1)
+        playerButton.Font = Enum.Font.SourceSans
+        playerButton.TextSize = 16
+        playerButton.Parent = listFrame
+        
+        -- Store player reference
+        playerButton.Player = player
+        
+        playerButton.MouseButton1Click:Connect(function()
+            bringPlayerToMe(playerButton.Player)
+            
+            -- Visual feedback
+            playerButton.BackgroundColor3 = Color3.new(0, 1, 0)
+            task.wait(0.2)
+            playerButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.8)
+        end)
+    end
+    
+    -- Update canvas size
+    local count = #playerList
+    listFrame.CanvasSize = UDim2.new(0, 0, 0, count * 45 + 10)
+end
+
+-- Refresh button
+local refreshButton = Instance.new("TextButton")
+refreshButton.Size = UDim2.new(1, -20, 0, 35)
+refreshButton.Position = UDim2.new(0, 10, 1, -45)
+refreshButton.Text = "Refresh Player List"
+refreshButton.BackgroundColor3 = Color3.new(0.3, 0.3, 0.3)
+refreshButton.TextColor3 = Color3.new(1, 1, 1)
+refreshButton.Font = Enum.Font.SourceSans
+refreshButton.TextSize = 14
+refreshButton.Parent = mainFrame
+
+refreshButton.MouseButton1Click:Connect(refreshPlayerList)
+
+-- Hotkey: Press 'B' to bring the nearest player to you
+local userInputService = game:GetService("UserInputService")
+
+userInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == TOGGLE_KEY then
-        enabled = not enabled
-        if enabled then
-            pcall(testfunc)
+    
+    if input.KeyCode == Enum.KeyCode.B then
+        updatePlayerList()
+        if #playerList > 0 then
+            -- Bring the first player in the list
+            bringPlayerToMe(playerList[1])
+        else
+            print("No other players found to bring")
         end
     end
 end)
+
+-- Update player list when players join/leave
+Players.PlayerAdded:Connect(refreshPlayerList)
+Players.PlayerRemoving:Connect(refreshPlayerList)
+
+-- Initial refresh
+refreshPlayerList()
+
+print("Script loaded! Click a player name to bring them to your location, or press 'B' to bring the first player")
