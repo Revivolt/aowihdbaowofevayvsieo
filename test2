@@ -1,394 +1,261 @@
--- test
+-- TeleportPredictor.lua (LocalScript, StarterPlayerScripts)
+-- Fox's teleport prediction system for Jack
+-- Detects teleport ~1-3 frames BEFORE the position snap
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
 
-local localPlayer = Players.LocalPlayer
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SpawnPredictor"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+-- CONFIG
+local TARGET_NAME = "62_AM" -- change this or set dynamically
+local BUFFER_SIZE = 10                  -- rolling position buffer frames
+local VELOCITY_STALL_THRESHOLD = 0.5    -- velocity magnitude below this = stall
+local PREDICTION_DEVIATION_THRESHOLD = 8 -- studs; if predicted vs actual > this, anomaly
+local MOVEDIRECTION_ZERO_FRAMES = 2     -- consecutive zero-moveDirection frames to flag
+local POSITION_JUMP_THRESHOLD = 15      -- studs/frame; physically impossible movement
+local STALL_BEFORE_JUMP_WINDOW = 5      -- frames; how long after stall we watch for TP
+local CONFIDENCE_TRIGGER = 3            -- how many signals needed to fire prediction
 
--- Main Frame
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 310, 0, 420)
-mainFrame.Position = UDim2.new(0, 10, 0.5, -210)
-mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
-
--- Title Bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 42)
-titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 55)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 1, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.TextColor3 = Color3.fromRGB(120, 200, 255)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 15
-titleLabel.Text = "🎯  Spawn Predictor"
-titleLabel.Parent = titleBar
-
--- Helper to make a label
-local function makeLabel(parent, posY, text, color, size)
-	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -20, 0, 22)
-	lbl.Position = UDim2.new(0, 10, 0, posY)
-	lbl.BackgroundTransparency = 1
-	lbl.TextColor3 = color or Color3.fromRGB(180, 180, 200)
-	lbl.Font = Enum.Font.Gotham
-	lbl.TextSize = size or 12
-	lbl.TextXAlignment = Enum.TextXAlignment.Left
-	lbl.Text = text or ""
-	lbl.Parent = parent
-	return lbl
-end
-
--- Target Input
-makeLabel(mainFrame, 50, "Target Player:", Color3.fromRGB(140, 140, 160))
-local targetInput = Instance.new("TextBox")
-targetInput.Size = UDim2.new(1, -20, 0, 30)
-targetInput.Position = UDim2.new(0, 10, 0, 70)
-targetInput.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
-targetInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-targetInput.Font = Enum.Font.Gotham
-targetInput.TextSize = 13
-targetInput.PlaceholderText = "Enter player name..."
-targetInput.PlaceholderColor3 = Color3.fromRGB(90, 90, 110)
-targetInput.Text = ""
-targetInput.BorderSizePixel = 0
-targetInput.ClearTextOnFocus = false
-targetInput.Parent = mainFrame
-Instance.new("UICorner", targetInput).CornerRadius = UDim.new(0, 6)
-
-local targetStatusLabel = makeLabel(mainFrame, 106, "Target: None", Color3.fromRGB(160, 160, 160))
-
--- Divider
-local div1 = Instance.new("Frame")
-div1.Size = UDim2.new(1, -20, 0, 1)
-div1.Position = UDim2.new(0, 10, 0, 132)
-div1.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
-div1.BorderSizePixel = 0
-div1.Parent = mainFrame
-
--- Status
-local statusLabel = makeLabel(mainFrame, 138, "Status: Idle — waiting for spawns...", Color3.fromRGB(100, 200, 100))
-
--- Prediction Box
-local predBox = Instance.new("Frame")
-predBox.Size = UDim2.new(1, -20, 0, 52)
-predBox.Position = UDim2.new(0, 10, 0, 165)
-predBox.BackgroundColor3 = Color3.fromRGB(28, 28, 45)
-predBox.BorderSizePixel = 0
-predBox.Parent = mainFrame
-Instance.new("UICorner", predBox).CornerRadius = UDim.new(0, 7)
-
-local predTitle = Instance.new("TextLabel")
-predTitle.Size = UDim2.new(1, -10, 0, 18)
-predTitle.Position = UDim2.new(0, 8, 0, 4)
-predTitle.BackgroundTransparency = 1
-predTitle.TextColor3 = Color3.fromRGB(130, 130, 155)
-predTitle.Font = Enum.Font.GothamBold
-predTitle.TextSize = 11
-predTitle.TextXAlignment = Enum.TextXAlignment.Left
-predTitle.Text = "PREDICTED SPAWN"
-predTitle.Parent = predBox
-
-local predLabel = Instance.new("TextLabel")
-predLabel.Size = UDim2.new(1, -10, 0, 26)
-predLabel.Position = UDim2.new(0, 8, 0, 22)
-predLabel.BackgroundTransparency = 1
-predLabel.TextColor3 = Color3.fromRGB(255, 210, 70)
-predLabel.Font = Enum.Font.GothamBold
-predLabel.TextSize = 14
-predLabel.TextXAlignment = Enum.TextXAlignment.Left
-predLabel.Text = "Waiting for spawns..."
-predLabel.Parent = predBox
-
--- Teleport Button
-local tpButton = Instance.new("TextButton")
-tpButton.Size = UDim2.new(1, -20, 0, 32)
-tpButton.Position = UDim2.new(0, 10, 0, 224)
-tpButton.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
-tpButton.TextColor3 = Color3.fromRGB(140, 140, 160)
-tpButton.Font = Enum.Font.GothamBold
-tpButton.TextSize = 13
-tpButton.Text = "⚡ Teleport to Predicted Spawn"
-tpButton.BorderSizePixel = 0
-tpButton.AutoButtonColor = false
-tpButton.Parent = mainFrame
-Instance.new("UICorner", tpButton).CornerRadius = UDim.new(0, 7)
-
--- Spawn List
-local div2 = Instance.new("Frame")
-div2.Size = UDim2.new(1, -20, 0, 1)
-div2.Position = UDim2.new(0, 10, 0, 264)
-div2.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
-div2.BorderSizePixel = 0
-div2.Parent = mainFrame
-
-makeLabel(mainFrame, 270, "Recent Spawns (newest first):", Color3.fromRGB(130, 130, 155))
-
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -20, 0, 118)
-scrollFrame.Position = UDim2.new(0, 10, 0, 292)
-scrollFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 36)
-scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 3
-scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 130)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-scrollFrame.Parent = mainFrame
-Instance.new("UICorner", scrollFrame).CornerRadius = UDim.new(0, 6)
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Padding = UDim.new(0, 2)
-listLayout.Parent = scrollFrame
-
--- ══════════════════════════════════════════
 -- STATE
--- ══════════════════════════════════════════
+local buffer = {}          -- rolling {pos, vel, moveDir, tick} entries
+local stallFrameCount = 0  -- consecutive frames with velocity stall
+local zeroDirCount = 0     -- consecutive frames with MoveDirection == zero
+local lastAnimState = nil
+local stallDetectedAt = 0  -- tick() when stall was first detected
+local predictionFired = false
+local frameIndex = 0
 
-local recentSpawns = {}   -- { part, addedAt } ordered newest-first
-local predictedSpawn = nil
-local targetPlayer = nil
-local MAX_TRACKED = 20
-local RECENCY_WINDOW = 8  -- seconds: spawns added within this window are "hot"
+local function getTarget()
+	local p = Players:FindFirstChild(TARGET_NAME)
+	if not p then return nil, nil, nil end
+	local char = p.Character
+	if not char then return p, nil, nil end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	return p, hrp, hum
+end
 
--- ══════════════════════════════════════════
--- UTILITIES
--- ══════════════════════════════════════════
+local function pushBuffer(entry)
+	table.insert(buffer, entry)
+	if #buffer > BUFFER_SIZE then
+		table.remove(buffer, 1)
+	end
+end
 
-local function findPlayer(name)
-	name = name:lower()
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= localPlayer then
-			if p.Name:lower():find(name, 1, true)
-				or p.DisplayName:lower():find(name, 1, true) then
-				return p
-			end
+-- Linear extrapolation from last N frames
+local function predictNextPosition()
+	if #buffer < 3 then return nil end
+	local n = #buffer
+	local p1 = buffer[n - 2].pos
+	local p2 = buffer[n - 1].pos
+	local p3 = buffer[n].pos
+	
+	-- quadratic extrapolation (accounts for acceleration)
+	local v1 = p2 - p1
+	local v2 = p3 - p2
+	local accel = v2 - v1
+	local predictedVel = v2 + accel
+	return p3 + predictedVel
+end
+
+-- Detect animation state dropout (running -> instant idle with no decel)
+local function checkAnimDropout(humanoid)
+	if not humanoid then return false end
+	local state = humanoid:GetState()
+	local dropped = false
+	
+	-- Running/walking -> suddenly None/Idle in 1 frame
+	if lastAnimState == Enum.HumanoidStateType.Running 
+		or lastAnimState == Enum.HumanoidStateType.RunningNoPhysics then
+		if state == Enum.HumanoidStateType.None 
+			or state == Enum.HumanoidStateType.Physics 
+			or state == Enum.HumanoidStateType.PlatformStanding then
+			dropped = true
 		end
 	end
-	return nil
+	
+	lastAnimState = state
+	return dropped
 end
 
-local function setTeleportReady(spawn)
-	if spawn then
-		tpButton.BackgroundColor3 = Color3.fromRGB(60, 180, 80)
-		tpButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-		tpButton.Text = "⚡ Teleport to " .. spawn.Name
-	else
-		tpButton.BackgroundColor3 = Color3.fromRGB(50, 50, 80)
-		tpButton.TextColor3 = Color3.fromRGB(140, 140, 160)
-		tpButton.Text = "⚡ Teleport to Predicted Spawn"
-	end
-end
-
--- ══════════════════════════════════════════
--- SPAWN LIST UI
--- ══════════════════════════════════════════
-
-local function rebuildList()
-	for _, c in ipairs(scrollFrame:GetChildren()) do
-		if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end
-	end
-
+-- Main signal aggregator
+local function analyzeFrame(hrp, humanoid, dt)
+	local pos = hrp.Position
+	local vel = hrp.AssemblyLinearVelocity
+	local moveDir = humanoid and humanoid.MoveDirection or Vector3.zero
 	local now = tick()
-	for i, data in ipairs(recentSpawns) do
-		local age = now - data.addedAt
-		local isHot = age <= RECENCY_WINDOW
-		local isPredicted = (data.part == predictedSpawn)
-
-		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, -4, 0, 24)
-		row.BackgroundColor3 = isPredicted
-			and Color3.fromRGB(70, 55, 10)
-			or (isHot and Color3.fromRGB(35, 50, 35) or Color3.fromRGB(28, 28, 42))
-		row.BorderSizePixel = 0
-		row.LayoutOrder = i
-		row.Parent = scrollFrame
-		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
-
-		local rowLabel = Instance.new("TextLabel")
-		rowLabel.Size = UDim2.new(1, -8, 1, 0)
-		rowLabel.Position = UDim2.new(0, 6, 0, 0)
-		rowLabel.BackgroundTransparency = 1
-		rowLabel.TextXAlignment = Enum.TextXAlignment.Left
-		rowLabel.Font = Enum.Font.Gotham
-		rowLabel.TextSize = 11
-		rowLabel.TextColor3 = isPredicted
-			and Color3.fromRGB(255, 210, 60)
-			or (isHot and Color3.fromRGB(120, 220, 120) or Color3.fromRGB(150, 150, 170))
-
-		local icon = isPredicted and "🎯 " or (isHot and "🟢 " or "⚫ ")
-		local ageStr = string.format("%.1fs ago", age)
-		rowLabel.Text = icon .. data.part.Name .. "  (" .. ageStr .. ")"
-		rowLabel.Parent = row
+	
+	local entry = {
+		pos = pos,
+		vel = vel,
+		moveDir = moveDir,
+		tick = now,
+	}
+	pushBuffer(entry)
+	frameIndex += 1
+	
+	local signals = 0 -- confidence accumulator
+	local reasons = {}
+	
+	-- SIGNAL 1: Velocity stall (velocity near zero while was moving)
+	local velMag = vel.Magnitude
+	if #buffer >= 2 then
+		local prevVelMag = buffer[#buffer - 1].vel.Magnitude
+		if velMag < VELOCITY_STALL_THRESHOLD and prevVelMag > 3.0 then
+			stallFrameCount += 1
+			if stallFrameCount == 1 then
+				stallDetectedAt = now
+			end
+			signals += 1
+			table.insert(reasons, "VEL_STALL")
+		else
+			stallFrameCount = 0
+		end
 	end
-
-	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 4)
+	
+	-- SIGNAL 2: MoveDirection dropout (was moving, suddenly zero)
+	if moveDir.Magnitude < 0.01 then
+		if #buffer >= 2 and buffer[#buffer - 1].moveDir.Magnitude > 0.1 then
+			zeroDirCount += 1
+		else
+			zeroDirCount += 1 -- keep counting consecutive zeros
+		end
+	else
+		zeroDirCount = 0
+	end
+	
+	if zeroDirCount >= 1 and zeroDirCount <= MOVEDIRECTION_ZERO_FRAMES then
+		-- only flag the initial dropout, not sustained idle
+		if #buffer >= 3 and buffer[#buffer - 2].moveDir.Magnitude > 0.1 then
+			signals += 1
+			table.insert(reasons, "MOVEDIR_DROPOUT")
+		end
+	end
+	
+	-- SIGNAL 3: Animation state dropout
+	if checkAnimDropout(humanoid) then
+		signals += 1
+		table.insert(reasons, "ANIM_DROPOUT")
+	end
+	
+	-- SIGNAL 4: CFrame prediction divergence (pre-jump jitter)
+	local predicted = predictNextPosition()
+	if predicted and #buffer >= 4 then
+		local deviation = (pos - predicted).Magnitude
+		-- small but abnormal deviation = physics engine fighting the TP
+		if deviation > 2.0 and deviation < PREDICTION_DEVIATION_THRESHOLD then
+			signals += 1
+			table.insert(reasons, string.format("PREDICT_DIVERGE:%.1f", deviation))
+		end
+	end
+	
+	-- SIGNAL 5: Network desync indicator
+	-- When server reclaims ownership, velocity updates stall but position 
+	-- may micro-jitter. Check for velocity=0 but position changing slightly
+	if #buffer >= 2 and velMag < 0.1 then
+		local posDelta = (pos - buffer[#buffer - 1].pos).Magnitude
+		if posDelta > 0.3 and posDelta < 3.0 then
+			signals += 1
+			table.insert(reasons, "NET_DESYNC")
+		end
+	end
+	
+	return signals, reasons
 end
 
--- ══════════════════════════════════════════
--- PREDICTION — purely recency based
--- ══════════════════════════════════════════
+-- Post-frame: detect the actual teleport (for validation/logging)
+local function checkTeleportOccurred()
+	if #buffer < 2 then return false, 0 end
+	local jump = (buffer[#buffer].pos - buffer[#buffer - 1].pos).Magnitude
+	return jump > POSITION_JUMP_THRESHOLD, jump
+end
 
-local function runPrediction()
-	if #recentSpawns == 0 then
-		predLabel.Text = "No spawns detected yet"
-		predLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
-		predictedSpawn = nil
-		setTeleportReady(nil)
-		rebuildList()
-		return
-	end
+-- CALLBACKS / EVENTS
+local onTeleportPredicted = Instance.new("BindableEvent")
+onTeleportPredicted.Name = "TeleportPredicted"
+onTeleportPredicted.Parent = script
 
-	-- Pick the most recently added spawn within the recency window
-	-- If multiple spawns came in at nearly the same time (<0.3s apart),
-	-- treat them as a "batch" and pick the one added last in the batch.
+local onTeleportConfirmed = Instance.new("BindableEvent")
+onTeleportConfirmed.Name = "TeleportConfirmed"
+onTeleportConfirmed.Parent = script
+
+-- Public API: connect to these
+-- script.TeleportPredicted.Event:Connect(function(targetPlayer, confidence, reasons) end)
+-- script.TeleportConfirmed.Event:Connect(function(targetPlayer, distance, wasPredicted) end)
+
+-- MAIN LOOP
+local lastPredictionTick = 0
+local predictionActive = false
+
+RunService.Heartbeat:Connect(function(dt)
+	local targetPlayer, hrp, humanoid = getTarget()
+	if not hrp or not humanoid then return end
+	
+	local signals, reasons = analyzeFrame(hrp, humanoid, dt)
 	local now = tick()
-	local hotSpawns = {}
-	for _, data in ipairs(recentSpawns) do
-		if (now - data.addedAt) <= RECENCY_WINDOW then
-			table.insert(hotSpawns, data)
+	
+	-- Fire prediction if enough signals converge
+	if signals >= CONFIDENCE_TRIGGER and (now - lastPredictionTick) > 0.5 then
+		predictionActive = true
+		lastPredictionTick = now
+		predictionFired = true
+		
+		warn(string.format(
+			"[TP-PREDICT] Target '%s' likely about to teleport! Confidence: %d signals [%s]",
+			targetPlayer.Name,
+			signals,
+			table.concat(reasons, ", ")
+		))
+		
+		onTeleportPredicted:Fire(targetPlayer, signals, reasons)
+	end
+	
+	-- Validate: did a teleport actually happen?
+	local tpOccurred, jumpDist = checkTeleportOccurred()
+	if tpOccurred then
+		local wasPredicted = predictionActive and (now - lastPredictionTick) < 0.5
+		
+		if wasPredicted then
+			warn(string.format(
+				"[TP-CONFIRM] Teleport CONFIRMED for '%s'! Distance: %.1f studs — PREDICTED SUCCESSFULLY",
+				targetPlayer.Name, jumpDist
+			))
+		else
+			warn(string.format(
+				"[TP-MISS] Teleport detected for '%s' (%.1f studs) — was NOT predicted",
+				targetPlayer.Name, jumpDist
+			))
 		end
+		
+		onTeleportConfirmed:Fire(targetPlayer, jumpDist, wasPredicted)
+		predictionActive = false
+		
+		-- Reset buffer after TP to avoid cascading false positives
+		buffer = {}
+		stallFrameCount = 0
+		zeroDirCount = 0
 	end
-
-	local chosen = nil
-	if #hotSpawns > 0 then
-		-- Among hot spawns, pick the very newest
-		chosen = hotSpawns[1] -- list is newest-first
-	else
-		-- No hot spawns; fall back to the most recently added overall
-		chosen = recentSpawns[1]
-	end
-
-	predictedSpawn = chosen.part
-
-	local age = now - chosen.addedAt
-	predLabel.Text = "✅  " .. chosen.part.Name
-	predLabel.TextColor3 = Color3.fromRGB(255, 210, 70)
-	statusLabel.Text = string.format(
-		"Status: Predicted '%s'  (added %.1fs ago, %d tracked)",
-		chosen.part.Name, age, #recentSpawns
-	)
-	statusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
-
-	setTeleportReady(predictedSpawn)
-	rebuildList()
-end
-
--- ══════════════════════════════════════════
--- SPAWN WATCHER
--- ══════════════════════════════════════════
-
-local function onSpawnAdded(obj)
-	if obj.Name ~= "Spawn" or not obj:IsA("BasePart") then return end
-
-	local data = { part = obj, addedAt = tick() }
-	table.insert(recentSpawns, 1, data) -- newest first
-
-	-- Cap list size
-	if #recentSpawns > MAX_TRACKED then
-		table.remove(recentSpawns, #recentSpawns)
-	end
-
-	statusLabel.Text = "🔴 New Spawn added! Running prediction..."
-	statusLabel.TextColor3 = Color3.fromRGB(255, 120, 80)
-
-	runPrediction()
-
-	-- Remove from tracking when it leaves the game
-	obj.AncestryChanged:Connect(function()
-		if not obj:IsDescendantOf(game) then
-			for i, d in ipairs(recentSpawns) do
-				if d.part == obj then
-					table.remove(recentSpawns, i)
-					break
-				end
-			end
-			if predictedSpawn == obj then
-				predictedSpawn = nil
-				predLabel.Text = "Predicted spawn was removed"
-				predLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
-				setTeleportReady(nil)
-			end
-			rebuildList()
-		end
-	end)
-end
-
-workspace.DescendantAdded:Connect(onSpawnAdded)
-
--- Pick up any Spawn parts already present
-for _, obj in ipairs(workspace:GetDescendants()) do
-	if obj.Name == "Spawn" and obj:IsA("BasePart") then
-		local data = { part = obj, addedAt = tick() }
-		table.insert(recentSpawns, data)
-	end
-end
-if #recentSpawns > 0 then
-	statusLabel.Text = "Status: Found " .. #recentSpawns .. " existing spawn(s)"
-	runPrediction()
-end
-
--- ══════════════════════════════════════════
--- TARGET INPUT
--- ══════════════════════════════════════════
-
-targetInput.FocusLost:Connect(function(enter)
-	if not enter then return end
-	local found = findPlayer(targetInput.Text)
-	if found then
-		targetPlayer = found
-		targetStatusLabel.Text = "Target: ✅  " .. found.Name .. " (" .. found.DisplayName .. ")"
-		targetStatusLabel.TextColor3 = Color3.fromRGB(100, 220, 100)
-	else
-		targetPlayer = nil
-		targetStatusLabel.Text = "Target: ❌  Player not found"
-		targetStatusLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
+	
+	-- Decay prediction state if no TP happened within window
+	if predictionActive and (now - lastPredictionTick) > 0.3 then
+		predictionActive = false
 	end
 end)
 
--- ══════════════════════════════════════════
--- TELEPORT BUTTON
--- ══════════════════════════════════════════
+-- Dynamic target switching
+local function setTarget(name)
+	TARGET_NAME = name
+	buffer = {}
+	stallFrameCount = 0
+	zeroDirCount = 0
+	lastAnimState = nil
+	predictionFired = false
+	frameIndex = 0
+	warn("[TP-PREDICT] Now tracking: " .. name)
+end
 
-tpButton.MouseButton1Click:Connect(function()
-	if not predictedSpawn then
-		statusLabel.Text = "No predicted spawn to teleport to!"
-		statusLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
-		return
-	end
+-- Expose setTarget globally for console/other scripts
+getgenv().SetTPTarget = setTarget
 
-	local char = localPlayer.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	if not root then
-		statusLabel.Text = "Cannot teleport: no character found"
-		statusLabel.TextColor3 = Color3.fromRGB(220, 100, 80)
-		return
-	end
-
-	-- Offset slightly above the spawn so we land on top of it
-	root.CFrame = CFrame.new(predictedSpawn.Position + Vector3.new(0, 5, 0))
-	statusLabel.Text = "✈️  Teleported to " .. predictedSpawn.Name
-	statusLabel.TextColor3 = Color3.fromRGB(80, 180, 255)
-end)
-
--- ══════════════════════════════════════════
--- PERIODIC UI REFRESH (age timers in list)
--- ══════════════════════════════════════════
-
-task.spawn(function()
-	while true do
-		task.wait(0.25)
-		rebuildList()
-	end
-end)
+warn("[TP-PREDICT] Loaded. Tracking: " .. TARGET_NAME)
+warn("[TP-PREDICT] Call SetTPTarget('PlayerName') to switch target")
