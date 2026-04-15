@@ -1,16 +1,17 @@
--- Remote Logger | LocalScript
--- Hooks all RemoteEvents & RemoteFunctions, logs server->client traffic
+-- Remote Logger | LocalScript (FIXED)
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 
-local hooked = {} -- track what we already hooked so we don't double-hook
+local hooked = setmetatable({}, {__mode = "k"}) -- weak keys (prevents memory leaks)
 
+-- Better serializer
 local function serialize(value, depth)
     depth = depth or 0
     if depth > 4 then return "<too deep>" end
 
     local t = typeof(value)
+
     if t == "string" then
         return '"' .. value .. '"'
     elseif t == "number" or t == "boolean" then
@@ -19,12 +20,19 @@ local function serialize(value, depth)
         return "nil"
     elseif t == "Instance" then
         return value:GetFullName()
-    elseif t == "Vector3" or t == "Vector2" or t == "CFrame" or t == "Color3"
-        or t == "UDim2" or t == "UDim" or t == "BrickColor" or t == "Enum" then
-        return tostring(value)
     elseif t == "table" then
         local parts = {}
-        local isArray = (#value > 0)
+
+        local isArray = true
+        local count = 0
+
+        for k, _ in pairs(value) do
+            count += 1
+            if type(k) ~= "number" then
+                isArray = false
+            end
+        end
+
         for k, v in pairs(value) do
             if isArray then
                 table.insert(parts, serialize(v, depth + 1))
@@ -32,57 +40,73 @@ local function serialize(value, depth)
                 table.insert(parts, "[" .. serialize(k, depth + 1) .. "] = " .. serialize(v, depth + 1))
             end
         end
+
         return "{" .. table.concat(parts, ", ") .. "}"
     else
-        return "<" .. t .. ">" -- userdata, function, etc
+        return "<" .. t .. ">"
     end
 end
 
 local function formatArgs(args)
     if not args or #args == 0 then return "(no args)" end
+
     local out = {}
     for i, v in ipairs(args) do
-        table.insert(out, "  [" .. i .. "] " .. typeof(v) .. " = " .. serialize(v))
+        table.insert(out, string.format("  [%d] (%s) %s", i, typeof(v), serialize(v)))
     end
+
     return table.concat(out, "\n")
 end
 
+-- Hook RemoteEvent
 local function hookRemoteEvent(remote)
     if hooked[remote] then return end
     hooked[remote] = true
 
     remote.OnClientEvent:Connect(function(...)
         local args = {...}
+
         print(string.rep("=", 60))
-        print("[REMOTE EVENT] " .. remote:GetFullName())
-        print("[TIME] " .. os.clock())
-        print("[ARGS]")
-        print(formatArgs(args))
+        print("[REMOTE EVENT]", remote:GetFullName())
+        print("[TIME]", os.clock())
+        print("[ARGS]\n" .. formatArgs(args))
         print(string.rep("=", 60))
     end)
 end
 
+-- Hook RemoteFunction (SAFE VERSION)
 local function hookRemoteFunction(remote)
     if hooked[remote] then return end
     hooked[remote] = true
 
-    local originalInvoke = remote.OnClientInvoke
+    -- Watch for changes instead of overriding permanently
+    local function attach()
+        local original = remote.OnClientInvoke
 
-    remote.OnClientInvoke = function(...)
-        local args = {...}
-        print(string.rep("=", 60))
-        print("[REMOTE FUNCTION] " .. remote:GetFullName())
-        print("[TIME] " .. os.clock())
-        print("[ARGS]")
-        print(formatArgs(args))
-        print(string.rep("=", 60))
+        remote.OnClientInvoke = function(...)
+            local args = {...}
 
-        if originalInvoke then
-            return originalInvoke(...)
+            print(string.rep("=", 60))
+            print("[REMOTE FUNCTION]", remote:GetFullName())
+            print("[TIME]", os.clock())
+            print("[ARGS]\n" .. formatArgs(args))
+            print(string.rep("=", 60))
+
+            if original then
+                return original(...)
+            end
         end
     end
+
+    attach()
+
+    -- Re-hook if changed later
+    remote:GetPropertyChangedSignal("OnClientInvoke"):Connect(function()
+        task.defer(attach)
+    end)
 end
 
+-- Dispatcher
 local function hookRemote(obj)
     if obj:IsA("RemoteEvent") then
         hookRemoteEvent(obj)
@@ -91,22 +115,16 @@ local function hookRemote(obj)
     end
 end
 
-local function scanDescendants(root)
-    for _, obj in ipairs(root:GetDescendants()) do
+-- Initial scan
+for _, obj in ipairs(game:GetDescendants()) do
+    hookRemote(obj)
+end
+
+-- Watch new remotes
+game.DescendantAdded:Connect(function(obj)
+    task.defer(function()
         hookRemote(obj)
-    end
-end
-
-local function watchForNew(root)
-    root.DescendantAdded:Connect(function(obj)
-        task.defer(function()
-            hookRemote(obj)
-        end)
     end)
-end
+end)
 
--- main
-scanDescendants(game)
-watchForNew(game)
-
-print("[REMOTE LOGGER] Active — monitoring all RemoteEvents & RemoteFunctions")
+print("[REMOTE LOGGER] Active — monitoring remotes")
