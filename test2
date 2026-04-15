@@ -1,15 +1,193 @@
--- RemoteSpy: logs all server→client remote fires
--- LocalScript in StarterPlayerScripts
+-- RemoteSpy GUI — LocalScript in StarterPlayerScripts
 
-local Players       = game:GetService("Players")
-local RunService    = game:GetService("RunService")
-local LocalPlayer   = Players.LocalPlayer
+local Players  = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ──────────────────────────────────────────
--- Helpers
+-- GUI Construction
 -- ──────────────────────────────────────────
 
-local hooked = {}   -- track already-hooked remotes
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name            = "RemoteSpy"
+screenGui.ResetOnSpawn    = false
+screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder    = 999
+screenGui.Parent          = PlayerGui
+
+-- Main window
+local window = Instance.new("Frame")
+window.Name              = "Window"
+window.Size              = UDim2.new(0, 540, 0, 360)
+window.Position          = UDim2.new(0.5, -270, 0.5, -180)
+window.BackgroundColor3  = Color3.fromRGB(18, 18, 24)
+window.BorderSizePixel   = 0
+window.Active            = true
+window.Draggable         = true
+window.Parent            = screenGui
+
+local windowCorner = Instance.new("UICorner")
+windowCorner.CornerRadius = UDim.new(0, 8)
+windowCorner.Parent       = window
+
+local windowStroke = Instance.new("UIStroke")
+windowStroke.Color     = Color3.fromRGB(60, 60, 80)
+windowStroke.Thickness = 1
+windowStroke.Parent    = window
+
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Name             = "TitleBar"
+titleBar.Size             = UDim2.new(1, 0, 0, 36)
+titleBar.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+titleBar.BorderSizePixel  = 0
+titleBar.Parent           = window
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent       = titleBar
+
+-- cover bottom corners of titlebar
+local titleFix = Instance.new("Frame")
+titleFix.Size             = UDim2.new(1, 0, 0, 8)
+titleFix.Position         = UDim2.new(0, 0, 1, -8)
+titleFix.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+titleFix.BorderSizePixel  = 0
+titleFix.Parent           = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text            = "  Remote Spy"
+titleLabel.Size            = UDim2.new(1, -120, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3      = Color3.fromRGB(200, 200, 220)
+titleLabel.TextSize        = 14
+titleLabel.Font            = Enum.Font.GothamBold
+titleLabel.TextXAlignment  = Enum.TextXAlignment.Left
+titleLabel.Parent          = titleBar
+
+-- Counter badge
+local counter = Instance.new("TextLabel")
+counter.Name               = "Counter"
+counter.Text               = "0 fires"
+counter.Size               = UDim2.new(0, 80, 0, 22)
+counter.Position           = UDim2.new(1, -198, 0.5, -11)
+counter.BackgroundColor3   = Color3.fromRGB(80, 60, 140)
+counter.TextColor3         = Color3.fromRGB(220, 210, 255)
+counter.TextSize           = 12
+counter.Font               = Enum.Font.GothamBold
+counter.TextXAlignment     = Enum.TextXAlignment.Center
+counter.Parent             = titleBar
+
+local counterCorner = Instance.new("UICorner")
+counterCorner.CornerRadius = UDim.new(0, 4)
+counterCorner.Parent       = counter
+
+-- Buttons: Copy, Clear, Close
+local function makeBtn(labelText, xOffset, bgColor)
+    local btn = Instance.new("TextButton")
+    btn.Text             = labelText
+    btn.Size             = UDim2.new(0, 52, 0, 24)
+    btn.Position         = UDim2.new(1, xOffset, 0.5, -12)
+    btn.BackgroundColor3 = bgColor
+    btn.TextColor3       = Color3.fromRGB(230, 230, 230)
+    btn.TextSize         = 12
+    btn.Font             = Enum.Font.GothamBold
+    btn.BorderSizePixel  = 0
+    btn.Parent           = titleBar
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 4)
+    c.Parent = btn
+    return btn
+end
+
+local btnClose = makeBtn("✕ Close", -8,   Color3.fromRGB(160, 50, 60))
+local btnClear = makeBtn("⊘ Clear", -64,  Color3.fromRGB(50, 80, 140))
+local btnCopy  = makeBtn("⎘ Copy",  -120, Color3.fromRGB(40, 110, 80))
+
+-- Scroll frame
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name                = "LogScroll"
+scrollFrame.Size                = UDim2.new(1, -8, 1, -44)
+scrollFrame.Position            = UDim2.new(0, 4, 0, 40)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel     = 0
+scrollFrame.ScrollBarThickness  = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 80, 180)
+scrollFrame.CanvasSize          = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent              = window
+
+-- Editable TextBox inside the scroll frame
+local logBox = Instance.new("TextBox")
+logBox.Name                = "LogBox"
+logBox.Size                = UDim2.new(1, -8, 1, 0)
+logBox.Position            = UDim2.new(0, 4, 0, 0)
+logBox.BackgroundTransparency = 1
+logBox.TextColor3          = Color3.fromRGB(180, 220, 180)
+logBox.TextSize            = 12
+logBox.Font                = Enum.Font.Code
+logBox.TextXAlignment      = Enum.TextXAlignment.Left
+logBox.TextYAlignment      = Enum.TextYAlignment.Top
+logBox.MultiLine           = true
+logBox.ClearTextOnFocus    = false
+logBox.Text                = ""
+logBox.AutomaticSize       = Enum.AutomaticSize.Y
+logBox.TextWrapped         = true
+logBox.Parent              = scrollFrame
+
+-- ──────────────────────────────────────────
+-- Log state
+-- ──────────────────────────────────────────
+
+local logLines  = {}   -- string[]
+local fireCount = 0
+
+local function scrollToBottom()
+    -- defer one frame so AutomaticCanvasSize has updated
+    task.defer(function()
+        scrollFrame.CanvasPosition = Vector2.new(
+            0, math.max(0, scrollFrame.AbsoluteCanvasSize.Y
+                         - scrollFrame.AbsoluteSize.Y)
+        )
+    end)
+end
+
+local function appendLine(line)
+    fireCount += 1
+    logLines[#logLines + 1] = line
+    logBox.Text    = table.concat(logLines, "\n")
+    counter.Text   = fireCount .. " fires"
+    scrollToBottom()
+end
+
+-- ──────────────────────────────────────────
+-- Button logic
+-- ──────────────────────────────────────────
+
+btnClear.MouseButton1Click:Connect(function()
+    logLines  = {}
+    fireCount = 0
+    logBox.Text   = ""
+    counter.Text  = "0 fires"
+end)
+
+btnCopy.MouseButton1Click:Connect(function()
+    -- setclipboard is available in most executors
+    if setclipboard then
+        setclipboard(logBox.Text)
+        local orig = btnCopy.Text
+        btnCopy.Text = "✓ Copied"
+        task.delay(1.2, function() btnCopy.Text = orig end)
+    end
+end)
+
+btnClose.MouseButton1Click:Connect(function()
+    window.Visible = not window.Visible
+end)
+
+-- ──────────────────────────────────────────
+-- Helpers (same as before)
+-- ──────────────────────────────────────────
 
 local function timestamp()
     return string.format("[%.3f]", tick())
@@ -17,13 +195,14 @@ end
 
 local function serialize(v)
     local t = typeof(v)
-    if t == "Instance"  then return v:GetFullName()
+    if t == "Instance" then
+        return v:GetFullName()
     elseif t == "table" then
         local parts = {}
         for k, val in pairs(v) do
             parts[#parts+1] = tostring(k).."="..serialize(val)
         end
-        return "{" .. table.concat(parts, ", ") .. "}"
+        return "{"..table.concat(parts, ", ".."}") 
     else
         return tostring(v)
     end
@@ -33,14 +212,22 @@ local function fmtArgs(...)
     local args = {...}
     local out  = {}
     for i, v in ipairs(args) do
-        out[i] = string.format("[%d] (%s) %s", i, typeof(v), serialize(v))
+        out[i] = string.format("[%d](%s) %s", i, typeof(v), serialize(v))
     end
-    return table.concat(out, "  |  ")
+    return #out > 0 and table.concat(out, " | ") or "<no args>"
 end
 
 -- ──────────────────────────────────────────
--- Hook a single remote
+-- Hook logic
 -- ──────────────────────────────────────────
+
+local hooked = {}
+
+local REMOTE_CLASSES = {
+    RemoteEvent           = true,
+    RemoteFunction        = true,
+    UnreliableRemoteEvent = true,
+}
 
 local function hookRemote(remote)
     if hooked[remote] then return end
@@ -49,44 +236,24 @@ local function hookRemote(remote)
     local path = remote:GetFullName()
     local kind = remote.ClassName
 
-    if kind == "RemoteEvent" then
-        -- OnClientEvent  →  server fired this at us
+    if kind == "RemoteEvent" or kind == "UnreliableRemoteEvent" then
         remote.OnClientEvent:Connect(function(...)
-            print(string.format(
-                "%s [RemoteEvent] %s\n  Args: %s",
-                timestamp(), path, fmtArgs(...)
+            appendLine(string.format(
+                "%s [%s]\n  Path: %s\n  Args: %s",
+                timestamp(), kind, path, fmtArgs(...)
             ))
         end)
 
     elseif kind == "RemoteFunction" then
-        -- OnClientInvoke is a write-only callback — never read it
+        -- write-only callback, never read
         remote.OnClientInvoke = function(...)
-            print(string.format(
-                "%s [RemoteFunction INVOKE] %s\n  Args: %s",
+            appendLine(string.format(
+                "%s [RemoteFunction INVOKE]\n  Path: %s\n  Args: %s",
                 timestamp(), path, fmtArgs(...)
             ))
-            -- return nil so the server's InvokeClient() resolves cleanly
         end
-
-    elseif kind == "UnreliableRemoteEvent" then
-        remote.OnClientEvent:Connect(function(...)
-            print(string.format(
-                "%s [UnreliableRemoteEvent] %s\n  Args: %s",
-                timestamp(), path, fmtArgs(...)
-            ))
-        end)
     end
 end
-
--- ──────────────────────────────────────────
--- Recursively scan a container
--- ──────────────────────────────────────────
-
-local REMOTE_CLASSES = {
-    RemoteEvent          = true,
-    RemoteFunction       = true,
-    UnreliableRemoteEvent = true,
-}
 
 local function scanContainer(container)
     for _, obj in ipairs(container:GetDescendants()) do
@@ -94,7 +261,6 @@ local function scanContainer(container)
             hookRemote(obj)
         end
     end
-    -- watch for new remotes added later
     container.DescendantAdded:Connect(function(obj)
         if REMOTE_CLASSES[obj.ClassName] then
             hookRemote(obj)
@@ -102,12 +268,5 @@ local function scanContainer(container)
     end)
 end
 
--- ──────────────────────────────────────────
--- Entry point
--- ──────────────────────────────────────────
-
--- Scan the full game tree (catches remotes in
--- ServerStorage mirrors, custom folders, etc.)
 scanContainer(game)
-
-print("[RemoteSpy] Hooked. Listening for server→client fires...")
+appendLine("[RemoteSpy] Hooked — listening for server→client fires...")
