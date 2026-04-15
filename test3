@@ -1,181 +1,144 @@
--- test
+-- LoadingMap → TeleportToPart latency timer
+-- Fox @ Jack's request
 
-local Players          = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players            = game:GetService("Players")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local RunService         = game:GetService("RunService")
 
-local LocalPlayer  = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
--- ─── Config ───────────────────────────────────────────────────────────────────
-local SPAWN_NAMES   = { Spawn = true, PlayerSpawn = true }
-local REMOTE_PATH   = { "Remotes", "Gameplay", "TeleportToPart" }
-local SPAWNS_FOLDER = "Spawns"
--- ──────────────────────────────────────────────────────────────────────────────
+-- ── Remote refs ────────────────────────────────────────────────────────────
+local Remotes    = ReplicatedStorage:WaitForChild("Remotes")
+local Gameplay   = Remotes:WaitForChild("Gameplay")
+local evLoading  = Gameplay:WaitForChild("LoadingMap")
+local evTeleport = Gameplay:WaitForChild("TeleportToPart")
 
-local lockedSpawn   = nil
-local active        = false
-local connections   = {}
-local hookedFolders = {}
-
--- ─── Helpers ──────────────────────────────────────────────────────────────────
-local function isSpawnPart(obj)
-    return obj:IsA("BasePart") and SPAWN_NAMES[obj.Name]
-end
-
-local function teleportChar(char, spawn)
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    hrp.CFrame = spawn.CFrame * CFrame.new(0, spawn.Size.Y / 2 + 3, 0)
-end
-
-local function teleportAllToSpawn(spawn)
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player.Character then
-            teleportChar(player.Character, spawn)
-        end
-    end
-end
-
--- ─── Core spawn handler (only called from ChildAdded) ─────────────────────────
-local function handleNewSpawn(obj)
-    if not active then return end
-    if not isSpawnPart(obj) then return end
-
-    if lockedSpawn == nil then
-        -- first one in → lock it, teleport self
-        lockedSpawn = obj
-        print("[SpawnLock] Locked:", obj:GetFullName())
-        local char = LocalPlayer.Character
-        if char then teleportChar(char, obj) end
-    else
-        -- any subsequent one → delete immediately
-        if obj ~= lockedSpawn then
-            obj:Destroy()
-            print("[SpawnLock] Deleted extra:", obj.Name)
-        end
-    end
-end
-
--- ─── Hook a Spawns folder (ChildAdded only, no GetChildren scan) ──────────────
-local function hookSpawnsFolder(folder)
-    if hookedFolders[folder] then return end
-    hookedFolders[folder] = true
-
-    local conn = folder.ChildAdded:Connect(function(child)
-        task.defer(handleNewSpawn, child)
-    end)
-    table.insert(connections, conn)
-end
-
--- ─── Watch workspace for new maps (ChildAdded only) ───────────────────────────
-local function startWatching()
-    -- top-level: new map added to workspace
-    local wsConn = workspace.ChildAdded:Connect(function(map)
-        if not active then return end
-
-        -- case 1: Spawns folder already exists on the map when it arrives
-        local sf = map:FindFirstChild(SPAWNS_FOLDER)
-        if sf then
-            hookSpawnsFolder(sf)
-            return
-        end
-
-        -- case 2: Spawns folder arrives slightly after the map itself
-        local innerConn
-        innerConn = map.ChildAdded:Connect(function(child)
-            if not active then
-                innerConn:Disconnect()
-                return
-            end
-            if child.Name == SPAWNS_FOLDER then
-                hookSpawnsFolder(child)
-                innerConn:Disconnect()
-            end
-        end)
-        table.insert(connections, innerConn)
-    end)
-    table.insert(connections, wsConn)
-end
-
--- ─── Hook TeleportToPart remote ───────────────────────────────────────────────
-local function hookRemote()
-    local node = ReplicatedStorage
-    for _, step in ipairs(REMOTE_PATH) do
-        node = node:WaitForChild(step, 10)
-        if not node then
-            warn("[SpawnLock] Remote not found at step:", step)
-            return
-        end
-    end
-
-    local conn = node.OnClientEvent:Connect(function(_targetPart)
-        if not active or not lockedSpawn then return end
-        print("[SpawnLock] Intercepted TeleportToPart → redirecting to locked spawn")
-        teleportAllToSpawn(lockedSpawn)
-    end)
-    table.insert(connections, conn)
-end
-
--- ─── Cleanup ──────────────────────────────────────────────────────────────────
-local function cleanup()
-    for _, c in ipairs(connections) do
-        c:Disconnect()
-    end
-    connections   = {}
-    hookedFolders = {}
-    lockedSpawn   = nil
-end
-
--- ─── GUI ──────────────────────────────────────────────────────────────────────
+-- ── Build GUI ──────────────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name           = "SpawnLockGui"
-screenGui.ResetOnSpawn   = false
-screenGui.IgnoreGuiInset = true
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent         = LocalPlayer.PlayerGui
+screenGui.Name            = "RemoteTimer"
+screenGui.ResetOnSpawn    = false
+screenGui.IgnoreGuiInset  = true
+screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+screenGui.Parent          = PlayerGui
 
 local frame = Instance.new("Frame")
-frame.Size             = UDim2.new(0, 180, 0, 48)
-frame.Position         = UDim2.new(0, 12, 0, 12)
-frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-frame.BorderSizePixel  = 0
-frame.Active           = true
-frame.Draggable        = true
-frame.Parent           = screenGui
+frame.Size            = UDim2.new(0, 300, 0, 90)
+frame.Position        = UDim2.new(0.5, -150, 0, 12)
+frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+frame.BackgroundTransparency = 0.15
+frame.BorderSizePixel = 0
+frame.Parent          = screenGui
 
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 8)
 corner.Parent       = frame
 
 local stroke = Instance.new("UIStroke")
-stroke.Color     = Color3.fromRGB(80, 80, 100)
-stroke.Thickness = 1
+stroke.Color     = Color3.fromRGB(80, 140, 255)
+stroke.Thickness = 1.5
 stroke.Parent    = frame
 
-local btn = Instance.new("TextButton")
-btn.Size               = UDim2.new(1, 0, 1, 0)
-btn.BackgroundTransparency = 1
-btn.Font               = Enum.Font.GothamBold
-btn.TextSize           = 14
-btn.TextColor3         = Color3.fromRGB(220, 220, 220)
-btn.Text               = "[OFF]  Spawn Lock"
-btn.Parent             = frame
+local labelStatus = Instance.new("TextLabel")
+labelStatus.Size                = UDim2.new(1, -16, 0, 22)
+labelStatus.Position            = UDim2.new(0, 8, 0, 8)
+labelStatus.BackgroundTransparency = 1
+labelStatus.TextColor3          = Color3.fromRGB(160, 180, 255)
+labelStatus.TextSize            = 13
+labelStatus.Font                = Enum.Font.GothamMedium
+labelStatus.TextXAlignment      = Enum.TextXAlignment.Left
+labelStatus.Text                = "Waiting for LoadingMap..."
+labelStatus.Parent              = frame
 
-local function setActive(state)
-    active = state
-    if state then
-        btn.Text       = "[ON]   Spawn Lock"
-        btn.TextColor3 = Color3.fromRGB(100, 255, 140)
-        stroke.Color   = Color3.fromRGB(100, 255, 140)
-        startWatching()
-        hookRemote()
-    else
-        btn.Text       = "[OFF]  Spawn Lock"
-        btn.TextColor3 = Color3.fromRGB(220, 220, 220)
-        stroke.Color   = Color3.fromRGB(80, 80, 100)
-        cleanup()
+local labelTimer = Instance.new("TextLabel")
+labelTimer.Size                 = UDim2.new(1, -16, 0, 40)
+labelTimer.Position             = UDim2.new(0, 8, 0, 32)
+labelTimer.BackgroundTransparency = 1
+labelTimer.TextColor3           = Color3.fromRGB(255, 255, 255)
+labelTimer.TextSize             = 28
+labelTimer.Font                 = Enum.Font.GothamBold
+labelTimer.TextXAlignment       = Enum.TextXAlignment.Left
+labelTimer.Text                 = "--"
+labelTimer.Parent               = frame
+
+local labelMap = Instance.new("TextLabel")
+labelMap.Size                   = UDim2.new(1, -16, 0, 16)
+labelMap.Position               = UDim2.new(0, 8, 0, 70)
+labelMap.BackgroundTransparency = 1
+labelMap.TextColor3             = Color3.fromRGB(120, 120, 140)
+labelMap.TextSize               = 11
+labelMap.Font                   = Enum.Font.Gotham
+labelMap.TextXAlignment         = Enum.TextXAlignment.Left
+labelMap.Text                   = ""
+labelMap.Parent                 = frame
+
+-- ── State ──────────────────────────────────────────────────────────────────
+local startTick: number? = nil
+local measuring          = false
+local heartbeatConn: RBXScriptConnection? = nil
+
+local function stopHeartbeat()
+    if heartbeatConn then
+        heartbeatConn:Disconnect()
+        heartbeatConn = nil
     end
 end
 
-btn.MouseButton1Click:Connect(function()
-    setActive(not active)
+local function startLiveClock()
+    stopHeartbeat()
+    heartbeatConn = RunService.Heartbeat:Connect(function()
+        if not measuring or not startTick then return end
+        local elapsed = tick() - startTick
+        labelTimer.Text = string.format("%.3f s  /  %d ms", elapsed, math.floor(elapsed * 1000))
+    end)
+end
+
+-- ── LoadingMap fired ───────────────────────────────────────────────────────
+evLoading.OnClientEvent:Connect(function(mapName: string)
+    startTick  = tick()
+    measuring  = true
+
+    -- reset colours to "active" blue
+    stroke.Color       = Color3.fromRGB(80, 140, 255)
+    labelStatus.TextColor3 = Color3.fromRGB(160, 180, 255)
+
+    labelStatus.Text = "LoadingMap fired — timing..."
+    labelMap.Text    = "Map: " .. tostring(mapName)
+    labelTimer.Text  = "0.000 s  /  0 ms"
+
+    startLiveClock()
+end)
+
+-- ── TeleportToPart fired ───────────────────────────────────────────────────
+evTeleport.OnClientEvent:Connect(function(spawnPart: Instance)
+    if not measuring or not startTick then
+        -- fired before LoadingMap — just note it
+        labelStatus.Text       = "TeleportToPart (no start)"
+        labelTimer.Text        = "N/A"
+        stroke.Color           = Color3.fromRGB(255, 180, 60)
+        labelStatus.TextColor3 = Color3.fromRGB(255, 200, 80)
+        return
+    end
+
+    local endTick = tick()
+    local delta   = endTick - startTick
+
+    stopHeartbeat()
+    measuring = false
+
+    -- green = done
+    stroke.Color           = Color3.fromRGB(60, 220, 120)
+    labelStatus.TextColor3 = Color3.fromRGB(100, 255, 160)
+
+    labelStatus.Text = "TeleportToPart received!"
+    labelTimer.Text  = string.format("%.3f s  /  %d ms", delta, math.floor(delta * 1000))
+
+    local partPath = ""
+    if typeof(spawnPart) == "Instance" then
+        partPath = spawnPart:GetFullName()
+    end
+    labelMap.Text = "Spawn: " .. partPath
+
+    -- reset state so the next LoadingMap starts fresh
+    startTick = nil
 end)
