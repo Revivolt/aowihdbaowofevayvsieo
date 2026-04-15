@@ -1,112 +1,207 @@
--- LocalScript inside StarterPlayerScripts
+-- LocalScript inside StarterPlayerScripts or StarterGui
+
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Mouse = LocalPlayer:GetMouse()
 
--- The one spawn we lock onto
-local lockedSpawn = nil
+-- ─── Config ───────────────────────────────────────────────────────────────────
+local SPAWN_NAMES   = { Spawn = true, PlayerSpawn = true }
+local REMOTE_PATH   = { "Remotes", "Gameplay", "TeleportToPart" }
+local SPAWNS_FOLDER = "Spawns"   -- the folder inside each map that holds spawns
+-- ──────────────────────────────────────────────────────────────────────────────
 
--- Spawn names we care about
-local SPAWN_NAMES = {
-    Spawn = true,
-    PlayerSpawn = true,
-}
+local lockedSpawn   = nil   -- the one spawn we keep
+local active        = false -- toggle state
+local connections   = {}    -- cleanup table
+local hookedFolders = {}    -- folders we already have ChildAdded on
 
--- Teleport character to center of a BasePart
-local function teleportToSpawn(spawnPart)
-    -- Wait for char to be valid
-    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-
-    -- Offset slightly above the part so we don't clip
-    local cf = spawnPart.CFrame * CFrame.new(0, spawnPart.Size.Y / 2 + 3, 0)
-    HumanoidRootPart.CFrame = cf
+-- ─── Helpers ──────────────────────────────────────────────────────────────────
+local function isSpawnPart(obj)
+    return obj:IsA("BasePart") and SPAWN_NAMES[obj.Name]
 end
 
--- Recursively scan a container for Spawn/PlayerSpawn parts
-local function findSpawnsIn(container, results)
-    results = results or {}
-    for _, obj in ipairs(container:GetDescendants()) do
-        if obj:IsA("BasePart") and SPAWN_NAMES[obj.Name] then
-            table.insert(results, obj)
-        end
-    end
-    return results
+local function teleportToSpawn(spawn)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    -- sit on top of the part so we don't clip
+    local cf = spawn.CFrame * CFrame.new(0, spawn.Size.Y / 2 + 3, 0)
+    hrp.CFrame = cf
 end
 
--- Called whenever we find a new spawn candidate
-local function handleNewSpawn(spawnPart)
-    if lockedSpawn == nil then
-        -- First one wins — lock it in
-        lockedSpawn = spawnPart
-        print("[SpawnLock] Locked onto:", spawnPart:GetFullName())
-        teleportToSpawn(lockedSpawn)
-    else
-        -- Destroy any subsequent spawns
-        if spawnPart ~= lockedSpawn then
-            print("[SpawnLock] Deleting duplicate:", spawnPart:GetFullName())
-            spawnPart:Destroy()
-        end
-    end
-end
-
--- Watch workspace descendants for newly added Spawn/PlayerSpawn
-workspace.DescendantAdded:Connect(function(obj)
-    if obj:IsA("BasePart") and SPAWN_NAMES[obj.Name] then
-        -- Small yield so the part is fully parented/positioned
-        task.wait()
-        if obj.Parent then -- still exists after yield
-            handleNewSpawn(obj)
-        end
-    end
-end)
-
--- Also catch anything already in workspace at script start
-task.spawn(function()
-    local existing = findSpawnsIn(workspace)
-    for _, sp in ipairs(existing) do
-        handleNewSpawn(sp)
-    end
-end)
-
--- If our locked spawn gets destroyed (map change etc.), reset
-workspace.DescendantRemoving:Connect(function(obj)
-    if obj == lockedSpawn then
-        print("[SpawnLock] Locked spawn removed — resetting.")
-        lockedSpawn = nil
-    end
-end)
-
--- Intercept TeleportToPart remote event
-local TeleportToPart = ReplicatedStorage
-    :WaitForChild("Remotes")
-    :WaitForChild("Gameplay")
-    :WaitForChild("TeleportToPart")
-
-TeleportToPart.OnClientEvent:Connect(function(targetPart)
-    -- targetPart is what the server sent (e.g. Workspace.Bank2.Spawns.Spawn)
-    -- We ignore it and send everyone to our locked spawn instead
-
-    local destination = lockedSpawn or targetPart -- fallback if no lock yet
-
-    print("[SpawnLock] TeleportToPart fired. Server wanted:", targetPart:GetFullName())
-    print("[SpawnLock] Redirecting to:", destination:GetFullName())
-
-    -- Teleport all players' characters on this client's side
+local function teleportAllToSpawn(spawn)
     for _, player in ipairs(Players:GetPlayers()) do
         local char = player.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                local cf = destination.CFrame * CFrame.new(0, destination.Size.Y / 2 + 3, 0)
-                hrp.CFrame = cf
-            end
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        local cf = spawn.CFrame * CFrame.new(0, spawn.Size.Y / 2 + 3, 0)
+        hrp.CFrame = cf
+    end
+end
+
+local function lockSpawn(spawn)
+    if lockedSpawn then return end   -- already have one
+    lockedSpawn = spawn
+    print("[SpawnLock] Locked onto:", spawn:GetFullName())
+    teleportToSpawn(spawn)
+end
+
+local function handleNewSpawn(obj)
+    if not active then return end
+    if not isSpawnPart(obj) then return end
+
+    if lockedSpawn == nil then
+        lockSpawn(obj)
+    else
+        -- not the locked one → nuke it
+        if obj ~= lockedSpawn then
+            obj:Destroy()
+            print("[SpawnLock] Deleted extra spawn:", obj.Name)
         end
     end
-end)
+end
 
-print("[SpawnLock] Running — watching for Spawn / PlayerSpawn parts.")
+-- ─── Hook a Spawns folder ─────────────────────────────────────────────────────
+local function hookSpawnsFolder(folder)
+    if hookedFolders[folder] then return end
+    hookedFolders[folder] = true
+
+    -- handle anything already inside when we first see the folder
+    for _, child in ipairs(folder:GetChildren()) do
+        task.defer(handleNewSpawn, child)
+    end
+
+    local conn = folder.ChildAdded:Connect(function(child)
+        -- small defer so the part is fully replicated before we touch it
+        task.defer(handleNewSpawn, child)
+    end)
+    table.insert(connections, conn)
+end
+
+-- ─── Watch workspace for new maps being added ─────────────────────────────────
+local function scanWorkspace()
+    -- scan maps already present
+    for _, map in ipairs(workspace:GetChildren()) do
+        local sf = map:FindFirstChild(SPAWNS_FOLDER)
+        if sf then hookSpawnsFolder(sf) end
+    end
+
+    -- watch for new maps
+    local conn = workspace.ChildAdded:Connect(function(map)
+        if not active then return end
+        -- wait a tick for children to replicate
+        task.defer(function()
+            local sf = map:FindFirstChild(SPAWNS_FOLDER)
+            if sf then
+                hookSpawnsFolder(sf)
+            else
+                -- some maps add Spawns folder slightly after the map itself
+                local innerConn
+                innerConn = map.ChildAdded:Connect(function(child)
+                    if child.Name == SPAWNS_FOLDER then
+                        hookSpawnsFolder(child)
+                        innerConn:Disconnect()
+                    end
+                end)
+                table.insert(connections, innerConn)
+            end
+        end)
+    end)
+    table.insert(connections, conn)
+end
+
+-- ─── Hook TeleportToPart remote ───────────────────────────────────────────────
+local function hookRemote()
+    -- walk the path to find the remote
+    local node = ReplicatedStorage
+    for _, step in ipairs(REMOTE_PATH) do
+        node = node:WaitForChild(step, 10)
+        if not node then
+            warn("[SpawnLock] Remote not found at step:", step)
+            return
+        end
+    end
+
+    local remote = node  -- RemoteEvent
+
+    -- Hook OnClientEvent — server fires this to tell clients to teleport
+    local conn = remote.OnClientEvent:Connect(function(targetPart)
+        if not active then return end
+        if not lockedSpawn then return end
+        -- ignore the server's target, send everyone to our locked spawn instead
+        print("[SpawnLock] Intercepted TeleportToPart, redirecting to locked spawn")
+        teleportAllToSpawn(lockedSpawn)
+    end)
+    table.insert(connections, conn)
+end
+
+-- ─── Cleanup ──────────────────────────────────────────────────────────────────
+local function cleanup()
+    for _, c in ipairs(connections) do
+        c:Disconnect()
+    end
+    connections   = {}
+    hookedFolders = {}
+    lockedSpawn   = nil
+end
+
+-- ─── GUI ──────────────────────────────────────────────────────────────────────
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name            = "SpawnLockGui"
+screenGui.ResetOnSpawn    = false
+screenGui.IgnoreGuiInset  = true
+screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+screenGui.Parent          = LocalPlayer.PlayerGui
+
+local frame = Instance.new("Frame")
+frame.Size            = UDim2.new(0, 180, 0, 48)
+frame.Position        = UDim2.new(0, 12, 0, 12)
+frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+frame.BorderSizePixel = 0
+frame.Active          = true
+frame.Draggable       = true
+frame.Parent          = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent       = frame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color     = Color3.fromRGB(80, 80, 100)
+stroke.Thickness = 1
+stroke.Parent    = frame
+
+local btn = Instance.new("TextButton")
+btn.Size              = UDim2.new(1, 0, 1, 0)
+btn.BackgroundTransparency = 1
+btn.Font              = Enum.Font.GothamBold
+btn.TextSize          = 14
+btn.TextColor3        = Color3.fromRGB(220, 220, 220)
+btn.Text              = "[OFF]  Spawn Lock"
+btn.Parent            = frame
+
+local function setActive(state)
+    active = state
+    if state then
+        btn.Text        = "[ON]   Spawn Lock"
+        btn.TextColor3  = Color3.fromRGB(100, 255, 140)
+        stroke.Color    = Color3.fromRGB(100, 255, 140)
+        scanWorkspace()
+        hookRemote()
+    else
+        btn.Text        = "[OFF]  Spawn Lock"
+        btn.TextColor3  = Color3.fromRGB(220, 220, 220)
+        stroke.Color    = Color3.fromRGB(80, 80, 100)
+        cleanup()
+    end
+end
+
+btn.MouseButton1Click:Connect(function()
+    setActive(not active)
+end)
