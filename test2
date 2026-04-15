@@ -59,17 +59,13 @@ local function hookRemote(remote)
         end)
 
     elseif kind == "RemoteFunction" then
-        -- OnClientInvoke  →  server is calling us
-        local original = remote.OnClientInvoke
+        -- OnClientInvoke is a write-only callback — never read it
         remote.OnClientInvoke = function(...)
             print(string.format(
                 "%s [RemoteFunction INVOKE] %s\n  Args: %s",
                 timestamp(), path, fmtArgs(...)
             ))
-            -- return nil so the server doesn't hang
-            if original then
-                return original(...)
-            end
+            -- return nil so the server's InvokeClient() resolves cleanly
         end
 
     elseif kind == "UnreliableRemoteEvent" then
