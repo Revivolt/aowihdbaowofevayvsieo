@@ -1,0 +1,112 @@
+-- LocalScript inside StarterPlayerScripts
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+-- The one spawn we lock onto
+local lockedSpawn = nil
+
+-- Spawn names we care about
+local SPAWN_NAMES = {
+    Spawn = true,
+    PlayerSpawn = true,
+}
+
+-- Teleport character to center of a BasePart
+local function teleportToSpawn(spawnPart)
+    -- Wait for char to be valid
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+    -- Offset slightly above the part so we don't clip
+    local cf = spawnPart.CFrame * CFrame.new(0, spawnPart.Size.Y / 2 + 3, 0)
+    HumanoidRootPart.CFrame = cf
+end
+
+-- Recursively scan a container for Spawn/PlayerSpawn parts
+local function findSpawnsIn(container, results)
+    results = results or {}
+    for _, obj in ipairs(container:GetDescendants()) do
+        if obj:IsA("BasePart") and SPAWN_NAMES[obj.Name] then
+            table.insert(results, obj)
+        end
+    end
+    return results
+end
+
+-- Called whenever we find a new spawn candidate
+local function handleNewSpawn(spawnPart)
+    if lockedSpawn == nil then
+        -- First one wins — lock it in
+        lockedSpawn = spawnPart
+        print("[SpawnLock] Locked onto:", spawnPart:GetFullName())
+        teleportToSpawn(lockedSpawn)
+    else
+        -- Destroy any subsequent spawns
+        if spawnPart ~= lockedSpawn then
+            print("[SpawnLock] Deleting duplicate:", spawnPart:GetFullName())
+            spawnPart:Destroy()
+        end
+    end
+end
+
+-- Watch workspace descendants for newly added Spawn/PlayerSpawn
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("BasePart") and SPAWN_NAMES[obj.Name] then
+        -- Small yield so the part is fully parented/positioned
+        task.wait()
+        if obj.Parent then -- still exists after yield
+            handleNewSpawn(obj)
+        end
+    end
+end)
+
+-- Also catch anything already in workspace at script start
+task.spawn(function()
+    local existing = findSpawnsIn(workspace)
+    for _, sp in ipairs(existing) do
+        handleNewSpawn(sp)
+    end
+end)
+
+-- If our locked spawn gets destroyed (map change etc.), reset
+workspace.DescendantRemoving:Connect(function(obj)
+    if obj == lockedSpawn then
+        print("[SpawnLock] Locked spawn removed — resetting.")
+        lockedSpawn = nil
+    end
+end)
+
+-- Intercept TeleportToPart remote event
+local TeleportToPart = ReplicatedStorage
+    :WaitForChild("Remotes")
+    :WaitForChild("Gameplay")
+    :WaitForChild("TeleportToPart")
+
+TeleportToPart.OnClientEvent:Connect(function(targetPart)
+    -- targetPart is what the server sent (e.g. Workspace.Bank2.Spawns.Spawn)
+    -- We ignore it and send everyone to our locked spawn instead
+
+    local destination = lockedSpawn or targetPart -- fallback if no lock yet
+
+    print("[SpawnLock] TeleportToPart fired. Server wanted:", targetPart:GetFullName())
+    print("[SpawnLock] Redirecting to:", destination:GetFullName())
+
+    -- Teleport all players' characters on this client's side
+    for _, player in ipairs(Players:GetPlayers()) do
+        local char = player.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local cf = destination.CFrame * CFrame.new(0, destination.Size.Y / 2 + 3, 0)
+                hrp.CFrame = cf
+            end
+        end
+    end
+end)
+
+print("[SpawnLock] Running — watching for Spawn / PlayerSpawn parts.")
