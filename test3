@@ -1,124 +1,103 @@
--- LocalScript inside StarterPlayerScripts or StarterGui
+-- test
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Players          = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
-local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
+local LocalPlayer  = Players.LocalPlayer
 
 -- ─── Config ───────────────────────────────────────────────────────────────────
 local SPAWN_NAMES   = { Spawn = true, PlayerSpawn = true }
 local REMOTE_PATH   = { "Remotes", "Gameplay", "TeleportToPart" }
-local SPAWNS_FOLDER = "Spawns"   -- the folder inside each map that holds spawns
+local SPAWNS_FOLDER = "Spawns"
 -- ──────────────────────────────────────────────────────────────────────────────
 
-local lockedSpawn   = nil   -- the one spawn we keep
-local active        = false -- toggle state
-local connections   = {}    -- cleanup table
-local hookedFolders = {}    -- folders we already have ChildAdded on
+local lockedSpawn   = nil
+local active        = false
+local connections   = {}
+local hookedFolders = {}
 
 -- ─── Helpers ──────────────────────────────────────────────────────────────────
 local function isSpawnPart(obj)
     return obj:IsA("BasePart") and SPAWN_NAMES[obj.Name]
 end
 
-local function teleportToSpawn(spawn)
-    local char = LocalPlayer.Character
-    if not char then return end
+local function teleportChar(char, spawn)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    -- sit on top of the part so we don't clip
-    local cf = spawn.CFrame * CFrame.new(0, spawn.Size.Y / 2 + 3, 0)
-    hrp.CFrame = cf
+    hrp.CFrame = spawn.CFrame * CFrame.new(0, spawn.Size.Y / 2 + 3, 0)
 end
 
 local function teleportAllToSpawn(spawn)
     for _, player in ipairs(Players:GetPlayers()) do
-        local char = player.Character
-        if not char then continue end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
-        local cf = spawn.CFrame * CFrame.new(0, spawn.Size.Y / 2 + 3, 0)
-        hrp.CFrame = cf
+        if player.Character then
+            teleportChar(player.Character, spawn)
+        end
     end
 end
 
-local function lockSpawn(spawn)
-    if lockedSpawn then return end   -- already have one
-    lockedSpawn = spawn
-    print("[SpawnLock] Locked onto:", spawn:GetFullName())
-    teleportToSpawn(spawn)
-end
-
+-- ─── Core spawn handler (only called from ChildAdded) ─────────────────────────
 local function handleNewSpawn(obj)
     if not active then return end
     if not isSpawnPart(obj) then return end
 
     if lockedSpawn == nil then
-        lockSpawn(obj)
+        -- first one in → lock it, teleport self
+        lockedSpawn = obj
+        print("[SpawnLock] Locked:", obj:GetFullName())
+        local char = LocalPlayer.Character
+        if char then teleportChar(char, obj) end
     else
-        -- not the locked one → nuke it
+        -- any subsequent one → delete immediately
         if obj ~= lockedSpawn then
             obj:Destroy()
-            print("[SpawnLock] Deleted extra spawn:", obj.Name)
+            print("[SpawnLock] Deleted extra:", obj.Name)
         end
     end
 end
 
--- ─── Hook a Spawns folder ─────────────────────────────────────────────────────
+-- ─── Hook a Spawns folder (ChildAdded only, no GetChildren scan) ──────────────
 local function hookSpawnsFolder(folder)
     if hookedFolders[folder] then return end
     hookedFolders[folder] = true
 
-    -- handle anything already inside when we first see the folder
-    for _, child in ipairs(folder:GetChildren()) do
-        task.defer(handleNewSpawn, child)
-    end
-
     local conn = folder.ChildAdded:Connect(function(child)
-        -- small defer so the part is fully replicated before we touch it
         task.defer(handleNewSpawn, child)
     end)
     table.insert(connections, conn)
 end
 
--- ─── Watch workspace for new maps being added ─────────────────────────────────
-local function scanWorkspace()
-    -- scan maps already present
-    for _, map in ipairs(workspace:GetChildren()) do
-        local sf = map:FindFirstChild(SPAWNS_FOLDER)
-        if sf then hookSpawnsFolder(sf) end
-    end
-
-    -- watch for new maps
-    local conn = workspace.ChildAdded:Connect(function(map)
+-- ─── Watch workspace for new maps (ChildAdded only) ───────────────────────────
+local function startWatching()
+    -- top-level: new map added to workspace
+    local wsConn = workspace.ChildAdded:Connect(function(map)
         if not active then return end
-        -- wait a tick for children to replicate
-        task.defer(function()
-            local sf = map:FindFirstChild(SPAWNS_FOLDER)
-            if sf then
-                hookSpawnsFolder(sf)
-            else
-                -- some maps add Spawns folder slightly after the map itself
-                local innerConn
-                innerConn = map.ChildAdded:Connect(function(child)
-                    if child.Name == SPAWNS_FOLDER then
-                        hookSpawnsFolder(child)
-                        innerConn:Disconnect()
-                    end
-                end)
-                table.insert(connections, innerConn)
+
+        -- case 1: Spawns folder already exists on the map when it arrives
+        local sf = map:FindFirstChild(SPAWNS_FOLDER)
+        if sf then
+            hookSpawnsFolder(sf)
+            return
+        end
+
+        -- case 2: Spawns folder arrives slightly after the map itself
+        local innerConn
+        innerConn = map.ChildAdded:Connect(function(child)
+            if not active then
+                innerConn:Disconnect()
+                return
+            end
+            if child.Name == SPAWNS_FOLDER then
+                hookSpawnsFolder(child)
+                innerConn:Disconnect()
             end
         end)
+        table.insert(connections, innerConn)
     end)
-    table.insert(connections, conn)
+    table.insert(connections, wsConn)
 end
 
 -- ─── Hook TeleportToPart remote ───────────────────────────────────────────────
 local function hookRemote()
-    -- walk the path to find the remote
     local node = ReplicatedStorage
     for _, step in ipairs(REMOTE_PATH) do
         node = node:WaitForChild(step, 10)
@@ -128,14 +107,9 @@ local function hookRemote()
         end
     end
 
-    local remote = node  -- RemoteEvent
-
-    -- Hook OnClientEvent — server fires this to tell clients to teleport
-    local conn = remote.OnClientEvent:Connect(function(targetPart)
-        if not active then return end
-        if not lockedSpawn then return end
-        -- ignore the server's target, send everyone to our locked spawn instead
-        print("[SpawnLock] Intercepted TeleportToPart, redirecting to locked spawn")
+    local conn = node.OnClientEvent:Connect(function(_targetPart)
+        if not active or not lockedSpawn then return end
+        print("[SpawnLock] Intercepted TeleportToPart → redirecting to locked spawn")
         teleportAllToSpawn(lockedSpawn)
     end)
     table.insert(connections, conn)
@@ -153,20 +127,20 @@ end
 
 -- ─── GUI ──────────────────────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name            = "SpawnLockGui"
-screenGui.ResetOnSpawn    = false
-screenGui.IgnoreGuiInset  = true
-screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-screenGui.Parent          = LocalPlayer.PlayerGui
+screenGui.Name           = "SpawnLockGui"
+screenGui.ResetOnSpawn   = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent         = LocalPlayer.PlayerGui
 
 local frame = Instance.new("Frame")
-frame.Size            = UDim2.new(0, 180, 0, 48)
-frame.Position        = UDim2.new(0, 12, 0, 12)
+frame.Size             = UDim2.new(0, 180, 0, 48)
+frame.Position         = UDim2.new(0, 12, 0, 12)
 frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-frame.BorderSizePixel = 0
-frame.Active          = true
-frame.Draggable       = true
-frame.Parent          = screenGui
+frame.BorderSizePixel  = 0
+frame.Active           = true
+frame.Draggable        = true
+frame.Parent           = screenGui
 
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 8)
@@ -178,26 +152,26 @@ stroke.Thickness = 1
 stroke.Parent    = frame
 
 local btn = Instance.new("TextButton")
-btn.Size              = UDim2.new(1, 0, 1, 0)
+btn.Size               = UDim2.new(1, 0, 1, 0)
 btn.BackgroundTransparency = 1
-btn.Font              = Enum.Font.GothamBold
-btn.TextSize          = 14
-btn.TextColor3        = Color3.fromRGB(220, 220, 220)
-btn.Text              = "[OFF]  Spawn Lock"
-btn.Parent            = frame
+btn.Font               = Enum.Font.GothamBold
+btn.TextSize           = 14
+btn.TextColor3         = Color3.fromRGB(220, 220, 220)
+btn.Text               = "[OFF]  Spawn Lock"
+btn.Parent             = frame
 
 local function setActive(state)
     active = state
     if state then
-        btn.Text        = "[ON]   Spawn Lock"
-        btn.TextColor3  = Color3.fromRGB(100, 255, 140)
-        stroke.Color    = Color3.fromRGB(100, 255, 140)
-        scanWorkspace()
+        btn.Text       = "[ON]   Spawn Lock"
+        btn.TextColor3 = Color3.fromRGB(100, 255, 140)
+        stroke.Color   = Color3.fromRGB(100, 255, 140)
+        startWatching()
         hookRemote()
     else
-        btn.Text        = "[OFF]  Spawn Lock"
-        btn.TextColor3  = Color3.fromRGB(220, 220, 220)
-        stroke.Color    = Color3.fromRGB(80, 80, 100)
+        btn.Text       = "[OFF]  Spawn Lock"
+        btn.TextColor3 = Color3.fromRGB(220, 220, 220)
+        stroke.Color   = Color3.fromRGB(80, 80, 100)
         cleanup()
     end
 end
