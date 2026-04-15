@@ -1,342 +1,117 @@
--- MM2 Spawn Predictor GUI
--- LocalScript inside StarterPlayerScripts or StarterGui
+-- RemoteSpy: logs all server→client remote fires
+-- LocalScript in StarterPlayerScripts
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+local Players       = game:GetService("Players")
+local RunService    = game:GetService("RunService")
+local LocalPlayer   = Players.LocalPlayer
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+-- ──────────────────────────────────────────
+-- Helpers
+-- ──────────────────────────────────────────
 
--- ─────────────────────────────────────────
--- GUI CONSTRUCTION
--- ─────────────────────────────────────────
+local hooked = {}   -- track already-hooked remotes
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "MM2SpawnPredictor"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = PlayerGui
-
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 320, 0, 220)
-Frame.Position = UDim2.new(0.5, -160, 0.5, -110)
-Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-Frame.BorderSizePixel = 0
-Frame.Active = true
-Frame.Draggable = true
-Frame.Parent = ScreenGui
-
-local Corner = Instance.new("UICorner")
-Corner.CornerRadius = UDim.new(0, 8)
-Corner.Parent = Frame
-
-local Stroke = Instance.new("UIStroke")
-Stroke.Color = Color3.fromRGB(255, 60, 60)
-Stroke.Thickness = 1.5
-Stroke.Parent = Frame
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 36)
-Title.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-Title.Text = " MM2 Spawn Predictor"
-Title.TextColor3 = Color3.new(1, 1, 1)
-Title.TextSize = 14
-Title.Font = Enum.Font.GothamBold
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = Frame
-
-local TitleCorner = Instance.new("UICorner")
-TitleCorner.CornerRadius = UDim.new(0, 8)
-TitleCorner.Parent = Title
-
--- patch bottom corners of title bar
-local TitlePatch = Instance.new("Frame")
-TitlePatch.Size = UDim2.new(1, 0, 0, 8)
-TitlePatch.Position = UDim2.new(0, 0, 1, -8)
-TitlePatch.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-TitlePatch.BorderSizePixel = 0
-TitlePatch.Parent = Title
-
-local function MakeLabel(text, posY)
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -20, 0, 16)
-    lbl.Position = UDim2.new(0, 10, 0, posY)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = text
-    lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
-    lbl.TextSize = 12
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = Frame
-    return lbl
+local function timestamp()
+    return string.format("[%.3f]", tick())
 end
 
-local function MakeTextBox(posY, placeholder)
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(1, -20, 0, 28)
-    box.Position = UDim2.new(0, 10, 0, posY)
-    box.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    box.TextColor3 = Color3.new(1, 1, 1)
-    box.PlaceholderText = placeholder
-    box.PlaceholderColor3 = Color3.fromRGB(100, 100, 120)
-    box.Text = ""
-    box.TextSize = 13
-    box.Font = Enum.Font.Gotham
-    box.ClearTextOnFocus = false
-    box.Parent = Frame
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 5)
-    c.Parent = box
-    return box
-end
-
-local function MakeButton(text, posY, color)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 30)
-    btn.Position = UDim2.new(0, 10, 0, posY)
-    btn.BackgroundColor3 = color or Color3.fromRGB(255, 60, 60)
-    btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Text = text
-    btn.TextSize = 13
-    btn.Font = Enum.Font.GothamBold
-    btn.AutoButtonColor = true
-    btn.Parent = Frame
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 5)
-    c.Parent = btn
-    return btn
-end
-
-MakeLabel("Target Username:", 44)
-local UsernameBox = MakeTextBox(62, "e.g. Shedletsky")
-
-MakeLabel("Status:", 98)
-local StatusLabel = MakeLabel("", 114)
-StatusLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
-StatusLabel.Text = "Idle — enter a username and watch."
-
-local TrackBtn  = MakeButton("Track Player",  148, Color3.fromRGB(255, 60, 60))
-local TeleBtn   = MakeButton("Teleport to Predicted Spawn", 184, Color3.fromRGB(40, 160, 80))
-TeleBtn.Visible = false
-
--- ─────────────────────────────────────────
--- STATE
--- ─────────────────────────────────────────
-
-local targetPlayer      = nil   -- Player object
-local predictedSpawn    = nil   -- BasePart (the spawn we predict)
-local trackingActive    = false
-local spawnConnection   = nil   -- workspace.ChildAdded connection
-local spawnList         = {}    -- all Spawn parts collected this round
-local assignmentDone    = false
-
--- ─────────────────────────────────────────
--- HELPERS
--- ─────────────────────────────────────────
-
-local function SetStatus(msg, color)
-    StatusLabel.Text = msg
-    StatusLabel.TextColor3 = color or Color3.fromRGB(255, 220, 50)
-end
-
-local function GetCharRoot(player)
-    local char = player and player.Character
-    if not char then return nil end
-    return char:FindFirstChild("HumanoidRootPart")
-end
-
---[[
-    MM2 assigns spawns in sorted order by Name ("Spawn1", "Spawn2", ...)
-    then picks the index that corresponds to the player's position in the
-    server's Players list (sorted by UserId ascending, which matches join order).
-    We replicate that logic here.
-]]
-local function PredictSpawn(spawns, player)
-    -- Sort spawns by their numeric suffix, fall back to alphabetical
-    local sorted = {table.unpack(spawns)}
-    table.sort(sorted, function(a, b)
-        local na = tonumber(a.Name:match("%d+$")) or 0
-        local nb = tonumber(b.Name:match("%d+$")) or 0
-        if na ~= nb then return na < nb end
-        return a.Name < b.Name
-    end)
-
-    -- Build sorted player list by UserId (join order approximation)
-    local allPlayers = Players:GetPlayers()
-    table.sort(allPlayers, function(a, b)
-        return a.UserId < b.UserId
-    end)
-
-    -- Find target's 1-based index
-    local idx = nil
-    for i, p in ipairs(allPlayers) do
-        if p == player then
-            idx = i
-            break
+local function serialize(v)
+    local t = typeof(v)
+    if t == "Instance"  then return v:GetFullName()
+    elseif t == "table" then
+        local parts = {}
+        for k, val in pairs(v) do
+            parts[#parts+1] = tostring(k).."="..serialize(val)
         end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    else
+        return tostring(v)
     end
-
-    if not idx then return nil end
-
-    -- Wrap index into spawn list length
-    local spawnIdx = ((idx - 1) % #sorted) + 1
-    return sorted[spawnIdx]
 end
 
-local function StopTracking()
-    trackingActive = false
-    assignmentDone = false
-    spawnList      = {}
-    predictedSpawn = nil
-    if spawnConnection then
-        spawnConnection:Disconnect()
-        spawnConnection = nil
+local function fmtArgs(...)
+    local args = {...}
+    local out  = {}
+    for i, v in ipairs(args) do
+        out[i] = string.format("[%d] (%s) %s", i, typeof(v), serialize(v))
     end
-    TeleBtn.Visible = false
+    return table.concat(out, "  |  ")
 end
 
--- ─────────────────────────────────────────
--- SPAWN WATCHER
--- ─────────────────────────────────────────
+-- ──────────────────────────────────────────
+-- Hook a single remote
+-- ──────────────────────────────────────────
 
-local function OnChildAdded(child)
-    if assignmentDone then return end
+local function hookRemote(remote)
+    if hooked[remote] then return end
+    hooked[remote] = true
 
-    -- MM2 spawn parts are named "Spawn" or "SpawnN"
-    if not child.Name:match("^Spawn") then return end
-    if not child:IsA("BasePart") and not child:IsA("Model") then return end
+    local path = remote:GetFullName()
+    local kind = remote.ClassName
 
-    table.insert(spawnList, child)
-    SetStatus(("Collecting spawns... [%d found]"):format(#spawnList))
-end
+    if kind == "RemoteEvent" then
+        -- OnClientEvent  →  server fired this at us
+        remote.OnClientEvent:Connect(function(...)
+            print(string.format(
+                "%s [RemoteEvent] %s\n  Args: %s",
+                timestamp(), path, fmtArgs(...)
+            ))
+        end)
 
--- We detect "all spawns added" by watching for a brief pause in new
--- Spawn arrivals. MM2 adds them all in one batch, so 0.3 s silence = done.
-local lastSpawnTime = 0
-
-local function StartSpawnWatcher()
-    spawnList      = {}
-    assignmentDone = false
-    lastSpawnTime  = 0
-
-    -- Grab any Spawn parts already in workspace right now
-    for _, child in ipairs(workspace:GetChildren()) do
-        if child.Name:match("^Spawn") and
-           (child:IsA("BasePart") or child:IsA("Model")) then
-            table.insert(spawnList, child)
-        end
-    end
-
-    spawnConnection = workspace.ChildAdded:Connect(function(child)
-        OnChildAdded(child)
-        lastSpawnTime = tick()
-    end)
-
-    -- Polling loop: once spawns stop arriving, run prediction
-    task.spawn(function()
-        while trackingActive do
-            task.wait(0.1)
-
-            if #spawnList > 0 and not assignmentDone then
-                local elapsed = tick() - lastSpawnTime
-                -- 0.35 s of silence after the last spawn = batch complete
-                if elapsed >= 0.35 then
-                    assignmentDone = true
-
-                    local predicted = PredictSpawn(spawnList, targetPlayer)
-                    if predicted then
-                        predictedSpawn = predicted
-
-                        -- Resolve position for Models
-                        local pos
-                        if predicted:IsA("Model") then
-                            local root = predicted:FindFirstChild("HumanoidRootPart")
-                                      or predicted.PrimaryPart
-                            pos = root and root.Position or predicted:GetModelCFrame().Position
-                        else
-                            pos = predicted.Position
-                        end
-
-                        SetStatus(
-                            ("Predicted: %s  (%.1f, %.1f, %.1f)"):format(
-                                predicted.Name, pos.X, pos.Y, pos.Z),
-                            Color3.fromRGB(80, 255, 120)
-                        )
-                        TeleBtn.Visible = true
-                    else
-                        SetStatus("Could not predict spawn (player not found).",
-                                  Color3.fromRGB(255, 80, 80))
-                    end
-
-                    -- Keep connection alive so we can re-predict if a new
-                    -- round starts (spawns re-added)
-                    assignmentDone = false
-                    spawnList      = {}
-                end
+    elseif kind == "RemoteFunction" then
+        -- OnClientInvoke  →  server is calling us
+        local original = remote.OnClientInvoke
+        remote.OnClientInvoke = function(...)
+            print(string.format(
+                "%s [RemoteFunction INVOKE] %s\n  Args: %s",
+                timestamp(), path, fmtArgs(...)
+            ))
+            -- return nil so the server doesn't hang
+            if original then
+                return original(...)
             end
         end
+
+    elseif kind == "UnreliableRemoteEvent" then
+        remote.OnClientEvent:Connect(function(...)
+            print(string.format(
+                "%s [UnreliableRemoteEvent] %s\n  Args: %s",
+                timestamp(), path, fmtArgs(...)
+            ))
+        end)
+    end
+end
+
+-- ──────────────────────────────────────────
+-- Recursively scan a container
+-- ──────────────────────────────────────────
+
+local REMOTE_CLASSES = {
+    RemoteEvent          = true,
+    RemoteFunction       = true,
+    UnreliableRemoteEvent = true,
+}
+
+local function scanContainer(container)
+    for _, obj in ipairs(container:GetDescendants()) do
+        if REMOTE_CLASSES[obj.ClassName] then
+            hookRemote(obj)
+        end
+    end
+    -- watch for new remotes added later
+    container.DescendantAdded:Connect(function(obj)
+        if REMOTE_CLASSES[obj.ClassName] then
+            hookRemote(obj)
+        end
     end)
 end
 
--- ─────────────────────────────────────────
--- BUTTON LOGIC
--- ─────────────────────────────────────────
+-- ──────────────────────────────────────────
+-- Entry point
+-- ──────────────────────────────────────────
 
-TrackBtn.MouseButton1Click:Connect(function()
-    local username = UsernameBox.Text:match("^%s*(.-)%s*$")
-    if username == "" then
-        SetStatus("Enter a username first.", Color3.fromRGB(255, 80, 80))
-        return
-    end
+-- Scan the full game tree (catches remotes in
+-- ServerStorage mirrors, custom folders, etc.)
+scanContainer(game)
 
-    -- Resolve username -> Player
-    local found = nil
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower() == username:lower() then
-            found = p
-            break
-        end
-    end
-
-    if not found then
-        SetStatus(("Player '%s' not in server."):format(username),
-                  Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    StopTracking()
-    targetPlayer   = found
-    trackingActive = true
-    SetStatus(("Tracking %s — waiting for round start..."):format(found.Name),
-              Color3.fromRGB(255, 220, 50))
-    StartSpawnWatcher()
-end)
-
-TeleBtn.MouseButton1Click:Connect(function()
-    if not predictedSpawn then
-        SetStatus("No spawn predicted yet.", Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        SetStatus("Your character isn't loaded.", Color3.fromRGB(255, 80, 80))
-        return
-    end
-
-    local targetPos
-    if predictedSpawn:IsA("Model") then
-        local root = predictedSpawn:FindFirstChild("HumanoidRootPart")
-                  or predictedSpawn.PrimaryPart
-        targetPos = root and root.Position or predictedSpawn:GetModelCFrame().Position
-    else
-        targetPos = predictedSpawn.Position
-    end
-
-    -- Offset slightly upward so we land on top, not inside the part
-    hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 4, 0))
-    SetStatus(("Teleported to %s!"):format(predictedSpawn.Name),
-              Color3.fromRGB(80, 255, 120))
-end)
+print("[RemoteSpy] Hooked. Listening for server→client fires...")
