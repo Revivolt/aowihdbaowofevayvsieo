@@ -1,261 +1,112 @@
--- TeleportPredictor.lua (LocalScript, StarterPlayerScripts)
--- Fox's teleport prediction system for Jack
--- Detects teleport ~1-3 frames BEFORE the position snap
+-- Remote Logger | LocalScript
+-- Hooks all RemoteEvents & RemoteFunctions, logs server->client traffic
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
+local LP = Players.LocalPlayer
 
--- CONFIG
-local TARGET_NAME = "62_AM" -- change this or set dynamically
-local BUFFER_SIZE = 10                  -- rolling position buffer frames
-local VELOCITY_STALL_THRESHOLD = 0.5    -- velocity magnitude below this = stall
-local PREDICTION_DEVIATION_THRESHOLD = 8 -- studs; if predicted vs actual > this, anomaly
-local MOVEDIRECTION_ZERO_FRAMES = 2     -- consecutive zero-moveDirection frames to flag
-local POSITION_JUMP_THRESHOLD = 15      -- studs/frame; physically impossible movement
-local STALL_BEFORE_JUMP_WINDOW = 5      -- frames; how long after stall we watch for TP
-local CONFIDENCE_TRIGGER = 3            -- how many signals needed to fire prediction
+local hooked = {} -- track what we already hooked so we don't double-hook
 
--- STATE
-local buffer = {}          -- rolling {pos, vel, moveDir, tick} entries
-local stallFrameCount = 0  -- consecutive frames with velocity stall
-local zeroDirCount = 0     -- consecutive frames with MoveDirection == zero
-local lastAnimState = nil
-local stallDetectedAt = 0  -- tick() when stall was first detected
-local predictionFired = false
-local frameIndex = 0
+local function serialize(value, depth)
+    depth = depth or 0
+    if depth > 4 then return "<too deep>" end
 
-local function getTarget()
-	local p = Players:FindFirstChild(TARGET_NAME)
-	if not p then return nil, nil, nil end
-	local char = p.Character
-	if not char then return p, nil, nil end
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	return p, hrp, hum
+    local t = typeof(value)
+    if t == "string" then
+        return '"' .. value .. '"'
+    elseif t == "number" or t == "boolean" then
+        return tostring(value)
+    elseif t == "nil" then
+        return "nil"
+    elseif t == "Instance" then
+        return value:GetFullName()
+    elseif t == "Vector3" or t == "Vector2" or t == "CFrame" or t == "Color3"
+        or t == "UDim2" or t == "UDim" or t == "BrickColor" or t == "Enum" then
+        return tostring(value)
+    elseif t == "table" then
+        local parts = {}
+        local isArray = (#value > 0)
+        for k, v in pairs(value) do
+            if isArray then
+                table.insert(parts, serialize(v, depth + 1))
+            else
+                table.insert(parts, "[" .. serialize(k, depth + 1) .. "] = " .. serialize(v, depth + 1))
+            end
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    else
+        return "<" .. t .. ">" -- userdata, function, etc
+    end
 end
 
-local function pushBuffer(entry)
-	table.insert(buffer, entry)
-	if #buffer > BUFFER_SIZE then
-		table.remove(buffer, 1)
-	end
+local function formatArgs(args)
+    if not args or #args == 0 then return "(no args)" end
+    local out = {}
+    for i, v in ipairs(args) do
+        table.insert(out, "  [" .. i .. "] " .. typeof(v) .. " = " .. serialize(v))
+    end
+    return table.concat(out, "\n")
 end
 
--- Linear extrapolation from last N frames
-local function predictNextPosition()
-	if #buffer < 3 then return nil end
-	local n = #buffer
-	local p1 = buffer[n - 2].pos
-	local p2 = buffer[n - 1].pos
-	local p3 = buffer[n].pos
-	
-	-- quadratic extrapolation (accounts for acceleration)
-	local v1 = p2 - p1
-	local v2 = p3 - p2
-	local accel = v2 - v1
-	local predictedVel = v2 + accel
-	return p3 + predictedVel
+local function hookRemoteEvent(remote)
+    if hooked[remote] then return end
+    hooked[remote] = true
+
+    remote.OnClientEvent:Connect(function(...)
+        local args = {...}
+        print(string.rep("=", 60))
+        print("[REMOTE EVENT] " .. remote:GetFullName())
+        print("[TIME] " .. os.clock())
+        print("[ARGS]")
+        print(formatArgs(args))
+        print(string.rep("=", 60))
+    end)
 end
 
--- Detect animation state dropout (running -> instant idle with no decel)
-local function checkAnimDropout(humanoid)
-	if not humanoid then return false end
-	local state = humanoid:GetState()
-	local dropped = false
-	
-	-- Running/walking -> suddenly None/Idle in 1 frame
-	if lastAnimState == Enum.HumanoidStateType.Running 
-		or lastAnimState == Enum.HumanoidStateType.RunningNoPhysics then
-		if state == Enum.HumanoidStateType.None 
-			or state == Enum.HumanoidStateType.Physics 
-			or state == Enum.HumanoidStateType.PlatformStanding then
-			dropped = true
-		end
-	end
-	
-	lastAnimState = state
-	return dropped
+local function hookRemoteFunction(remote)
+    if hooked[remote] then return end
+    hooked[remote] = true
+
+    local originalInvoke = remote.OnClientInvoke
+
+    remote.OnClientInvoke = function(...)
+        local args = {...}
+        print(string.rep("=", 60))
+        print("[REMOTE FUNCTION] " .. remote:GetFullName())
+        print("[TIME] " .. os.clock())
+        print("[ARGS]")
+        print(formatArgs(args))
+        print(string.rep("=", 60))
+
+        if originalInvoke then
+            return originalInvoke(...)
+        end
+    end
 end
 
--- Main signal aggregator
-local function analyzeFrame(hrp, humanoid, dt)
-	local pos = hrp.Position
-	local vel = hrp.AssemblyLinearVelocity
-	local moveDir = humanoid and humanoid.MoveDirection or Vector3.zero
-	local now = tick()
-	
-	local entry = {
-		pos = pos,
-		vel = vel,
-		moveDir = moveDir,
-		tick = now,
-	}
-	pushBuffer(entry)
-	frameIndex += 1
-	
-	local signals = 0 -- confidence accumulator
-	local reasons = {}
-	
-	-- SIGNAL 1: Velocity stall (velocity near zero while was moving)
-	local velMag = vel.Magnitude
-	if #buffer >= 2 then
-		local prevVelMag = buffer[#buffer - 1].vel.Magnitude
-		if velMag < VELOCITY_STALL_THRESHOLD and prevVelMag > 3.0 then
-			stallFrameCount += 1
-			if stallFrameCount == 1 then
-				stallDetectedAt = now
-			end
-			signals += 1
-			table.insert(reasons, "VEL_STALL")
-		else
-			stallFrameCount = 0
-		end
-	end
-	
-	-- SIGNAL 2: MoveDirection dropout (was moving, suddenly zero)
-	if moveDir.Magnitude < 0.01 then
-		if #buffer >= 2 and buffer[#buffer - 1].moveDir.Magnitude > 0.1 then
-			zeroDirCount += 1
-		else
-			zeroDirCount += 1 -- keep counting consecutive zeros
-		end
-	else
-		zeroDirCount = 0
-	end
-	
-	if zeroDirCount >= 1 and zeroDirCount <= MOVEDIRECTION_ZERO_FRAMES then
-		-- only flag the initial dropout, not sustained idle
-		if #buffer >= 3 and buffer[#buffer - 2].moveDir.Magnitude > 0.1 then
-			signals += 1
-			table.insert(reasons, "MOVEDIR_DROPOUT")
-		end
-	end
-	
-	-- SIGNAL 3: Animation state dropout
-	if checkAnimDropout(humanoid) then
-		signals += 1
-		table.insert(reasons, "ANIM_DROPOUT")
-	end
-	
-	-- SIGNAL 4: CFrame prediction divergence (pre-jump jitter)
-	local predicted = predictNextPosition()
-	if predicted and #buffer >= 4 then
-		local deviation = (pos - predicted).Magnitude
-		-- small but abnormal deviation = physics engine fighting the TP
-		if deviation > 2.0 and deviation < PREDICTION_DEVIATION_THRESHOLD then
-			signals += 1
-			table.insert(reasons, string.format("PREDICT_DIVERGE:%.1f", deviation))
-		end
-	end
-	
-	-- SIGNAL 5: Network desync indicator
-	-- When server reclaims ownership, velocity updates stall but position 
-	-- may micro-jitter. Check for velocity=0 but position changing slightly
-	if #buffer >= 2 and velMag < 0.1 then
-		local posDelta = (pos - buffer[#buffer - 1].pos).Magnitude
-		if posDelta > 0.3 and posDelta < 3.0 then
-			signals += 1
-			table.insert(reasons, "NET_DESYNC")
-		end
-	end
-	
-	return signals, reasons
+local function hookRemote(obj)
+    if obj:IsA("RemoteEvent") then
+        hookRemoteEvent(obj)
+    elseif obj:IsA("RemoteFunction") then
+        hookRemoteFunction(obj)
+    end
 end
 
--- Post-frame: detect the actual teleport (for validation/logging)
-local function checkTeleportOccurred()
-	if #buffer < 2 then return false, 0 end
-	local jump = (buffer[#buffer].pos - buffer[#buffer - 1].pos).Magnitude
-	return jump > POSITION_JUMP_THRESHOLD, jump
+local function scanDescendants(root)
+    for _, obj in ipairs(root:GetDescendants()) do
+        hookRemote(obj)
+    end
 end
 
--- CALLBACKS / EVENTS
-local onTeleportPredicted = Instance.new("BindableEvent")
-onTeleportPredicted.Name = "TeleportPredicted"
-onTeleportPredicted.Parent = script
-
-local onTeleportConfirmed = Instance.new("BindableEvent")
-onTeleportConfirmed.Name = "TeleportConfirmed"
-onTeleportConfirmed.Parent = script
-
--- Public API: connect to these
--- script.TeleportPredicted.Event:Connect(function(targetPlayer, confidence, reasons) end)
--- script.TeleportConfirmed.Event:Connect(function(targetPlayer, distance, wasPredicted) end)
-
--- MAIN LOOP
-local lastPredictionTick = 0
-local predictionActive = false
-
-RunService.Heartbeat:Connect(function(dt)
-	local targetPlayer, hrp, humanoid = getTarget()
-	if not hrp or not humanoid then return end
-	
-	local signals, reasons = analyzeFrame(hrp, humanoid, dt)
-	local now = tick()
-	
-	-- Fire prediction if enough signals converge
-	if signals >= CONFIDENCE_TRIGGER and (now - lastPredictionTick) > 0.5 then
-		predictionActive = true
-		lastPredictionTick = now
-		predictionFired = true
-		
-		warn(string.format(
-			"[TP-PREDICT] Target '%s' likely about to teleport! Confidence: %d signals [%s]",
-			targetPlayer.Name,
-			signals,
-			table.concat(reasons, ", ")
-		))
-		
-		onTeleportPredicted:Fire(targetPlayer, signals, reasons)
-	end
-	
-	-- Validate: did a teleport actually happen?
-	local tpOccurred, jumpDist = checkTeleportOccurred()
-	if tpOccurred then
-		local wasPredicted = predictionActive and (now - lastPredictionTick) < 0.5
-		
-		if wasPredicted then
-			warn(string.format(
-				"[TP-CONFIRM] Teleport CONFIRMED for '%s'! Distance: %.1f studs — PREDICTED SUCCESSFULLY",
-				targetPlayer.Name, jumpDist
-			))
-		else
-			warn(string.format(
-				"[TP-MISS] Teleport detected for '%s' (%.1f studs) — was NOT predicted",
-				targetPlayer.Name, jumpDist
-			))
-		end
-		
-		onTeleportConfirmed:Fire(targetPlayer, jumpDist, wasPredicted)
-		predictionActive = false
-		
-		-- Reset buffer after TP to avoid cascading false positives
-		buffer = {}
-		stallFrameCount = 0
-		zeroDirCount = 0
-	end
-	
-	-- Decay prediction state if no TP happened within window
-	if predictionActive and (now - lastPredictionTick) > 0.3 then
-		predictionActive = false
-	end
-end)
-
--- Dynamic target switching
-local function setTarget(name)
-	TARGET_NAME = name
-	buffer = {}
-	stallFrameCount = 0
-	zeroDirCount = 0
-	lastAnimState = nil
-	predictionFired = false
-	frameIndex = 0
-	warn("[TP-PREDICT] Now tracking: " .. name)
+local function watchForNew(root)
+    root.DescendantAdded:Connect(function(obj)
+        task.defer(function()
+            hookRemote(obj)
+        end)
+    end)
 end
 
--- Expose setTarget globally for console/other scripts
-getgenv().SetTPTarget = setTarget
+-- main
+scanDescendants(game)
+watchForNew(game)
 
-warn("[TP-PREDICT] Loaded. Tracking: " .. TARGET_NAME)
-warn("[TP-PREDICT] Call SetTPTarget('PlayerName') to switch target")
+print("[REMOTE LOGGER] Active — monitoring all RemoteEvents & RemoteFunctions")
