@@ -3255,25 +3255,9 @@ Tab:AddButton({
 })
 
 
-local nanPlayers  = game:GetService("Players")
-local nanRun      = game:GetService("RunService")
-local nanLocal    = nanPlayers.LocalPlayer
-local nanConn     = nil
-local nanCounter  = 0
-local nanTarget   = ""
-local cycleActive = false
-local cycleThread = nil
 
--- Stores the CFrame where NaN/animate/rename was applied, used to return after teleport
-local returnCFrame = nil
 
-Tab:AddTextInput({
-    Label       = "Player Name",
-    Placeholder = "Enter player/-",
-    Callback = function(input)
-        nanTarget = tostring(input or "")
-    end,
-})
+
 
 local function doNanPhase(myChar, myHum, myRoot)
     nanCounter = nanCounter + 1
