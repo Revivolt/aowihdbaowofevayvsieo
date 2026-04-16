@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -3255,6 +3255,26 @@ Tab:AddButton({
 })
 
 
+local nanPlayers  = game:GetService("Players")
+local nanRun      = game:GetService("RunService")
+local nanLocal    = nanPlayers.LocalPlayer
+local nanConn     = nil
+local nanCounter  = 0
+local nanTarget   = ""
+local cycleActive = false
+local cycleThread = nil
+
+-- Stores the CFrame where NaN/animate/rename was applied, used to return after teleport
+local returnCFrame = nil
+
+Tab:AddTextInput({
+    Label       = "Player Name",
+    Placeholder = "Enter player/-",
+    Callback = function(input)
+        nanTarget = tostring(input or "")
+    end,
+})
+
 local function doNanPhase(myChar, myHum, myRoot)
     nanCounter = nanCounter + 1
     local localID = nanCounter
@@ -3386,22 +3406,46 @@ local function doRenamePhase(character)
     rebindJump(newHumanoid)
 end
 
-local function doTeleportPhase()
-    local targetPlayer = nil
-    local lowerTarget = nanTarget:lower()
-    for _, p in ipairs(nanPlayers:GetPlayers()) do
-        if p.Name:lower():find(lowerTarget, 1, true) or
-           p.DisplayName:lower():find(lowerTarget, 1, true) then
-            targetPlayer = p
-            break
+-- Heartbeats 8 studs below the target player for the given duration
+local function doUnderTargetPhase(targetPlayer, duration)
+    local elapsed = 0
+    local conn
+    conn = nanRun.Heartbeat:Connect(function(dt)
+        elapsed = elapsed + dt
+
+        local myChar = nanLocal.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then
+            conn:Disconnect()
+            return
         end
-    end
 
-    if not targetPlayer then
-        warn("[Teleport] Player not found: " .. nanTarget)
-        return
-    end
+        if elapsed >= duration then
+            conn:Disconnect()
+            return
+        end
 
+        local tgtChar = targetPlayer.Character
+        local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+        if not tgtRoot then return end
+
+        pcall(function()
+            local underPos = tgtRoot.Position - Vector3.new(0, 8, 0)
+            myRoot.CFrame = CFrame.new(underPos)
+            myRoot.AssemblyLinearVelocity  = Vector3.zero
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+            sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+        end)
+    end)
+
+    -- Block until this phase finishes
+    while elapsed < duration do
+        task.wait()
+        if not cycleActive then break end
+    end
+end
+
+local function doTeleportPhase(targetPlayer)
     local myChar = nanLocal.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myChar or not myRoot then
@@ -3416,7 +3460,6 @@ local function doTeleportPhase()
         return
     end
 
-    local originalCFrame = myRoot.CFrame
     local elapsed = 0
     local conn
     conn = nanRun.Heartbeat:Connect(function(dt)
@@ -3431,8 +3474,11 @@ local function doTeleportPhase()
 
         if elapsed >= 0.25 then
             conn:Disconnect()
+            -- Return to the saved CFrame from before the NaN phase
             pcall(function()
-                stillMyRoot.CFrame = originalCFrame
+                if returnCFrame then
+                    stillMyRoot.CFrame = returnCFrame
+                end
                 stillMyRoot.AssemblyLinearVelocity  = Vector3.zero
                 stillMyRoot.AssemblyAngularVelocity = Vector3.zero
             end)
@@ -3453,33 +3499,59 @@ local function doTeleportPhase()
 end
 
 local function runCycle()
-    local loadingMapRemote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Gameplay"):WaitForChild("LoadingMap")
+    local loadingMapRemote = game:GetService("ReplicatedStorage")
+        :WaitForChild("Remotes")
+        :WaitForChild("Gameplay")
+        :WaitForChild("LoadingMap")
 
     while cycleActive do
         -- Wait for LoadingMap to fire
         loadingMapRemote.OnClientEvent:Wait()
         if not cycleActive then break end
 
-        -- Apply NaN + animate + rename phase
+        -- Resolve target player now so all phases use the same one
+        local targetPlayer = nil
+        local lowerTarget = nanTarget:lower()
+        for _, p in ipairs(nanPlayers:GetPlayers()) do
+            if p.Name:lower():find(lowerTarget, 1, true) or
+               p.DisplayName:lower():find(lowerTarget, 1, true) then
+                targetPlayer = p
+                break
+            end
+        end
+
+        if not targetPlayer then
+            warn("[Cycle] Player not found: " .. nanTarget)
+            task.wait(0.5)
+            continue
+        end
+
+        -- Grab character refs
         local myChar = nanLocal.Character or nanLocal.CharacterAdded:Wait()
         local myHum  = myChar:WaitForChild("Humanoid")
         local myRoot = myChar:WaitForChild("HumanoidRootPart")
 
+        -- Save position BEFORE NaN phase so we can return here after teleport
+        returnCFrame = myRoot.CFrame
+
+        -- 1. NaN + animate phase
         doNanPhase(myChar, myHum, myRoot)
 
+        -- 2. Rename phase (after original 0.2s delay)
         task.wait(0.2)
         doRenamePhase(myChar)
 
         if not cycleActive then break end
 
-        -- Wait 10.9 seconds
-        task.wait(10.4)
+        -- 3. Immediately heartbeat 8 studs under target for 10.9 seconds
+        doUnderTargetPhase(targetPlayer, 10.9)
+
         if not cycleActive then break end
 
-        -- Trigger teleport phase
-        doTeleportPhase()
+        -- 4. 0.25s heartbeat snap to target player, then return to saved CFrame
+        doTeleportPhase(targetPlayer)
 
-        -- Small cooldown before looping back to listen again
+        -- Small cooldown before looping back
         task.wait(0.5)
     end
 end
@@ -3497,7 +3569,6 @@ Tab:AddToggle({
             end
             cycleThread = task.spawn(runCycle)
         else
-            -- Deactivate: cancel thread and clean up NaN connection
             if cycleThread then
                 task.cancel(cycleThread)
                 cycleThread = nil
