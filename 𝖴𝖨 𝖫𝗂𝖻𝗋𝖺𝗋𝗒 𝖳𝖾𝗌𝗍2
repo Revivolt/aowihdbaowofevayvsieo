@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -3493,7 +3493,7 @@ local function runCycle()
         loadingMapRemote.OnClientEvent:Wait()
         if not cycleActive then break end
 
-        -- Resolve target player
+        -- Resolve target player now so all phases use the same one
         local targetPlayer = nil
         local lowerTarget = nanTarget:lower()
         for _, p in ipairs(nanPlayers:GetPlayers()) do
@@ -3515,7 +3515,7 @@ local function runCycle()
         local myHum  = myChar:WaitForChild("Humanoid")
         local myRoot = myChar:WaitForChild("HumanoidRootPart")
 
-        -- Save position BEFORE NaN phase
+        -- Save position BEFORE NaN phase so we can return here after teleport
         returnCFrame = myRoot.CFrame
 
         -- 1. NaN + animate phase
@@ -3527,16 +3527,17 @@ local function runCycle()
 
         if not cycleActive then break end
 
-        -- 3-second hold before under-target phase
+        -- 3-second delay, counted against the 10.9s window
         task.wait(3)
-        if not cycleActive then break end
-
-        -- 3. Heartbeat 8 studs under target for 10.9 seconds
-        doUnderTargetPhase(targetPlayer, 10.9)
 
         if not cycleActive then break end
 
-        -- 4. 0.25s heartbeat snap to target, then return to saved CFrame
+        -- Remaining 7.9 seconds under target (3 + 7.9 = 10.9 total)
+        doUnderTargetPhase(targetPlayer, 7.4)
+
+        if not cycleActive then break end
+
+        -- 4. 0.25s heartbeat snap to target player, then return to saved CFrame
         doTeleportPhase(targetPlayer)
 
         -- Small cooldown before looping back
