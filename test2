@@ -125,7 +125,7 @@ local function makeBtn(labelText, bgColor, textColor, xFromRight)
     return btn
 end
 
-local btnClose = makeBtn("✕ Close", Color3.fromRGB(50, 18, 18), Color3.fromRGB(210,  80,  80), -52)
+local btnClose = makeBtn("Close", Color3.fromRGB(50, 18, 18), Color3.fromRGB(210,  80,  80), -52)
 local btnClear = makeBtn("Clear",   Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -104)
 local btnCopy  = makeBtn("Copy",    Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -156)
 
