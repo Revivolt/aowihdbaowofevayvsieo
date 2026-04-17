@@ -1,65 +1,55 @@
--- test
-local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 
+-- Permanent Physics Engine
 local activeConnection = nil
 
 local function startPermanentPhysics(character)
     local root = character:WaitForChild("HumanoidRootPart")
     local humanoid = character:WaitForChild("Humanoid")
 
-    if activeConnection then activeConnection:Disconnect() end
+    if activeConnection then
+        activeConnection:Disconnect()
+        activeConnection = nil
+    end
 
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
     root.CanCollide = false
 
-    activeConnection = RunService.Heartbeat:Connect(function(dt)
+    activeConnection = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then
             if activeConnection then activeConnection:Disconnect() end
             return
         end
 
         local oldV = root.AssemblyLinearVelocity
-
-        -- Spike only Y, leave XZ untouched so WASD works.
-        root.AssemblyLinearVelocity = Vector3.new(
-            oldV.X,
-            oldV.Y * 500 + 500,
-            oldV.Z
-        )
-
+        root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
         RunService.RenderStepped:Wait()
-
-        -- Restore full original vector to kill the spike.
         root.AssemblyLinearVelocity = oldV
-
         RunService.Stepped:Wait()
-
-        local curV = root.AssemblyLinearVelocity
-
-        -- Only compensate gravity when Y velocity is negative (falling).
-        -- If the player just jumped (curV.Y > 0), do nothing — let the
-        -- arc play out naturally so jump feels normal and no float occurs.
-        if curV.Y < 0 then
-            local compensated = curV.Y + workspace.Gravity * dt
-            -- Clamp so we never accidentally push Y above 0 here.
-            root.AssemblyLinearVelocity = Vector3.new(
-                curV.X,
-                math.min(compensated, 0),
-                curV.Z
-            )
-        end
+        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
     end)
 end
 
+-- Respawn support — disconnect old connection, start fresh on new character
 player.CharacterAdded:Connect(function(newChar)
+    if activeConnection then
+        activeConnection:Disconnect()
+        activeConnection = nil
+    end
     task.wait(1.5)
     startPermanentPhysics(newChar)
 end)
 
+-- Initial character (already spawned)
 if player.Character then
-    task.spawn(function() startPermanentPhysics(player.Character) end)
+    task.spawn(function()
+        startPermanentPhysics(player.Character)
+    end)
 end
+
+print("--- PHYSICS LOADED ---")
