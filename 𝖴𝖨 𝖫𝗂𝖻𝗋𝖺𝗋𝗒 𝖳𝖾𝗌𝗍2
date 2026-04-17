@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2162,7 +2162,6 @@ local player = Players.LocalPlayer
 local activeConnection2 = nil
 local lockedY = nil
 local isLocked = false
-local frozenMotors = {} -- Store original motor CFrames
 
 local function setNoclip(char, state)
     for _, part in ipairs(char:GetDescendants()) do
@@ -2176,37 +2175,19 @@ local function stopAnimations(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
     local animator = humanoid:FindFirstChildOfClass("Animator")
-    if animator then
-        animator.Enabled = false
-        -- Stop every playing track
-        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-            track:Stop(0)
-        end
+    if not animator then return end
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        track:Stop(0)
     end
-    -- Freeze all Motor6D joints in their current transform
-    frozenMotors = {}
-    for _, motor in ipairs(char:GetDescendants()) do
-        if motor:IsA("Motor6D") then
-            frozenMotors[motor] = motor.Transform
-            motor.MaxVelocity = 0
-        end
-    end
+    animator.Enabled = false
 end
 
 local function restoreAnimations(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
     local animator = humanoid:FindFirstChildOfClass("Animator")
-    if animator then
-        animator.Enabled = true
-    end
-    -- Restore all Motor6D joints
-    for motor, _ in pairs(frozenMotors) do
-        if motor and motor.Parent then
-            motor.MaxVelocity = 0.1 -- Roblox default
-        end
-    end
-    frozenMotors = {}
+    if not animator then return end
+    animator.Enabled = true
 end
 
 local function startLoop(root)
@@ -2227,7 +2208,7 @@ local function startLoop(root)
                 part.CanCollide = false
             end
         end
-        -- Keep joints frozen and stop any new tracks every frame
+        -- Stop any new animation tracks that sneak in
         local humanoid = char:FindFirstChildOfClass("Humanoid")
         if humanoid then
             local animator = humanoid:FindFirstChildOfClass("Animator")
@@ -2236,11 +2217,6 @@ local function startLoop(root)
                 for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
                     track:Stop(0)
                 end
-            end
-        end
-        for motor, savedTransform in pairs(frozenMotors) do
-            if motor and motor.Parent then
-                motor.Transform = savedTransform
             end
         end
         -- Y lock
