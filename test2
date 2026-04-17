@@ -22,15 +22,29 @@ local function startPermanentPhysics(character)
             return
         end
 
-        -- Only counteract gravity on Y axis.
-        -- XZ is left completely untouched so player input works normally.
-        local v = root.AssemblyLinearVelocity
-        local gravityCompensation = workspace.Gravity * dt
+        local oldV = root.AssemblyLinearVelocity
 
+        -- Spike ONLY the Y axis — XZ stays exactly as the engine set it
+        -- so character controller input (WASD) is preserved.
         root.AssemblyLinearVelocity = Vector3.new(
-            v.X,
-            v.Y + gravityCompensation,  -- cancel gravity each frame
-            v.Z
+            oldV.X,
+            oldV.Y * 500 + 500,
+            oldV.Z
+        )
+
+        RunService.RenderStepped:Wait()
+
+        -- Restore full original vector so the spike doesn't accumulate.
+        -- XZ is already correct; Y restore kills the spike before Stepped.
+        root.AssemblyLinearVelocity = oldV
+
+        RunService.Stepped:Wait()
+
+        -- Gentle anti-gravity nudge to keep character afloat.
+        root.AssemblyLinearVelocity = Vector3.new(
+            root.AssemblyLinearVelocity.X,
+            root.AssemblyLinearVelocity.Y + workspace.Gravity * dt,
+            root.AssemblyLinearVelocity.Z
         )
     end)
 end
