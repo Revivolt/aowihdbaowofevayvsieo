@@ -1,4 +1,4 @@
--- RemoteSpy GUI — LocalScript in StarterPlayerScripts
+-- test
 
 local Players     = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -69,23 +69,22 @@ accentCorner.Parent       = accentLine
 
 -- Title label
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Text                  = "REMOTE SPY"
-titleLabel.Size                  = UDim2.new(0, 140, 1, 0)
-titleLabel.Position              = UDim2.new(0, 18, 0, 0)
+titleLabel.Text                   = "REMOTE SPY"
+titleLabel.Size                   = UDim2.new(0, 130, 1, 0)
+titleLabel.Position               = UDim2.new(0, 18, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.TextColor3            = Color3.fromRGB(235, 235, 235)
-titleLabel.TextSize              = 11
-titleLabel.Font                  = Enum.Font.GothamBold
-titleLabel.TextXAlignment        = Enum.TextXAlignment.Left
-titleLabel.LetterSpacing         = 3   -- spaced-out caps look
-titleLabel.Parent                = titleBar
+titleLabel.TextColor3             = Color3.fromRGB(235, 235, 235)
+titleLabel.TextSize               = 11
+titleLabel.Font                   = Enum.Font.GothamBold
+titleLabel.TextXAlignment         = Enum.TextXAlignment.Left
+titleLabel.Parent                 = titleBar
 
 -- Counter badge
 local counter = Instance.new("TextLabel")
 counter.Name             = "Counter"
 counter.Text             = "0 fires"
-counter.Size             = UDim2.new(0, 64, 0, 18)
-counter.Position         = UDim2.new(0, 162, 0.5, -9)
+counter.Size             = UDim2.new(0, 58, 0, 18)
+counter.Position         = UDim2.new(0, 152, 0.5, -9)
 counter.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 counter.TextColor3       = Color3.fromRGB(180, 180, 180)
 counter.TextSize         = 10
@@ -102,56 +101,45 @@ local counterCorner = Instance.new("UICorner")
 counterCorner.CornerRadius = UDim.new(0, 3)
 counterCorner.Parent       = counter
 
--- Button container (right side of title bar, evenly spaced)
-local btnHolder = Instance.new("Frame")
-btnHolder.Name              = "BtnHolder"
-btnHolder.Size              = UDim2.new(0, 150, 1, 0)
-btnHolder.Position          = UDim2.new(1, -154, 0, 0)
-btnHolder.BackgroundTransparency = 1
-btnHolder.BorderSizePixel   = 0
-btnHolder.Parent            = titleBar
+-- Buttons manually anchored from the right edge of the title bar
+-- Layout (right → left): [✕ Close] 6px [Clear] 6px [Copy] gap
+-- Each button: 46px wide, 20px tall, vertically centred in 32px bar
 
-local btnLayout = Instance.new("UIListLayout")
-btnLayout.FillDirection    = Enum.FillDirection.Horizontal
-btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-btnLayout.Padding          = UDim.new(0, 4)
-btnLayout.Parent           = btnHolder
-
-local btnPadding = Instance.new("UIPadding")
-btnPadding.PaddingRight = UDim.new(0, 6)
-btnPadding.Parent       = btnHolder
-
-local function makeBtn(labelText, bgColor, textColor)
+local function makeBtn(labelText, bgColor, textColor, xFromRight)
     local btn = Instance.new("TextButton")
     btn.Text             = labelText
-    btn.Size             = UDim2.new(0, 44, 0, 20)
+    btn.Size             = UDim2.new(0, 46, 0, 20)
+    btn.Position         = UDim2.new(1, xFromRight, 0.5, -10)
     btn.BackgroundColor3 = bgColor
-    btn.TextColor3       = textColor or Color3.fromRGB(225, 225, 225)
+    btn.TextColor3       = textColor or Color3.fromRGB(215, 215, 215)
     btn.TextSize         = 10
     btn.Font             = Enum.Font.GothamBold
     btn.BorderSizePixel  = 0
     btn.AutoButtonColor  = false
-    btn.Parent           = btnHolder
+    btn.Parent           = titleBar
 
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, 3)
     c.Parent = btn
 
-    -- Subtle hover effect
+    local savedColor = bgColor
     btn.MouseEnter:Connect(function()
-        btn.BackgroundColor3 = btn.BackgroundColor3:Lerp(Color3.fromRGB(255,255,255), 0.08)
+        btn.BackgroundColor3 = savedColor:Lerp(Color3.fromRGB(255, 255, 255), 0.10)
     end)
     btn.MouseLeave:Connect(function()
-        btn.BackgroundColor3 = bgColor
+        btn.BackgroundColor3 = savedColor
     end)
 
     return btn
 end
 
-local btnCopy  = makeBtn("COPY",  Color3.fromRGB(30, 30, 30), Color3.fromRGB(200, 200, 200))
-local btnClear = makeBtn("CLEAR", Color3.fromRGB(30, 30, 30), Color3.fromRGB(200, 200, 200))
-local btnClose = makeBtn("✕",     Color3.fromRGB(50, 20, 20), Color3.fromRGB(220, 100, 100))
+-- xFromRight = -(button_width + right_margin) for each slot:
+--   Close:  -(46 + 6)         = -52
+--   Clear:  -(46 + 6 + 46 + 6) = -104
+--   Copy:   -(46 + 6 + 46 + 6 + 46 + 6) = -156
+local btnClose = makeBtn("✕ Close", Color3.fromRGB(50, 18, 18), Color3.fromRGB(210,  80,  80), -52)
+local btnClear = makeBtn("Clear",   Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -104)
+local btnCopy  = makeBtn("Copy",    Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -156)
 
 -- Separator line below title bar
 local sep = Instance.new("Frame")
