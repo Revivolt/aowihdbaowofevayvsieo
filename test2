@@ -1,4 +1,4 @@
--- test
+-- test2
 
 local Players     = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -47,7 +47,6 @@ local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 6)
 titleCorner.Parent       = titleBar
 
--- Cover bottom-rounded corners of titlebar
 local titleFix = Instance.new("Frame")
 titleFix.Size             = UDim2.new(1, 0, 0, 6)
 titleFix.Position         = UDim2.new(0, 0, 1, -6)
@@ -55,7 +54,6 @@ titleFix.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
 titleFix.BorderSizePixel  = 0
 titleFix.Parent           = titleBar
 
--- Accent bar (left edge of title)
 local accentLine = Instance.new("Frame")
 accentLine.Size             = UDim2.new(0, 2, 0, 16)
 accentLine.Position         = UDim2.new(0, 10, 0.5, -8)
@@ -67,7 +65,6 @@ local accentCorner = Instance.new("UICorner")
 accentCorner.CornerRadius = UDim.new(1, 0)
 accentCorner.Parent       = accentLine
 
--- Title label
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Text                   = "REMOTE SPY"
 titleLabel.Size                   = UDim2.new(0, 130, 1, 0)
@@ -79,7 +76,6 @@ titleLabel.Font                   = Enum.Font.GothamBold
 titleLabel.TextXAlignment         = Enum.TextXAlignment.Left
 titleLabel.Parent                 = titleBar
 
--- Counter badge
 local counter = Instance.new("TextLabel")
 counter.Name             = "Counter"
 counter.Text             = "0 fires"
@@ -100,10 +96,6 @@ counterStroke.Parent    = counter
 local counterCorner = Instance.new("UICorner")
 counterCorner.CornerRadius = UDim.new(0, 3)
 counterCorner.Parent       = counter
-
--- Buttons manually anchored from the right edge of the title bar
--- Layout (right → left): [✕ Close] 6px [Clear] 6px [Copy] gap
--- Each button: 46px wide, 20px tall, vertically centred in 32px bar
 
 local function makeBtn(labelText, bgColor, textColor, xFromRight)
     local btn = Instance.new("TextButton")
@@ -133,15 +125,10 @@ local function makeBtn(labelText, bgColor, textColor, xFromRight)
     return btn
 end
 
--- xFromRight = -(button_width + right_margin) for each slot:
---   Close:  -(46 + 6)         = -52
---   Clear:  -(46 + 6 + 46 + 6) = -104
---   Copy:   -(46 + 6 + 46 + 6 + 46 + 6) = -156
 local btnClose = makeBtn("✕ Close", Color3.fromRGB(50, 18, 18), Color3.fromRGB(210,  80,  80), -52)
 local btnClear = makeBtn("Clear",   Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -104)
 local btnCopy  = makeBtn("Copy",    Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -156)
 
--- Separator line below title bar
 local sep = Instance.new("Frame")
 sep.Size             = UDim2.new(1, -16, 0, 1)
 sep.Position         = UDim2.new(0, 8, 0, 32)
@@ -151,40 +138,35 @@ sep.Parent           = window
 
 -- Scroll frame
 local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Name                  = "LogScroll"
-scrollFrame.Size                  = UDim2.new(1, -8, 1, -44)
-scrollFrame.Position              = UDim2.new(0, 4, 0, 38)
+scrollFrame.Name                   = "LogScroll"
+scrollFrame.Size                   = UDim2.new(1, -8, 1, -44)
+scrollFrame.Position               = UDim2.new(0, 4, 0, 38)
 scrollFrame.BackgroundTransparency = 1
-scrollFrame.BorderSizePixel       = 0
-scrollFrame.ScrollBarThickness    = 3
-scrollFrame.ScrollBarImageColor3  = Color3.fromRGB(70, 70, 70)
-scrollFrame.CanvasSize            = UDim2.new(0, 0, 0, 0)
-scrollFrame.AutomaticCanvasSize   = Enum.AutomaticSize.Y
-scrollFrame.Parent                = window
+scrollFrame.BorderSizePixel        = 0
+scrollFrame.ScrollBarThickness     = 3
+scrollFrame.ScrollBarImageColor3   = Color3.fromRGB(70, 70, 70)
+scrollFrame.CanvasSize             = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+scrollFrame.Parent                 = window
 
--- Log TextBox
-local logBox = Instance.new("TextBox")
-logBox.Name                  = "LogBox"
-logBox.Size                  = UDim2.new(1, -10, 1, 0)
-logBox.Position              = UDim2.new(0, 5, 0, 0)
-logBox.BackgroundTransparency = 1
-logBox.TextColor3            = Color3.fromRGB(210, 210, 210)
-logBox.TextSize              = 11
-logBox.Font                  = Enum.Font.Code
-logBox.TextXAlignment        = Enum.TextXAlignment.Left
-logBox.TextYAlignment        = Enum.TextYAlignment.Top
-logBox.MultiLine             = true
-logBox.ClearTextOnFocus      = false
-logBox.Text                  = ""
-logBox.AutomaticSize         = Enum.AutomaticSize.Y
-logBox.TextWrapped           = true
-logBox.Parent                = scrollFrame
+-- UIListLayout to stack log labels vertically
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder        = Enum.SortOrder.LayoutOrder
+listLayout.Padding          = UDim.new(0, 2)
+listLayout.Parent           = scrollFrame
+
+-- ──────────────────────────────────────────
+-- Colors
+-- ──────────────────────────────────────────
+
+local COLOR_SERVER = Color3.fromRGB(120, 200, 255)  -- light blue  (server → client)
+local COLOR_CLIENT = Color3.fromRGB(255, 220,  60)  -- yellow      (client → server)
 
 -- ──────────────────────────────────────────
 -- Log state
 -- ──────────────────────────────────────────
 
-local logLines  = {}
+local logLines  = {}   -- plain-text copy for the Copy button
 local fireCount = 0
 
 local function scrollToBottom()
@@ -196,11 +178,27 @@ local function scrollToBottom()
     end)
 end
 
-local function appendLine(line)
+local function appendLine(line, color)
     fireCount += 1
     logLines[#logLines + 1] = line
-    logBox.Text   = table.concat(logLines, "\n")
-    counter.Text  = fireCount .. " fires"
+    counter.Text = fireCount .. " fires"
+
+    -- Create a colored TextLabel for this entry
+    local lbl = Instance.new("TextLabel")
+    lbl.LayoutOrder          = fireCount
+    lbl.Size                 = UDim2.new(1, -10, 0, 0)   -- height auto-set below
+    lbl.AutomaticSize        = Enum.AutomaticSize.Y
+    lbl.Position             = UDim2.new(0, 5, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3           = color or Color3.fromRGB(210, 210, 210)
+    lbl.TextSize             = 11
+    lbl.Font                 = Enum.Font.Code
+    lbl.TextXAlignment       = Enum.TextXAlignment.Left
+    lbl.TextYAlignment       = Enum.TextYAlignment.Top
+    lbl.TextWrapped          = true
+    lbl.Text                 = line
+    lbl.Parent               = scrollFrame
+
     scrollToBottom()
 end
 
@@ -211,13 +209,17 @@ end
 btnClear.MouseButton1Click:Connect(function()
     logLines  = {}
     fireCount = 0
-    logBox.Text  = ""
     counter.Text = "0 fires"
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child:Destroy()
+        end
+    end
 end)
 
 btnCopy.MouseButton1Click:Connect(function()
     if setclipboard then
-        setclipboard(logBox.Text)
+        setclipboard(table.concat(logLines, "\n"))
         local orig = btnCopy.Text
         btnCopy.Text = "✓ OK"
         task.delay(1.2, function() btnCopy.Text = orig end)
@@ -279,21 +281,72 @@ local function hookRemote(remote)
     local path = remote:GetFullName()
     local kind = remote.ClassName
 
+    -- ── Server → Client ──────────────────────────────────
     if kind == "RemoteEvent" or kind == "UnreliableRemoteEvent" then
         remote.OnClientEvent:Connect(function(...)
             appendLine(string.format(
-                "%s [%s]\n  Path: %s\n  Args: %s",
+                "%s [%s] ← SERVER\n  Path: %s\n  Args: %s",
                 timestamp(), kind, path, fmtArgs(...)
-            ))
+            ), COLOR_SERVER)
         end)
 
     elseif kind == "RemoteFunction" then
         remote.OnClientInvoke = function(...)
             appendLine(string.format(
-                "%s [RemoteFunction INVOKE]\n  Path: %s\n  Args: %s",
+                "%s [RemoteFunction INVOKE] ← SERVER\n  Path: %s\n  Args: %s",
                 timestamp(), path, fmtArgs(...)
-            ))
+            ), COLOR_SERVER)
         end
+    end
+
+    -- ── Client → Server ──────────────────────────────────
+    -- Hook :FireServer / :InvokeServer via metatable __index replacement
+    local mt = getrawmetatable and getrawmetatable(remote)
+    if mt then
+        local oldIndex = mt.__index
+        local wasReadonly = isreadonly and isreadonly(mt)
+        if wasReadonly then setreadonly(mt, false) end
+
+        if kind == "RemoteEvent" or kind == "UnreliableRemoteEvent" then
+            local origFire = (type(oldIndex) == "function" and oldIndex(remote, "FireServer"))
+                          or (type(oldIndex) == "table"    and oldIndex["FireServer"])
+                          or remote.FireServer  -- fallback
+
+            mt.__index = newproxy and (function(self, key)  -- not standard; see note
+                if key == "FireServer" and self == remote then
+                    return function(_, ...)
+                        appendLine(string.format(
+                            "%s [%s] → SERVER\n  Path: %s\n  Args: %s",
+                            timestamp(), kind, path, fmtArgs(...)
+                        ), COLOR_CLIENT)
+                        return origFire(self, ...)
+                    end
+                end
+                return type(oldIndex) == "function" and oldIndex(self, key)
+                    or type(oldIndex) == "table"    and oldIndex[key]
+            end) or oldIndex  -- fallback if newproxy unavailable
+
+        elseif kind == "RemoteFunction" then
+            local origInvoke = (type(oldIndex) == "function" and oldIndex(remote, "InvokeServer"))
+                            or (type(oldIndex) == "table"    and oldIndex["InvokeServer"])
+                            or remote.InvokeServer
+
+            mt.__index = (function(self, key)
+                if key == "InvokeServer" and self == remote then
+                    return function(_, ...)
+                        appendLine(string.format(
+                            "%s [RemoteFunction] → SERVER\n  Path: %s\n  Args: %s",
+                            timestamp(), path, fmtArgs(...)
+                        ), COLOR_CLIENT)
+                        return origInvoke(self, ...)
+                    end
+                end
+                return type(oldIndex) == "function" and oldIndex(self, key)
+                    or type(oldIndex) == "table"    and oldIndex[key]
+            end) or oldIndex
+        end
+
+        if wasReadonly then setreadonly(mt, true) end
     end
 end
 
@@ -311,4 +364,4 @@ local function scanContainer(container)
 end
 
 scanContainer(game)
-appendLine("[RemoteSpy] Hooked — listening for server→client fires...")
+appendLine("[RemoteSpy] Hooked — listening for remote fires...", Color3.fromRGB(140, 140, 140))
