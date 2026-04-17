@@ -2235,6 +2235,54 @@ do
 end
 
 
+
+Tab:AddButton({
+    Label    = "wool",
+    Callback = function()
+        nanCounter = nanCounter + 1
+        local localID = nanCounter
+        if nanConn then nanConn:Disconnect() nanConn = nil end
+
+        local myChar  = nanLocal.Character or nanLocal.CharacterAdded:Wait()
+        local myHum   = myChar:WaitForChild("Humanoid")
+        local myRoot  = myChar:WaitForChild("HumanoidRootPart")
+
+        local savedCF       = myRoot.CFrame
+        local savedVel      = myRoot.Velocity
+        local savedPlatform = myHum.PlatformStand
+        local nan           = 0 / 0
+        local nanVec        = Vector3.new(nan, nan, nan)
+
+        myHum.PlatformStand = true
+        local startTime = tick()
+
+        nanConn = nanRun.Heartbeat:Connect(function()
+            if nanCounter ~= localID then return end
+            if tick() - startTime >= 1.5 then
+                nanConn:Disconnect()
+                nanConn = nil
+                task.defer(function()
+                    if nanCounter ~= localID then return end
+                    myHum.PlatformStand               = savedPlatform
+                    myRoot.AssemblyLinearVelocity     = Vector3.zero
+                    myRoot.AssemblyAngularVelocity    = Vector3.zero
+                    myRoot.CFrame                     = savedCF
+                    myRoot.Velocity                   = savedVel
+                    myRoot.RotVelocity                = Vector3.zero
+                    pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", nil)
+                end)
+                return
+            end
+            myRoot.AssemblyLinearVelocity  = nanVec
+            myRoot.AssemblyAngularVelocity = nanVec
+            pcall(function() myHum:Move(nanVec) end)
+            pcall(sethiddenproperty, myRoot, "PhysicsRepRootPart", myRoot)
+        end)
+    end,
+})
+
+
+
 Tab:AddButton({
     Label    = "Force Kill",
     Callback = function()
