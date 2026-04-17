@@ -4,14 +4,21 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 local activeConnection = nil
+local initialCharacter = player.Character  -- snapshot at load time
 
 local function startPermanentPhysics(character)
     local root = character:WaitForChild("HumanoidRootPart")
+    local humanoid = character:WaitForChild("Humanoid")
 
     if activeConnection then
         activeConnection:Disconnect()
         activeConnection = nil
     end
+
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    root.CanCollide = false
 
     activeConnection = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then
@@ -29,10 +36,11 @@ local function startPermanentPhysics(character)
     end)
 end
 
--- Only fires on the character present at script load, never on respawn
-if player.Character then
+-- CharacterAdded fires on respawn/refresh — we ignore it entirely
+-- State overrides and physics only run on the character present at script load
+if initialCharacter then
     task.spawn(function()
-        startPermanentPhysics(player.Character)
+        startPermanentPhysics(initialCharacter)
     end)
 end
 
