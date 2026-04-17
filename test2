@@ -1,4 +1,4 @@
--- test2
+-- test
 
 local Players     = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -274,6 +274,32 @@ local REMOTE_CLASSES = {
     UnreliableRemoteEvent = true,
 }
 
+-- Grab the original methods ONCE before any hooking touches them
+local originalFireServer    = RemoteEvent.FireServer
+local originalInvokeServer  = RemoteFunction.InvokeServer
+local originalFireUnreliable = UnreliableRemoteEvent.FireServer
+
+hookfunction(originalFireServer, function(self, ...)
+    appendLine(string.format(
+        "%s [RemoteEvent] → SERVER\n  Path: %s\n  Args: %s",
+        timestamp(), self:GetFullName(), fmtArgs(...)
+    ), COLOR_CLIENT)
+end)
+
+hookfunction(originalInvokeServer, function(self, ...)
+    appendLine(string.format(
+        "%s [RemoteFunction] → SERVER\n  Path: %s\n  Args: %s",
+        timestamp(), self:GetFullName(), fmtArgs(...)
+    ), COLOR_CLIENT)
+end)
+
+hookfunction(originalFireUnreliable, function(self, ...)
+    appendLine(string.format(
+        "%s [UnreliableRemoteEvent] → SERVER\n  Path: %s\n  Args: %s",
+        timestamp(), self:GetFullName(), fmtArgs(...)
+    ), COLOR_CLIENT)
+end)
+
 local function hookRemote(remote)
     if hooked[remote] then return end
     hooked[remote] = true
@@ -281,7 +307,7 @@ local function hookRemote(remote)
     local path = remote:GetFullName()
     local kind = remote.ClassName
 
-    -- ── Server → Client ──────────────────────────────────
+    -- Server → Client (unchanged)
     if kind == "RemoteEvent" or kind == "UnreliableRemoteEvent" then
         remote.OnClientEvent:Connect(function(...)
             appendLine(string.format(
@@ -297,56 +323,6 @@ local function hookRemote(remote)
                 timestamp(), path, fmtArgs(...)
             ), COLOR_SERVER)
         end
-    end
-
-    -- ── Client → Server ──────────────────────────────────
-    -- Hook :FireServer / :InvokeServer via metatable __index replacement
-    local mt = getrawmetatable and getrawmetatable(remote)
-    if mt then
-        local oldIndex = mt.__index
-        local wasReadonly = isreadonly and isreadonly(mt)
-        if wasReadonly then setreadonly(mt, false) end
-
-        if kind == "RemoteEvent" or kind == "UnreliableRemoteEvent" then
-            local origFire = (type(oldIndex) == "function" and oldIndex(remote, "FireServer"))
-                          or (type(oldIndex) == "table"    and oldIndex["FireServer"])
-                          or remote.FireServer  -- fallback
-
-            mt.__index = newproxy and (function(self, key)  -- not standard; see note
-                if key == "FireServer" and self == remote then
-                    return function(_, ...)
-                        appendLine(string.format(
-                            "%s [%s] → SERVER\n  Path: %s\n  Args: %s",
-                            timestamp(), kind, path, fmtArgs(...)
-                        ), COLOR_CLIENT)
-                        return origFire(self, ...)
-                    end
-                end
-                return type(oldIndex) == "function" and oldIndex(self, key)
-                    or type(oldIndex) == "table"    and oldIndex[key]
-            end) or oldIndex  -- fallback if newproxy unavailable
-
-        elseif kind == "RemoteFunction" then
-            local origInvoke = (type(oldIndex) == "function" and oldIndex(remote, "InvokeServer"))
-                            or (type(oldIndex) == "table"    and oldIndex["InvokeServer"])
-                            or remote.InvokeServer
-
-            mt.__index = (function(self, key)
-                if key == "InvokeServer" and self == remote then
-                    return function(_, ...)
-                        appendLine(string.format(
-                            "%s [RemoteFunction] → SERVER\n  Path: %s\n  Args: %s",
-                            timestamp(), path, fmtArgs(...)
-                        ), COLOR_CLIENT)
-                        return origInvoke(self, ...)
-                    end
-                end
-                return type(oldIndex) == "function" and oldIndex(self, key)
-                    or type(oldIndex) == "table"    and oldIndex[key]
-            end) or oldIndex
-        end
-
-        if wasReadonly then setreadonly(mt, true) end
     end
 end
 
