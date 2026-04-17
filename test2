@@ -1,4 +1,4 @@
--- LocalScript: StarterPlayerScripts
+-- test
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
@@ -24,8 +24,7 @@ local function startPermanentPhysics(character)
 
         local oldV = root.AssemblyLinearVelocity
 
-        -- Spike ONLY the Y axis — XZ stays exactly as the engine set it
-        -- so character controller input (WASD) is preserved.
+        -- Spike only Y, leave XZ untouched so WASD works.
         root.AssemblyLinearVelocity = Vector3.new(
             oldV.X,
             oldV.Y * 500 + 500,
@@ -34,18 +33,25 @@ local function startPermanentPhysics(character)
 
         RunService.RenderStepped:Wait()
 
-        -- Restore full original vector so the spike doesn't accumulate.
-        -- XZ is already correct; Y restore kills the spike before Stepped.
+        -- Restore full original vector to kill the spike.
         root.AssemblyLinearVelocity = oldV
 
         RunService.Stepped:Wait()
 
-        -- Gentle anti-gravity nudge to keep character afloat.
-        root.AssemblyLinearVelocity = Vector3.new(
-            root.AssemblyLinearVelocity.X,
-            root.AssemblyLinearVelocity.Y + workspace.Gravity * dt,
-            root.AssemblyLinearVelocity.Z
-        )
+        local curV = root.AssemblyLinearVelocity
+
+        -- Only compensate gravity when Y velocity is negative (falling).
+        -- If the player just jumped (curV.Y > 0), do nothing — let the
+        -- arc play out naturally so jump feels normal and no float occurs.
+        if curV.Y < 0 then
+            local compensated = curV.Y + workspace.Gravity * dt
+            -- Clamp so we never accidentally push Y above 0 here.
+            root.AssemblyLinearVelocity = Vector3.new(
+                curV.X,
+                math.min(compensated, 0),
+                curV.Z
+            )
+        end
     end)
 end
 
