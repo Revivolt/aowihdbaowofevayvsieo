@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2158,12 +2158,11 @@ Tab:AddToggle({
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
-
 local activeConnection2 = nil
 local lockedY = nil
 local isLocked = false
+local savedAnimationSpeeds = {} -- Store original speeds to restore later
 
 local function setNoclip(char, state)
     for _, part in ipairs(char:GetDescendants()) do
@@ -2173,29 +2172,28 @@ local function setNoclip(char, state)
     end
 end
 
-local function disableAnimations(char)
+local function stopAnimations(char)
+    savedAnimationSpeeds = {}
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
-
     local animator = humanoid:FindFirstChildOfClass("Animator")
     if not animator then return end
-
-    -- Stop all currently playing tracks
     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-        track:Stop(0)
+        savedAnimationSpeeds[track] = track.Speed
+        track:AdjustSpeed(0)
     end
-
-    animator.Enabled = false
 end
 
-local function enableAnimations(char)
+local function restoreAnimations(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
-
     local animator = humanoid:FindFirstChildOfClass("Animator")
     if not animator then return end
-
-    animator.Enabled = true
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        local savedSpeed = savedAnimationSpeeds[track]
+        track:AdjustSpeed(savedSpeed ~= nil and savedSpeed or 1)
+    end
+    savedAnimationSpeeds = {}
 end
 
 local function startLoop(root)
@@ -2203,33 +2201,43 @@ local function startLoop(root)
         activeConnection2:Disconnect()
         activeConnection2 = nil
     end
-
     local char = root.Parent
-
     activeConnection2 = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then
             if activeConnection2 then activeConnection2:Disconnect() end
             activeConnection2 = nil
             return
         end
-
         -- Noclip all parts every frame
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
-
+        -- Keep animations frozen every frame (new tracks may have started)
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local animator = humanoid:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                    if savedAnimationSpeeds[track] == nil then
+                        -- New track started after toggle, freeze it too
+                        savedAnimationSpeeds[track] = track.Speed
+                    end
+                    track:AdjustSpeed(0)
+                end
+            end
+        end
         -- Y lock runs independently of velocity
         if isLocked and lockedY ~= nil then
             local pos = root.Position
             if math.abs(pos.Y - lockedY) > 0.01 then
                 root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
             end
+            -- Kill only Y velocity to prevent drift off locked position
             local v = root.AssemblyLinearVelocity
             root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
         end
-
         -- Velocity amplification always runs while loop is active
         local oldV = root.AssemblyLinearVelocity
         root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
@@ -2250,7 +2258,6 @@ end
 local function applyStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
-
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
@@ -2259,7 +2266,6 @@ end
 local function removeStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
-
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
@@ -2271,32 +2277,26 @@ Tab:AddToggle({
     Callback = function(value)
         local char = player.Character
         if not char then return end
-
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
-
         if value then
             applyStateOverrides(char)
             setNoclip(char, true)
-            disableAnimations(char)
-
+            stopAnimations(char)       -- Freeze all animations on enable
             lockedY = root.Position.Y - 5
             isLocked = true
             root.CFrame = CFrame.new(root.Position.X, lockedY, root.Position.Z)
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-
             startLoop(root)
         else
             local riseY = (lockedY or root.Position.Y) + 5
             isLocked = false
             lockedY = nil
-
             stopLoop()
             setNoclip(char, false)
             removeStateOverrides(char)
-            enableAnimations(char)
-
+            restoreAnimations(char)    -- Restore all animations on disable
             root.CFrame = CFrame.new(root.Position.X, riseY, root.Position.Z)
         end
     end,
