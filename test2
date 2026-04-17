@@ -1,3 +1,5 @@
+--test
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -5,82 +7,52 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 
 local activeConnection = nil
-local initialCharacter = player.Character  -- snapshot at load time
 
-local function startPermanentPhysics(character)
-    local root = character:WaitForChild("HumanoidRootPart")
-    local humanoid = character:WaitForChild("Humanoid")
-
+local function startPhysicsLoop(root)
     if activeConnection then
         activeConnection:Disconnect()
         activeConnection = nil
     end
+
+    activeConnection = RunService.Heartbeat:Connect(function()
+        if not root or not root.Parent then
+            if activeConnection then activeConnection:Disconnect() end
+            activeConnection = nil
+            return
+        end
+
+        local oldV = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
+        RunService.RenderStepped:Wait()
+        root.AssemblyLinearVelocity = oldV
+        RunService.Stepped:Wait()
+        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
+    end)
+end
+
+local function triggerPhysics()
+    local char = player.Character
+    if not char then return end
+
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return end
 
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
     root.CanCollide = false
 
-    activeConnection = RunService.Heartbeat:Connect(function()
-        if not root or not root.Parent then
-            if activeConnection then activeConnection:Disconnect() end
-            activeConnection = nil
-            return
-        end
-
-        local oldV = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
-        RunService.RenderStepped:Wait()
-        root.AssemblyLinearVelocity = oldV
-        RunService.Stepped:Wait()
-        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
-    end)
+    startPhysicsLoop(root)
+    print("--- PHYSICS TRIGGERED ---")
 end
 
-local function retriggerPhysics()
-    local char = player.Character
-    if not char then return end
-
-    -- Only restart the loop, do NOT reapply state overrides
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
-    if activeConnection then
-        activeConnection:Disconnect()
-        activeConnection = nil
-    end
-
-    activeConnection = RunService.Heartbeat:Connect(function()
-        if not root or not root.Parent then
-            if activeConnection then activeConnection:Disconnect() end
-            activeConnection = nil
-            return
-        end
-
-        local oldV = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
-        RunService.RenderStepped:Wait()
-        root.AssemblyLinearVelocity = oldV
-        RunService.Stepped:Wait()
-        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
-    end)
-
-    print("--- PHYSICS RETRIGGERED ---")
-end
-
--- F key: restart loop on current character only, no state overrides
+-- Nothing runs until F is pressed
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if input.KeyCode == Enum.KeyCode.F then
-        retriggerPhysics()
+        triggerPhysics()
     end
 end)
 
--- State overrides + physics only on the character present at script load
-if initialCharacter then
-    task.spawn(function()
-        startPermanentPhysics(initialCharacter)
-    end)
-end
-
-print("--- PHYSICS LOADED ---")
+print("--- FLING LOADED, PRESS F TO ACTIVATE ---")
