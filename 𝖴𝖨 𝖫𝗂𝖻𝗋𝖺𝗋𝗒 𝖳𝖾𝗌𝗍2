@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2162,6 +2162,8 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 local activeConnection2 = nil
+local lockConnection = nil
+local lockedY = nil
 
 local function startPhysicsLoop(root)
     if activeConnection2 then
@@ -2192,6 +2194,33 @@ local function stopPhysicsLoop()
     end
 end
 
+local function startYLock(root)
+    if lockConnection then
+        lockConnection:Disconnect()
+        lockConnection = nil
+    end
+
+    lockConnection = RunService.Heartbeat:Connect(function()
+        if not root or not root.Parent then
+            if lockConnection then lockConnection:Disconnect() end
+            lockConnection = nil
+            return
+        end
+
+        local pos = root.Position
+        if pos.Y ~= lockedY then
+            root.CFrame = CFrame.new(pos.X, lockedY, pos.Z) * CFrame.new(root.CFrame - root.CFrame.Position)
+        end
+    end)
+end
+
+local function stopYLock()
+    if lockConnection then
+        lockConnection:Disconnect()
+        lockConnection = nil
+    end
+end
+
 local function applyStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     local root = char:FindFirstChild("HumanoidRootPart")
@@ -2216,39 +2245,6 @@ local function removeStateOverrides(char)
     end
 end
 
-local function layDown(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid then return end
-
-    -- Disable motor joints so limbs go limp and character flattens out
-    for _, v in ipairs(char:GetDescendants()) do
-        if v:IsA("Motor6D") then
-            v.Enabled = false
-        end
-    end
-
-    -- Rotate root so character is flat on back, face up
-    root.CFrame = CFrame.new(root.Position) * CFrame.Angles(math.rad(90), 0, 0)
-end
-
-local function standUp(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid then return end
-
-    -- Re-enable all motor joints so the rig is restored
-    for _, v in ipairs(char:GetDescendants()) do
-        if v:IsA("Motor6D") then
-            v.Enabled = true
-        end
-    end
-
-    -- Stand the root back upright
-    root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, root.CFrame.Rotation:ToEulerAnglesXYZ(), 0)
-    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-end
-
 Tab:AddToggle({
     Label   = "Trampoline",
     Default = false,
@@ -2261,11 +2257,23 @@ Tab:AddToggle({
 
         if value then
             applyStateOverrides(char)
-            layDown(char)
+
+            -- Sink 3 studs and lock at that Y
+            local sunkY = root.Position.Y - 4
+            lockedY = sunkY
+            root.CFrame = CFrame.new(root.Position.X, sunkY, root.Position.Z)
+
+            startYLock(root)
             startPhysicsLoop(root)
         else
+            stopYLock()
             stopPhysicsLoop()
-            standUp(char)
+
+            -- Move back up 3 studs
+            local pos = root.Position
+            root.CFrame = CFrame.new(pos.X, pos.Y + 4, pos.Z)
+            lockedY = nil
+
             removeStateOverrides(char)
         end
     end,
