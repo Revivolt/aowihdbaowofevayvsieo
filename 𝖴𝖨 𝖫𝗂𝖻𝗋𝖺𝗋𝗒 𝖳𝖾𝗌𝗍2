@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2162,7 +2162,7 @@ local player = Players.LocalPlayer
 local activeConnection2 = nil
 local lockedY = nil
 local isLocked = false
-local savedAnimationSpeeds = {} -- Store original speeds to restore later
+local frozenMotors = {} -- Store original motor CFrames
 
 local function setNoclip(char, state)
     for _, part in ipairs(char:GetDescendants()) do
@@ -2176,16 +2176,37 @@ local function stopAnimations(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
     local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    animator.Enabled = false
+    if animator then
+        animator.Enabled = false
+        -- Stop every playing track
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            track:Stop(0)
+        end
+    end
+    -- Freeze all Motor6D joints in their current transform
+    frozenMotors = {}
+    for _, motor in ipairs(char:GetDescendants()) do
+        if motor:IsA("Motor6D") then
+            frozenMotors[motor] = motor.Transform
+            motor.MaxVelocity = 0
+        end
+    end
 end
 
 local function restoreAnimations(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
     local animator = humanoid:FindFirstChildOfClass("Animator")
-    if not animator then return end
-    animator.Enabled = true
+    if animator then
+        animator.Enabled = true
+    end
+    -- Restore all Motor6D joints
+    for motor, _ in pairs(frozenMotors) do
+        if motor and motor.Parent then
+            motor.MaxVelocity = 0.1 -- Roblox default
+        end
+    end
+    frozenMotors = {}
 end
 
 local function startLoop(root)
@@ -2206,18 +2227,32 @@ local function startLoop(root)
                 part.CanCollide = false
             end
         end
-
-        -- Y lock runs independently of velocity
+        -- Keep joints frozen and stop any new tracks every frame
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local animator = humanoid:FindFirstChildOfClass("Animator")
+            if animator then
+                animator.Enabled = false
+                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                    track:Stop(0)
+                end
+            end
+        end
+        for motor, savedTransform in pairs(frozenMotors) do
+            if motor and motor.Parent then
+                motor.Transform = savedTransform
+            end
+        end
+        -- Y lock
         if isLocked and lockedY ~= nil then
             local pos = root.Position
             if math.abs(pos.Y - lockedY) > 0.01 then
                 root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
             end
-            -- Kill only Y velocity to prevent drift off locked position
             local v = root.AssemblyLinearVelocity
             root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
         end
-        -- Velocity amplification always runs while loop is active
+        -- Velocity amplification
         local oldV = root.AssemblyLinearVelocity
         root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
         RunService.RenderStepped:Wait()
@@ -2261,7 +2296,7 @@ Tab:AddToggle({
         if value then
             applyStateOverrides(char)
             setNoclip(char, true)
-            stopAnimations(char)       -- Freeze all animations on enable
+            stopAnimations(char)
             lockedY = root.Position.Y - 5
             isLocked = true
             root.CFrame = CFrame.new(root.Position.X, lockedY, root.Position.Z)
@@ -2275,7 +2310,7 @@ Tab:AddToggle({
             stopLoop()
             setNoclip(char, false)
             removeStateOverrides(char)
-            restoreAnimations(char)    -- Restore all animations on disable
+            restoreAnimations(char)
             root.CFrame = CFrame.new(root.Position.X, riseY, root.Position.Z)
         end
     end,
