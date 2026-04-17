@@ -1,144 +1,68 @@
--- LoadingMap → TeleportToPart latency timer
--- Fox @ Jack's request
+--// Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 
-local Players            = game:GetService("Players")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-local RunService         = game:GetService("RunService")
+local player = Players.LocalPlayer
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+--// Settings
+local TOGGLE_KEY = Enum.KeyCode.G
 
--- ── Remote refs ────────────────────────────────────────────────────────────
-local Remotes    = ReplicatedStorage:WaitForChild("Remotes")
-local Gameplay   = Remotes:WaitForChild("Gameplay")
-local evLoading  = Gameplay:WaitForChild("LoadingMap")
-local evTeleport = Gameplay:WaitForChild("TeleportToPart")
+--// State
+local enabled = false
 
--- ── Build GUI ──────────────────────────────────────────────────────────────
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name            = "RemoteTimer"
-screenGui.ResetOnSpawn    = false
-screenGui.IgnoreGuiInset  = true
-screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-screenGui.Parent          = PlayerGui
+--// Godmode Function
+local function godmodefunc()
+    if not player.Character or not player.Character.Parent then return end
 
-local frame = Instance.new("Frame")
-frame.Size            = UDim2.new(0, 300, 0, 90)
-frame.Position        = UDim2.new(0.5, -150, 0, 12)
-frame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-frame.BackgroundTransparency = 0.15
-frame.BorderSizePixel = 0
-frame.Parent          = screenGui
+    local character = player.Character
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent       = frame
+    if humanoid and humanoid.Name ~= "OldHumanoid" then
+        humanoid.Name = "OldHumanoid"
 
-local stroke = Instance.new("UIStroke")
-stroke.Color     = Color3.fromRGB(80, 140, 255)
-stroke.Thickness = 1.5
-stroke.Parent    = frame
+        local newHumanoid = humanoid:Clone()
+        newHumanoid.Parent = character
+        newHumanoid.Name = "Humanoid"
 
-local labelStatus = Instance.new("TextLabel")
-labelStatus.Size                = UDim2.new(1, -16, 0, 22)
-labelStatus.Position            = UDim2.new(0, 8, 0, 8)
-labelStatus.BackgroundTransparency = 1
-labelStatus.TextColor3          = Color3.fromRGB(160, 180, 255)
-labelStatus.TextSize            = 13
-labelStatus.Font                = Enum.Font.GothamMedium
-labelStatus.TextXAlignment      = Enum.TextXAlignment.Left
-labelStatus.Text                = "Waiting for LoadingMap..."
-labelStatus.Parent              = frame
+        task.wait(0.1)
 
-local labelTimer = Instance.new("TextLabel")
-labelTimer.Size                 = UDim2.new(1, -16, 0, 40)
-labelTimer.Position             = UDim2.new(0, 8, 0, 32)
-labelTimer.BackgroundTransparency = 1
-labelTimer.TextColor3           = Color3.fromRGB(255, 255, 255)
-labelTimer.TextSize             = 28
-labelTimer.Font                 = Enum.Font.GothamBold
-labelTimer.TextXAlignment       = Enum.TextXAlignment.Left
-labelTimer.Text                 = "--"
-labelTimer.Parent               = frame
+        if character:FindFirstChild("OldHumanoid") then
+            character.OldHumanoid:Destroy()
+        end
 
-local labelMap = Instance.new("TextLabel")
-labelMap.Size                   = UDim2.new(1, -16, 0, 16)
-labelMap.Position               = UDim2.new(0, 8, 0, 70)
-labelMap.BackgroundTransparency = 1
-labelMap.TextColor3             = Color3.fromRGB(120, 120, 140)
-labelMap.TextSize               = 11
-labelMap.Font                   = Enum.Font.Gotham
-labelMap.TextXAlignment         = Enum.TextXAlignment.Left
-labelMap.Text                   = ""
-labelMap.Parent                 = frame
+        workspace.CurrentCamera.CameraSubject = newHumanoid
 
--- ── State ──────────────────────────────────────────────────────────────────
-local startTick: number? = nil
-local measuring          = false
-local heartbeatConn: RBXScriptConnection? = nil
-
-local function stopHeartbeat()
-    if heartbeatConn then
-        heartbeatConn:Disconnect()
-        heartbeatConn = nil
+        local animate = character:FindFirstChild("Animate")
+        if animate then
+            animate.Disabled = true
+            task.wait(0.1)
+            animate.Disabled = false
+        end
     end
 end
 
-local function startLiveClock()
-    stopHeartbeat()
-    heartbeatConn = RunService.Heartbeat:Connect(function()
-        if not measuring or not startTick then return end
-        local elapsed = tick() - startTick
-        labelTimer.Text = string.format("%.3f s  /  %d ms", elapsed, math.floor(elapsed * 1000))
-    end)
+--// Character handler
+local function onCharacterAdded()
+    task.wait(0.5)
+    if enabled then
+        pcall(godmodefunc)
+    end
 end
 
--- ── LoadingMap fired ───────────────────────────────────────────────────────
-evLoading.OnClientEvent:Connect(function(mapName: string)
-    startTick  = tick()
-    measuring  = true
+-- Run on respawn
+player.CharacterAdded:Connect(onCharacterAdded)
 
-    -- reset colours to "active" blue
-    stroke.Color       = Color3.fromRGB(80, 140, 255)
-    labelStatus.TextColor3 = Color3.fromRGB(160, 180, 255)
+--// Toggle input
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
 
-    labelStatus.Text = "LoadingMap fired — timing..."
-    labelMap.Text    = "Map: " .. tostring(mapName)
-    labelTimer.Text  = "0.000 s  /  0 ms"
+    if input.KeyCode == TOGGLE_KEY then
+        enabled = not enabled
 
-    startLiveClock()
-end)
+        print("Godmode:", enabled and "ON" or "OFF")
 
--- ── TeleportToPart fired ───────────────────────────────────────────────────
-evTeleport.OnClientEvent:Connect(function(spawnPart: Instance)
-    if not measuring or not startTick then
-        -- fired before LoadingMap — just note it
-        labelStatus.Text       = "TeleportToPart (no start)"
-        labelTimer.Text        = "N/A"
-        stroke.Color           = Color3.fromRGB(255, 180, 60)
-        labelStatus.TextColor3 = Color3.fromRGB(255, 200, 80)
-        return
+        if enabled then
+            pcall(godmodefunc)
+        end
     end
-
-    local endTick = tick()
-    local delta   = endTick - startTick
-
-    stopHeartbeat()
-    measuring = false
-
-    -- green = done
-    stroke.Color           = Color3.fromRGB(60, 220, 120)
-    labelStatus.TextColor3 = Color3.fromRGB(100, 255, 160)
-
-    labelStatus.Text = "TeleportToPart received!"
-    labelTimer.Text  = string.format("%.3f s  /  %d ms", delta, math.floor(delta * 1000))
-
-    local partPath = ""
-    if typeof(spawnPart) == "Instance" then
-        partPath = spawnPart:GetFullName()
-    end
-    labelMap.Text = "Spawn: " .. partPath
-
-    -- reset state so the next LoadingMap starts fresh
-    startTick = nil
 end)
