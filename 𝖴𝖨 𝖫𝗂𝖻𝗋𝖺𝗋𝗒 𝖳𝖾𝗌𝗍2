@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2162,10 +2162,9 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 local activeConnection2 = nil
-local lockConnection = nil
 local lockedY = nil
 
-local function startPhysicsLoop(root)
+local function startPhysicsAndLock(root)
     if activeConnection2 then
         activeConnection2:Disconnect()
         activeConnection2 = nil
@@ -2178,6 +2177,14 @@ local function startPhysicsLoop(root)
             return
         end
 
+        -- Enforce Y lock every frame
+        if lockedY ~= nil then
+            local pos = root.Position
+            if math.abs(pos.Y - lockedY) > 0.01 then
+                root.CFrame = CFrame.new(pos.X, lockedY, pos.Z) * (root.CFrame - root.CFrame.Position)
+            end
+        end
+
         local oldV = root.AssemblyLinearVelocity
         root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
         RunService.RenderStepped:Wait()
@@ -2187,37 +2194,10 @@ local function startPhysicsLoop(root)
     end)
 end
 
-local function stopPhysicsLoop()
+local function stopPhysicsAndLock()
     if activeConnection2 then
         activeConnection2:Disconnect()
         activeConnection2 = nil
-    end
-end
-
-local function startYLock(root)
-    if lockConnection then
-        lockConnection:Disconnect()
-        lockConnection = nil
-    end
-
-    lockConnection = RunService.Heartbeat:Connect(function()
-        if not root or not root.Parent then
-            if lockConnection then lockConnection:Disconnect() end
-            lockConnection = nil
-            return
-        end
-
-        local pos = root.Position
-        if pos.Y ~= lockedY then
-            root.CFrame = CFrame.new(pos.X, lockedY, pos.Z) * CFrame.new(root.CFrame - root.CFrame.Position)
-        end
-    end)
-end
-
-local function stopYLock()
-    if lockConnection then
-        lockConnection:Disconnect()
-        lockConnection = nil
     end
 end
 
@@ -2258,23 +2238,21 @@ Tab:AddToggle({
         if value then
             applyStateOverrides(char)
 
-            -- Sink 3 studs and lock at that Y
-            local sunkY = root.Position.Y - 4
-            lockedY = sunkY
-            root.CFrame = CFrame.new(root.Position.X, sunkY, root.Position.Z)
+            -- Sink 3 studs, store as locked Y
+            lockedY = root.Position.Y - 4
+            root.CFrame = CFrame.new(root.Position.X, lockedY, root.Position.Z)
 
-            startYLock(root)
-            startPhysicsLoop(root)
+            startPhysicsAndLock(root)
         else
-            stopYLock()
-            stopPhysicsLoop()
-
-            -- Move back up 3 studs
-            local pos = root.Position
-            root.CFrame = CFrame.new(pos.X, pos.Y + 4, pos.Z)
+            -- Grab Y before clearing lock
+            local riseY = (lockedY or root.Position.Y) + 4
             lockedY = nil
 
+            stopPhysicsAndLock()
             removeStateOverrides(char)
+
+            -- Move back up 3 studs
+            root.CFrame = CFrame.new(root.Position.X, riseY, root.Position.Z)
         end
     end,
 })
