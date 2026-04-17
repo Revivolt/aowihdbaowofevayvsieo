@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -72,71 +72,7 @@ local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local RootPart    = Character:WaitForChild("HumanoidRootPart")
 local Humanoid    = Character:WaitForChild("Humanoid")
 
-local killY           = -80
-local maxY            = 5000
-local speedThreshold  = 350
-local lastSafePos     = nil
-local antiMoveLock    = false
 local activeFlingCount = 0
-
-task.delay(1, function()
-    if RootPart then
-        lastSafePos = RootPart.Position
-    end
-end)
-
-RunService.Heartbeat:Connect(function()
-    if not RootPart then return end
-    local pos = RootPart.Position
-    if pos.Y > -10 and pos.Y < maxY
-    and RootPart.AssemblyLinearVelocity.Magnitude < speedThreshold then
-        lastSafePos = pos
-    end
-end)
-
-RunService.Heartbeat:Connect(function()
-    if antiMoveLock then return end
-    if not lastSafePos then return end
-    if activeFlingCount > 0 then return end
-    antiMoveLock = true
-
-    local pos  = RootPart.Position
-    local vel  = RootPart.AssemblyLinearVelocity.Magnitude
-    local velY = RootPart.AssemblyLinearVelocity.Y
-
-    local function reset(target)
-        RootPart.CFrame                 = CFrame.new(target)
-        RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        Humanoid.Health                 = Humanoid.MaxHealth
-        antiMoveLock = false
-    end
-
-    if vel > speedThreshold or math.abs(velY) > 350 then
-        reset(lastSafePos)
-    elseif pos.Y > maxY then
-        reset(lastSafePos)
-    elseif pos.Y < killY then
-        RootPart.CFrame                 = CFrame.new(lastSafePos.X, math.max(lastSafePos.Y + 5, 10), lastSafePos.Z)
-        RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-        Humanoid.Health                 = Humanoid.MaxHealth
-        antiMoveLock = false
-    else
-        antiMoveLock = false
-    end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character    = newChar
-    RootPart     = Character:WaitForChild("HumanoidRootPart")
-    Humanoid     = Character:WaitForChild("Humanoid")
-    antiMoveLock = false
-    lastSafePos  = nil
-    task.delay(1, function()
-        if RootPart then
-            lastSafePos = RootPart.Position
-        end
-    end)
-end)
 
     local Window = NovaUI:CreateWindow({
         Title = "HappyTier",
@@ -156,9 +92,9 @@ Tab:AddTextInput({
     Callback = function(input)
         input = (tostring(input or "")):lower()
         selectedTarget = nil
-        if input == "" then return end  -- ADD THIS
+        if input == "" then return end
         for _, plr in ipairs(weldPlayers:GetPlayers()) do
-            if plr == weldLocal then continue end  -- ADD THIS
+            if plr == weldLocal then continue end
             local name    = plr.Name:lower()
             local display = (plr.DisplayName or plr.Name):lower()
             if name == input or display == input
