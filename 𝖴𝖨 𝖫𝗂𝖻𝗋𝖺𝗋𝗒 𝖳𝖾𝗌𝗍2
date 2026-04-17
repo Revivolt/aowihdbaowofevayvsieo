@@ -2071,9 +2071,89 @@ if initialCharacter then
     end)
 end
 
-print("--- PHYSICS LOADED ---")
 end,
     })
+
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+
+local activeConnection = nil
+
+local function startPhysicsLoop(root)
+    if activeConnection then
+        activeConnection:Disconnect()
+        activeConnection = nil
+    end
+
+    activeConnection = RunService.Heartbeat:Connect(function()
+        if not root or not root.Parent then
+            if activeConnection then activeConnection:Disconnect() end
+            activeConnection = nil
+            return
+        end
+
+        local oldV = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = oldV * 0 + Vector3.new(0, 0, 0)
+        RunService.RenderStepped:Wait()
+        root.AssemblyLinearVelocity = oldV
+        RunService.Stepped:Wait()
+        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
+    end)
+end
+
+local function stopPhysicsLoop()
+    if activeConnection then
+        activeConnection:Disconnect()
+        activeConnection = nil
+    end
+end
+
+local function applyStateOverrides(char)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not root then return end
+
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    root.CanCollide = false
+end
+
+local function removeStateOverrides(char)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if humanoid then
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+    end
+    if root then
+        root.CanCollide = true
+    end
+end
+
+Tab:AddToggle({
+    Label   = "Loop Perma Death",
+    Default = false,
+    Callback = function(value)
+        local char = player.Character
+        if not char then return end
+
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+
+        if value then
+            applyStateOverrides(char)
+            startPhysicsLoop(root)
+        else
+            stopPhysicsLoop()
+            removeStateOverrides(char)
+        end
+    end,
+})
 
 
 Tab:AddButton({
