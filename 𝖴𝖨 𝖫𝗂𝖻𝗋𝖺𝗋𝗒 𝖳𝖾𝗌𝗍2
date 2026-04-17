@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2173,6 +2173,31 @@ local function setNoclip(char, state)
     end
 end
 
+local function disableAnimations(char)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+
+    -- Stop all currently playing tracks
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        track:Stop(0)
+    end
+
+    animator.Enabled = false
+end
+
+local function enableAnimations(char)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+
+    animator.Enabled = true
+end
+
 local function startLoop(root)
     if activeConnection2 then
         activeConnection2:Disconnect()
@@ -2201,7 +2226,6 @@ local function startLoop(root)
             if math.abs(pos.Y - lockedY) > 0.01 then
                 root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
             end
-            -- Kill only Y velocity to prevent drift off locked position
             local v = root.AssemblyLinearVelocity
             root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
         end
@@ -2254,8 +2278,9 @@ Tab:AddToggle({
         if value then
             applyStateOverrides(char)
             setNoclip(char, true)
+            disableAnimations(char)
 
-            lockedY = root.Position.Y - 4
+            lockedY = root.Position.Y - 5
             isLocked = true
             root.CFrame = CFrame.new(root.Position.X, lockedY, root.Position.Z)
             root.AssemblyLinearVelocity = Vector3.zero
@@ -2263,13 +2288,14 @@ Tab:AddToggle({
 
             startLoop(root)
         else
-            local riseY = (lockedY or root.Position.Y) + 4
+            local riseY = (lockedY or root.Position.Y) + 5
             isLocked = false
             lockedY = nil
 
             stopLoop()
             setNoclip(char, false)
             removeStateOverrides(char)
+            enableAnimations(char)
 
             root.CFrame = CFrame.new(root.Position.X, riseY, root.Position.Z)
         end
