@@ -35,17 +35,7 @@ local function startPermanentPhysics(character)
     end)
 end
 
--- Respawn support — disconnect old connection, start fresh on new character
-player.CharacterAdded:Connect(function(newChar)
-    if activeConnection then
-        activeConnection:Disconnect()
-        activeConnection = nil
-    end
-    task.wait(1.5)
-    startPermanentPhysics(newChar)
-end)
-
--- Initial character (already spawned)
+-- Only runs on the character that exists at script load time, never on respawn
 if player.Character then
     task.spawn(function()
         startPermanentPhysics(player.Character)
