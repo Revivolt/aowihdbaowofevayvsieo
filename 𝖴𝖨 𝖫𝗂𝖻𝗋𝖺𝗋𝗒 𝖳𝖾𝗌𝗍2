@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2159,9 +2159,19 @@ Tab:AddToggle({
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
-local activeConnection2 = nil
+
+local heartbeat = nil
+local rendered = nil
+local stepped = nil
 local lockedY = nil
 local isLocked = false
+local oldV = Vector3.zero
+
+local function stopAll()
+    if heartbeat then heartbeat:Disconnect() heartbeat = nil end
+    if rendered then rendered:Disconnect() rendered = nil end
+    if stepped then stepped:Disconnect() stepped = nil end
+end
 
 local function setNoclip(char, state)
     for _, part in ipairs(char:GetDescendants()) do
@@ -2190,127 +2200,6 @@ local function restoreAnimations(char)
     animator.Enabled = true
 end
 
-local function startLoop(root)
-    if activeConnection2 then
-        activeConnection2:Disconnect()
-        activeConnection2 = nil
-    end
-    local char = root.Parent
-    local stepped = nil
-    local rendered = nil
-
-    local oldV = Vector3.zero
-
-    activeConnection2 = RunService.Heartbeat:Connect(function()
-        if not root or not root.Parent then
-            if activeConnection2 then activeConnection2:Disconnect() end
-            activeConnection2 = nil
-            return
-        end
-
-        -- Noclip all parts every frame
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-
-        -- Keep animator disabled every frame so nothing sneaks in
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            local animator = humanoid:FindFirstChildOfClass("Animator")
-            if animator then
-                animator.Enabled = false
-            end
-        end
-
-        -- Y lock
-        if isLocked and lockedY ~= nil then
-            local pos = root.Position
-            if math.abs(pos.Y - lockedY) > 0.01 then
-                root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
-            end
-            local v = root.AssemblyLinearVelocity
-            root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
-        end
-
-        -- Velocity amplification (no yielding)
-        oldV = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
-    end)
-
-    rendered = RunService.RenderStepped:Connect(function()
-        if not root or not root.Parent then return end
-        root.AssemblyLinearVelocity = oldV
-    end)
-
-    stepped = RunService.Stepped:Connect(function()
-        if not root or not root.Parent then return end
-        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
-    end)
-
-    -- Store extra connections so we can clean them up
-    activeConnection2 = {
-        Disconnect = function()
-            if activeConnection2 and type(activeConnection2) == "table" then
-                -- handled below
-            end
-        end
-    }
-
-    -- Override stopLoop to clean all three
-    stopLoop = function()
-        if activeConnection2 and activeConnection2.heartbeat then
-            activeConnection2.heartbeat:Disconnect()
-        end
-        if rendered then rendered:Disconnect() rendered = nil end
-        if stepped then stepped:Disconnect() stepped = nil end
-        activeConnection2 = nil
-    end
-
-    activeConnection2 = {
-        heartbeat = RunService.Heartbeat:Connect(function()
-            if not root or not root.Parent then
-                stopLoop()
-                return
-            end
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
-            end
-            local humanoid = char:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                local animator = humanoid:FindFirstChildOfClass("Animator")
-                if animator then
-                    animator.Enabled = false
-                end
-            end
-            if isLocked and lockedY ~= nil then
-                local pos = root.Position
-                if math.abs(pos.Y - lockedY) > 0.01 then
-                    root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
-                end
-                local v = root.AssemblyLinearVelocity
-                root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
-            end
-            oldV = root.AssemblyLinearVelocity
-            root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
-        end),
-    }
-end
-
-local function stopLoop()
-    if activeConnection2 then
-        if type(activeConnection2) == "table" then
-            if activeConnection2.heartbeat then activeConnection2.heartbeat:Disconnect() end
-        else
-            activeConnection2:Disconnect()
-        end
-        activeConnection2 = nil
-    end
-end
-
 local function applyStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
@@ -2335,6 +2224,7 @@ Tab:AddToggle({
         if not char then return end
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
+
         if value then
             applyStateOverrides(char)
             setNoclip(char, true)
@@ -2344,12 +2234,50 @@ Tab:AddToggle({
             root.CFrame = CFrame.new(root.Position.X, lockedY, root.Position.Z)
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            startLoop(root)
+
+            heartbeat = RunService.Heartbeat:Connect(function()
+                if not root or not root.Parent then stopAll() return end
+
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    local animator = humanoid:FindFirstChildOfClass("Animator")
+                    if animator then animator.Enabled = false end
+                end
+
+                if isLocked and lockedY ~= nil then
+                    local pos = root.Position
+                    if math.abs(pos.Y - lockedY) > 0.01 then
+                        root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
+                    end
+                    local v = root.AssemblyLinearVelocity
+                    root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+                end
+
+                oldV = root.AssemblyLinearVelocity
+                root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
+            end)
+
+            rendered = RunService.RenderStepped:Connect(function()
+                if not root or not root.Parent then return end
+                root.AssemblyLinearVelocity = oldV
+            end)
+
+            stepped = RunService.Stepped:Connect(function()
+                if not root or not root.Parent then return end
+                root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
+            end)
+
         else
             local riseY = (lockedY or root.Position.Y) + 5
             isLocked = false
             lockedY = nil
-            stopLoop()
+            stopAll()
             setNoclip(char, false)
             removeStateOverrides(char)
             restoreAnimations(char)
