@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2188,31 +2188,31 @@ local function startLoop(root)
             return
         end
 
-        if isLocked then
-            -- Noclip all parts every frame so nothing can interfere
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
+        -- Noclip all parts every frame
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
             end
+        end
 
-            -- Kill all velocity and hold Y position
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-
+        -- Y lock runs independently of velocity
+        if isLocked and lockedY ~= nil then
             local pos = root.Position
             if math.abs(pos.Y - lockedY) > 0.01 then
                 root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
             end
-        else
-            -- Normal physics amplification when not locked
-            local oldV = root.AssemblyLinearVelocity
-            root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
-            RunService.RenderStepped:Wait()
-            root.AssemblyLinearVelocity = oldV
-            RunService.Stepped:Wait()
-            root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
+            -- Kill only Y velocity to prevent drift off locked position
+            local v = root.AssemblyLinearVelocity
+            root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
         end
+
+        -- Velocity amplification always runs while loop is active
+        local oldV = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
+        RunService.RenderStepped:Wait()
+        root.AssemblyLinearVelocity = oldV
+        RunService.Stepped:Wait()
+        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
     end)
 end
 
