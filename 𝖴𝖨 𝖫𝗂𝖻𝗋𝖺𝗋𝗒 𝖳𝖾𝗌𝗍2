@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2165,11 +2165,21 @@ local activeConnection2 = nil
 local lockedY = nil
 local isLocked = false
 
+local function setNoclip(char, state)
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not state
+        end
+    end
+end
+
 local function startLoop(root)
     if activeConnection2 then
         activeConnection2:Disconnect()
         activeConnection2 = nil
     end
+
+    local char = root.Parent
 
     activeConnection2 = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then
@@ -2179,7 +2189,14 @@ local function startLoop(root)
         end
 
         if isLocked then
-            -- Zero out all velocity and enforce Y position every frame
+            -- Noclip all parts every frame so nothing can interfere
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+
+            -- Kill all velocity and hold Y position
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
 
@@ -2208,26 +2225,20 @@ end
 
 local function applyStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not humanoid or not root then return end
+    if not humanoid then return end
 
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-    root.CanCollide = false
 end
 
 local function removeStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if humanoid then
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-    end
-    if root then
-        root.CanCollide = true
-    end
+    if not humanoid then return end
+
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
 end
 
 Tab:AddToggle({
@@ -2242,6 +2253,7 @@ Tab:AddToggle({
 
         if value then
             applyStateOverrides(char)
+            setNoclip(char, true)
 
             lockedY = root.Position.Y - 4
             isLocked = true
@@ -2256,6 +2268,7 @@ Tab:AddToggle({
             lockedY = nil
 
             stopLoop()
+            setNoclip(char, false)
             removeStateOverrides(char)
 
             root.CFrame = CFrame.new(root.Position.X, riseY, root.Position.Z)
