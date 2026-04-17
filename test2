@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
@@ -36,8 +37,46 @@ local function startPermanentPhysics(character)
     end)
 end
 
--- CharacterAdded fires on respawn/refresh — we ignore it entirely
--- State overrides and physics only run on the character present at script load
+local function retriggerPhysics()
+    local char = player.Character
+    if not char then return end
+
+    -- Only restart the loop, do NOT reapply state overrides
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    if activeConnection then
+        activeConnection:Disconnect()
+        activeConnection = nil
+    end
+
+    activeConnection = RunService.Heartbeat:Connect(function()
+        if not root or not root.Parent then
+            if activeConnection then activeConnection:Disconnect() end
+            activeConnection = nil
+            return
+        end
+
+        local oldV = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
+        RunService.RenderStepped:Wait()
+        root.AssemblyLinearVelocity = oldV
+        RunService.Stepped:Wait()
+        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
+    end)
+
+    print("--- PHYSICS RETRIGGERED ---")
+end
+
+-- F key: restart loop on current character only, no state overrides
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        retriggerPhysics()
+    end
+end)
+
+-- State overrides + physics only on the character present at script load
 if initialCharacter then
     task.spawn(function()
         startPermanentPhysics(initialCharacter)
