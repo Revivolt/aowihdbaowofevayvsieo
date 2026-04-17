@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2177,17 +2177,15 @@ local function stopAnimations(char)
     if not humanoid then return end
     local animator = humanoid:FindFirstChildOfClass("Animator")
     if not animator then return end
-    -- Stop every playing track completely
-    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-        track:Stop(0) -- 0 = no fade, instant stop
-    end
+    animator.Enabled = false
 end
 
 local function restoreAnimations(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
-    -- Re-enable the humanoid state so Roblox auto-restarts idle/walk animations
-    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+    animator.Enabled = true
 end
 
 local function startLoop(root)
