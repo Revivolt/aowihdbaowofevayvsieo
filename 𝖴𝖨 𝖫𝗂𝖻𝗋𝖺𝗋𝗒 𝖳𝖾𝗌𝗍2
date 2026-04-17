@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2196,29 +2196,34 @@ local function startLoop(root)
         activeConnection2 = nil
     end
     local char = root.Parent
+    local stepped = nil
+    local rendered = nil
+
+    local oldV = Vector3.zero
+
     activeConnection2 = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then
             if activeConnection2 then activeConnection2:Disconnect() end
             activeConnection2 = nil
             return
         end
+
         -- Noclip all parts every frame
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
-        -- Stop any new animation tracks that sneak in
+
+        -- Keep animator disabled every frame so nothing sneaks in
         local humanoid = char:FindFirstChildOfClass("Humanoid")
         if humanoid then
             local animator = humanoid:FindFirstChildOfClass("Animator")
             if animator then
                 animator.Enabled = false
-                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                    track:Stop(0)
-                end
             end
         end
+
         -- Y lock
         if isLocked and lockedY ~= nil then
             local pos = root.Position
@@ -2228,19 +2233,80 @@ local function startLoop(root)
             local v = root.AssemblyLinearVelocity
             root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
         end
-        -- Velocity amplification
-        local oldV = root.AssemblyLinearVelocity
+
+        -- Velocity amplification (no yielding)
+        oldV = root.AssemblyLinearVelocity
         root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
-        RunService.RenderStepped:Wait()
+    end)
+
+    rendered = RunService.RenderStepped:Connect(function()
+        if not root or not root.Parent then return end
         root.AssemblyLinearVelocity = oldV
-        RunService.Stepped:Wait()
+    end)
+
+    stepped = RunService.Stepped:Connect(function()
+        if not root or not root.Parent then return end
         root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
     end)
+
+    -- Store extra connections so we can clean them up
+    activeConnection2 = {
+        Disconnect = function()
+            if activeConnection2 and type(activeConnection2) == "table" then
+                -- handled below
+            end
+        end
+    }
+
+    -- Override stopLoop to clean all three
+    stopLoop = function()
+        if activeConnection2 and activeConnection2.heartbeat then
+            activeConnection2.heartbeat:Disconnect()
+        end
+        if rendered then rendered:Disconnect() rendered = nil end
+        if stepped then stepped:Disconnect() stepped = nil end
+        activeConnection2 = nil
+    end
+
+    activeConnection2 = {
+        heartbeat = RunService.Heartbeat:Connect(function()
+            if not root or not root.Parent then
+                stopLoop()
+                return
+            end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                local animator = humanoid:FindFirstChildOfClass("Animator")
+                if animator then
+                    animator.Enabled = false
+                end
+            end
+            if isLocked and lockedY ~= nil then
+                local pos = root.Position
+                if math.abs(pos.Y - lockedY) > 0.01 then
+                    root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
+                end
+                local v = root.AssemblyLinearVelocity
+                root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+            end
+            oldV = root.AssemblyLinearVelocity
+            root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
+        end),
+    }
 end
 
 local function stopLoop()
     if activeConnection2 then
-        activeConnection2:Disconnect()
+        if type(activeConnection2) == "table" then
+            if activeConnection2.heartbeat then activeConnection2.heartbeat:Disconnect() end
+        else
+            activeConnection2:Disconnect()
+        end
         activeConnection2 = nil
     end
 end
