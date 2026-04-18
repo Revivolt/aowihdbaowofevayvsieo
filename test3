@@ -1,68 +1,571 @@
---// Services
+-- CustomChatGUI.lua
+-- LocalScript: Place inside StarterPlayerScripts or StarterGui
+-- Replaces the default Roblox chat button with a custom, cleaner chat UI.
+
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local TextChatService = game:GetService("TextChatService")
 
-local player = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
---// Settings
-local TOGGLE_KEY = Enum.KeyCode.G
+-- ─────────────────────────────────────────────
+-- CONFIG
+-- ─────────────────────────────────────────────
+local CONFIG = {
+    ButtonText        = "💬",          -- Icon shown on the toggle button
+    ButtonSize        = UDim2.new(0, 44, 0, 44),
+    ButtonPosition    = UDim2.new(0, 12, 0, 12), -- Top-left, matches default chat position
+    WindowWidth       = 380,
+    WindowHeight      = 280,
+    MaxMessages       = 80,            -- Messages kept in history
+    FontSize          = Enum.FontSize.Size14,
+    Font              = Enum.Font.GothamMedium,
+    ChatFont          = Enum.Font.Gotham,
 
---// State
-local enabled = false
+    -- Colors
+    BG                = Color3.fromRGB(15, 15, 20),
+    BG2               = Color3.fromRGB(22, 22, 30),
+    Accent            = Color3.fromRGB(80, 120, 255),
+    AccentHover       = Color3.fromRGB(100, 140, 255),
+    TextColor         = Color3.fromRGB(230, 230, 240),
+    MutedText         = Color3.fromRGB(130, 130, 150),
+    InputBG           = Color3.fromRGB(30, 30, 40),
+    InputBorder       = Color3.fromRGB(55, 55, 75),
+    SenderColor       = Color3.fromRGB(110, 170, 255),
+    SystemColor       = Color3.fromRGB(180, 180, 200),
+    ErrorColor        = Color3.fromRGB(255, 100, 100),
+    SuccessColor      = Color3.fromRGB(80, 220, 140),
+    CornerRadius      = UDim.new(0, 10),
+    ButtonCorner      = UDim.new(0, 12),
+    InputCorner       = UDim.new(0, 8),
+}
 
---// Godmode Function
-local function godmodefunc()
-    if not player.Character or not player.Character.Parent then return end
+-- ─────────────────────────────────────────────
+-- HELPERS
+-- ─────────────────────────────────────────────
+local function corner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = radius or CONFIG.CornerRadius
+    c.Parent = parent
+    return c
+end
 
-    local character = player.Character
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
+local function stroke(parent, color, thickness)
+    local s = Instance.new("UIStroke")
+    s.Color = color or CONFIG.InputBorder
+    s.Thickness = thickness or 1
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = parent
+    return s
+end
 
-    if humanoid and humanoid.Name ~= "OldHumanoid" then
-        humanoid.Name = "OldHumanoid"
+local function tween(obj, info, props)
+    TweenService:Create(obj, info, props):Play()
+end
 
-        local newHumanoid = humanoid:Clone()
-        newHumanoid.Parent = character
-        newHumanoid.Name = "Humanoid"
+local FAST = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local SMOOTH = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
-        task.wait(0.1)
-
-        if character:FindFirstChild("OldHumanoid") then
-            character.OldHumanoid:Destroy()
-        end
-
-        workspace.CurrentCamera.CameraSubject = newHumanoid
-
-        local animate = character:FindFirstChild("Animate")
-        if animate then
-            animate.Disabled = true
-            task.wait(0.1)
-            animate.Disabled = false
-        end
+-- ─────────────────────────────────────────────
+-- DISABLE DEFAULT CHAT BUTTON
+-- ─────────────────────────────────────────────
+local function hideDefaultChat()
+    -- Hide the legacy CoreGui chat button
+    local success = pcall(function()
+        game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+    end)
+    if not success then
+        -- Fallback: wait and retry
+        task.delay(1, function()
+            pcall(function()
+                game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+            end)
+        end)
     end
 end
 
---// Character handler
-local function onCharacterAdded()
-    task.wait(0.5)
-    if enabled then
-        pcall(godmodefunc)
+hideDefaultChat()
+
+-- ─────────────────────────────────────────────
+-- SCREEN GUI
+-- ─────────────────────────────────────────────
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CustomChatGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.DisplayOrder = 10
+ScreenGui.IgnoreGuiInset = false
+ScreenGui.Parent = PlayerGui
+
+-- ─────────────────────────────────────────────
+-- TOGGLE BUTTON
+-- ─────────────────────────────────────────────
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ChatToggle"
+ToggleBtn.Size = CONFIG.ButtonSize
+ToggleBtn.Position = CONFIG.ButtonPosition
+ToggleBtn.BackgroundColor3 = CONFIG.BG
+ToggleBtn.Text = CONFIG.ButtonText
+ToggleBtn.TextSize = 20
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextColor3 = CONFIG.TextColor
+ToggleBtn.AutoButtonColor = false
+ToggleBtn.ZIndex = 20
+ToggleBtn.Parent = ScreenGui
+
+corner(ToggleBtn, CONFIG.ButtonCorner)
+stroke(ToggleBtn, CONFIG.InputBorder, 1)
+
+-- Unread badge
+local UnreadBadge = Instance.new("Frame")
+UnreadBadge.Name = "UnreadBadge"
+UnreadBadge.Size = UDim2.new(0, 16, 0, 16)
+UnreadBadge.Position = UDim2.new(1, -4, 0, -4)
+UnreadBadge.AnchorPoint = Vector2.new(1, 0)
+UnreadBadge.BackgroundColor3 = CONFIG.Accent
+UnreadBadge.ZIndex = 21
+UnreadBadge.Visible = false
+UnreadBadge.Parent = ToggleBtn
+corner(UnreadBadge, UDim.new(1, 0))
+
+local UnreadLabel = Instance.new("TextLabel")
+UnreadLabel.Size = UDim2.fromScale(1, 1)
+UnreadLabel.BackgroundTransparency = 1
+UnreadLabel.Text = "0"
+UnreadLabel.TextSize = 9
+UnreadLabel.Font = Enum.Font.GothamBold
+UnreadLabel.TextColor3 = Color3.new(1, 1, 1)
+UnreadLabel.ZIndex = 22
+UnreadLabel.Parent = UnreadBadge
+
+-- Button hover effect
+ToggleBtn.MouseEnter:Connect(function()
+    tween(ToggleBtn, FAST, { BackgroundColor3 = CONFIG.BG2 })
+end)
+ToggleBtn.MouseLeave:Connect(function()
+    tween(ToggleBtn, FAST, { BackgroundColor3 = CONFIG.BG })
+end)
+
+-- ─────────────────────────────────────────────
+-- CHAT WINDOW
+-- ─────────────────────────────────────────────
+local ChatWindow = Instance.new("Frame")
+ChatWindow.Name = "ChatWindow"
+ChatWindow.Size = UDim2.new(0, CONFIG.WindowWidth, 0, CONFIG.WindowHeight)
+ChatWindow.Position = UDim2.new(0, 12, 0, 62) -- Just below the toggle button
+ChatWindow.BackgroundColor3 = CONFIG.BG
+ChatWindow.Visible = false
+ChatWindow.ZIndex = 15
+ChatWindow.ClipsDescendants = true
+ChatWindow.Parent = ScreenGui
+
+corner(ChatWindow, CONFIG.CornerRadius)
+stroke(ChatWindow, CONFIG.InputBorder, 1)
+
+-- Title bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 36)
+TitleBar.Position = UDim2.new(0, 0, 0, 0)
+TitleBar.BackgroundColor3 = CONFIG.BG2
+TitleBar.ZIndex = 16
+TitleBar.Parent = ChatWindow
+corner(TitleBar, CONFIG.CornerRadius)
+
+-- Square off the bottom corners of TitleBar visually
+local TitleBarFill = Instance.new("Frame")
+TitleBarFill.Size = UDim2.new(1, 0, 0.5, 0)
+TitleBarFill.Position = UDim2.new(0, 0, 0.5, 0)
+TitleBarFill.BackgroundColor3 = CONFIG.BG2
+TitleBarFill.BorderSizePixel = 0
+TitleBarFill.ZIndex = 16
+TitleBarFill.Parent = TitleBar
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -80, 1, 0)
+TitleLabel.Position = UDim2.new(0, 12, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "Chat"
+TitleLabel.TextSize = 13
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextColor3 = CONFIG.TextColor
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.ZIndex = 17
+TitleLabel.Parent = TitleBar
+
+-- Close button in title bar
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -34, 0.5, 0)
+CloseBtn.AnchorPoint = Vector2.new(0, 0.5)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 30, 30)
+CloseBtn.Text = "✕"
+CloseBtn.TextSize = 11
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextColor3 = CONFIG.ErrorColor
+CloseBtn.AutoButtonColor = false
+CloseBtn.ZIndex = 18
+CloseBtn.Parent = TitleBar
+corner(CloseBtn, UDim.new(0, 6))
+
+CloseBtn.MouseEnter:Connect(function()
+    tween(CloseBtn, FAST, { BackgroundColor3 = Color3.fromRGB(90, 30, 30) })
+end)
+CloseBtn.MouseLeave:Connect(function()
+    tween(CloseBtn, FAST, { BackgroundColor3 = Color3.fromRGB(60, 30, 30) })
+end)
+
+-- Messages scroll frame
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Name = "Messages"
+ScrollFrame.Size = UDim2.new(1, -12, 1, -84)
+ScrollFrame.Position = UDim2.new(0, 6, 0, 40)
+ScrollFrame.BackgroundTransparency = 1
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.ScrollBarThickness = 3
+ScrollFrame.ScrollBarImageColor3 = CONFIG.Accent
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollFrame.ZIndex = 16
+ScrollFrame.Parent = ChatWindow
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ListLayout.Padding = UDim.new(0, 3)
+ListLayout.Parent = ScrollFrame
+
+local ScrollPadding = Instance.new("UIPadding")
+ScrollPadding.PaddingTop = UDim.new(0, 4)
+ScrollPadding.PaddingBottom = UDim.new(0, 4)
+ScrollPadding.Parent = ScrollFrame
+
+-- Input area
+local InputArea = Instance.new("Frame")
+InputArea.Name = "InputArea"
+InputArea.Size = UDim2.new(1, -12, 0, 34)
+InputArea.Position = UDim2.new(0, 6, 1, -40)
+InputArea.BackgroundColor3 = CONFIG.InputBG
+InputArea.ZIndex = 16
+InputArea.Parent = ChatWindow
+corner(InputArea, CONFIG.InputCorner)
+stroke(InputArea, CONFIG.InputBorder, 1)
+
+local ChatInput = Instance.new("TextBox")
+ChatInput.Name = "ChatInput"
+ChatInput.Size = UDim2.new(1, -44, 1, 0)
+ChatInput.Position = UDim2.new(0, 10, 0, 0)
+ChatInput.BackgroundTransparency = 1
+ChatInput.Text = ""
+ChatInput.PlaceholderText = "Say something..."
+ChatInput.PlaceholderColor3 = CONFIG.MutedText
+ChatInput.TextSize = 13
+ChatInput.Font = CONFIG.ChatFont
+ChatInput.TextColor3 = CONFIG.TextColor
+ChatInput.TextXAlignment = Enum.TextXAlignment.Left
+ChatInput.ClearTextOnFocus = false
+ChatInput.ZIndex = 17
+ChatInput.Parent = InputArea
+
+local SendBtn = Instance.new("TextButton")
+SendBtn.Name = "SendBtn"
+SendBtn.Size = UDim2.new(0, 32, 0, 26)
+SendBtn.Position = UDim2.new(1, -36, 0.5, 0)
+SendBtn.AnchorPoint = Vector2.new(0, 0.5)
+SendBtn.BackgroundColor3 = CONFIG.Accent
+SendBtn.Text = "↑"
+SendBtn.TextSize = 14
+SendBtn.Font = Enum.Font.GothamBold
+SendBtn.TextColor3 = Color3.new(1, 1, 1)
+SendBtn.AutoButtonColor = false
+SendBtn.ZIndex = 18
+SendBtn.Parent = InputArea
+corner(SendBtn, UDim.new(0, 6))
+
+SendBtn.MouseEnter:Connect(function()
+    tween(SendBtn, FAST, { BackgroundColor3 = CONFIG.AccentHover })
+end)
+SendBtn.MouseLeave:Connect(function()
+    tween(SendBtn, FAST, { BackgroundColor3 = CONFIG.Accent })
+end)
+
+-- ─────────────────────────────────────────────
+-- STATE
+-- ─────────────────────────────────────────────
+local isOpen = false
+local unreadCount = 0
+local messageCount = 0
+
+-- ─────────────────────────────────────────────
+-- OPEN / CLOSE
+-- ─────────────────────────────────────────────
+local function openChat()
+    isOpen = true
+    ChatWindow.Visible = true
+    ChatWindow.Size = UDim2.new(0, CONFIG.WindowWidth, 0, 0)
+    tween(ChatWindow, SMOOTH, { Size = UDim2.new(0, CONFIG.WindowWidth, 0, CONFIG.WindowHeight) })
+    unreadCount = 0
+    UnreadBadge.Visible = false
+    task.wait(0.1)
+    ChatInput:CaptureFocus()
+end
+
+local function closeChat()
+    isOpen = false
+    tween(ChatWindow, SMOOTH, { Size = UDim2.new(0, CONFIG.WindowWidth, 0, 0) })
+    task.wait(0.25)
+    if not isOpen then
+        ChatWindow.Visible = false
+    end
+    ChatInput:ReleaseFocus()
+end
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    if isOpen then
+        closeChat()
+    else
+        openChat()
+    end
+end)
+
+CloseBtn.MouseButton1Click:Connect(closeChat)
+
+-- ─────────────────────────────────────────────
+-- ADD MESSAGE TO SCROLL FRAME
+-- ─────────────────────────────────────────────
+local function addMessage(sender, message, color)
+    messageCount += 1
+
+    -- Trim old messages
+    local children = ScrollFrame:GetChildren()
+    local msgChildren = {}
+    for _, c in ipairs(children) do
+        if c:IsA("Frame") then
+            table.insert(msgChildren, c)
+        end
+    end
+    if #msgChildren >= CONFIG.MaxMessages then
+        msgChildren[1]:Destroy()
+    end
+
+    local msgColor = color or CONFIG.TextColor
+    local senderColor = (sender == "System") and CONFIG.SystemColor or CONFIG.SenderColor
+
+    local Row = Instance.new("Frame")
+    Row.Name = "Msg_" .. messageCount
+    Row.Size = UDim2.new(1, -4, 0, 0)
+    Row.AutomaticSize = Enum.AutomaticSize.Y
+    Row.BackgroundTransparency = 1
+    Row.LayoutOrder = messageCount
+    Row.ZIndex = 17
+    Row.Parent = ScrollFrame
+
+    local RowPad = Instance.new("UIPadding")
+    RowPad.PaddingLeft = UDim.new(0, 4)
+    RowPad.PaddingRight = UDim.new(0, 4)
+    RowPad.Parent = Row
+
+    local RowLayout = Instance.new("UIListLayout")
+    RowLayout.FillDirection = Enum.FillDirection.Horizontal
+    RowLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+    RowLayout.Padding = UDim.new(0, 4)
+    RowLayout.Parent = Row
+
+    -- Sender tag
+    local SenderLabel = Instance.new("TextLabel")
+    SenderLabel.AutomaticSize = Enum.AutomaticSize.X
+    SenderLabel.Size = UDim2.new(0, 0, 0, 18)
+    SenderLabel.BackgroundTransparency = 1
+    SenderLabel.Text = sender .. ":"
+    SenderLabel.TextSize = 12
+    SenderLabel.Font = Enum.Font.GothamBold
+    SenderLabel.TextColor3 = senderColor
+    SenderLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SenderLabel.TextYAlignment = Enum.TextYAlignment.Top
+    SenderLabel.ZIndex = 18
+    SenderLabel.Parent = Row
+
+    -- Message body
+    local MsgLabel = Instance.new("TextLabel")
+    MsgLabel.AutomaticSize = Enum.AutomaticSize.Y
+    MsgLabel.Size = UDim2.new(1, -80, 0, 0) -- flex remaining width
+    MsgLabel.BackgroundTransparency = 1
+    MsgLabel.Text = message
+    MsgLabel.TextSize = 13
+    MsgLabel.Font = CONFIG.ChatFont
+    MsgLabel.TextColor3 = msgColor
+    MsgLabel.TextWrapped = true
+    MsgLabel.TextXAlignment = Enum.TextXAlignment.Left
+    MsgLabel.TextYAlignment = Enum.TextYAlignment.Top
+    MsgLabel.ZIndex = 18
+    MsgLabel.Parent = Row
+
+    -- Auto-scroll to bottom
+    task.defer(function()
+        ScrollFrame.CanvasPosition = Vector2.new(0, math.huge)
+    end)
+
+    -- Unread badge
+    if not isOpen then
+        unreadCount += 1
+        UnreadBadge.Visible = true
+        UnreadLabel.Text = tostring(math.min(unreadCount, 99))
     end
 end
 
--- Run on respawn
-player.CharacterAdded:Connect(onCharacterAdded)
+-- ─────────────────────────────────────────────
+-- SEND MESSAGE
+-- ─────────────────────────────────────────────
+local function sendMessage()
+    local text = ChatInput.Text
+    if text == "" or text:match("^%s*$") then return end
+    ChatInput.Text = ""
 
---// Toggle input
+    -- Use TextChatService to actually send (modern Roblox)
+    local success, err = pcall(function()
+        local channel = TextChatService:FindFirstChild("TextChannels")
+        if channel then
+            local general = channel:FindFirstChild("RBXGeneral")
+            if general then
+                general:SendAsync(text)
+                return
+            end
+        end
+        -- Fallback: legacy chat
+        local Chat = game:GetService("Chat")
+        Chat:Chat(LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head"), text)
+    end)
+
+    if not success then
+        -- Display locally if send fails
+        addMessage(LocalPlayer.Name, text, CONFIG.TextColor)
+    end
+end
+
+SendBtn.MouseButton1Click:Connect(sendMessage)
+
+ChatInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        sendMessage()
+    end
+end)
+
+-- ─────────────────────────────────────────────
+-- RECEIVE MESSAGES VIA TextChatService
+-- ─────────────────────────────────────────────
+local function connectTextChatService()
+    local channels = TextChatService:WaitForChild("TextChannels", 5)
+    if not channels then return end
+
+    for _, channel in ipairs(channels:GetChildren()) do
+        if channel:IsA("TextChannel") then
+            channel.MessageReceived:Connect(function(msg)
+                local sender = "Unknown"
+                if msg.TextSource then
+                    local plr = Players:GetPlayerByUserId(msg.TextSource.UserId)
+                    if plr then
+                        sender = plr.Name
+                    end
+                end
+                addMessage(sender, msg.Text)
+            end)
+        end
+    end
+
+    -- Also watch for new channels added at runtime
+    channels.ChildAdded:Connect(function(channel)
+        if channel:IsA("TextChannel") then
+            task.wait() -- yield until channel is ready
+            channel.MessageReceived:Connect(function(msg)
+                local sender = "Unknown"
+                if msg.TextSource then
+                    local plr = Players:GetPlayerByUserId(msg.TextSource.UserId)
+                    if plr then
+                        sender = plr.Name
+                    end
+                end
+                addMessage(sender, msg.Text)
+            end)
+        end
+    end)
+end
+
+-- Legacy chat fallback
+local function connectLegacyChat()
+    Players.PlayerAdded:Connect(function(player)
+        player.Chatted:Connect(function(message)
+            addMessage(player.Name, message)
+        end)
+    end)
+    for _, player in ipairs(Players:GetPlayers()) do
+        player.Chatted:Connect(function(message)
+            addMessage(player.Name, message)
+        end)
+    end
+end
+
+-- Try modern first, fall back to legacy
+local ok = pcall(connectTextChatService)
+if not ok then
+    connectLegacyChat()
+end
+
+-- ─────────────────────────────────────────────
+-- SYSTEM WELCOME MESSAGE
+-- ─────────────────────────────────────────────
+task.delay(0.5, function()
+    addMessage("System", "Welcome to the game! Press the chat button or type to chat.", CONFIG.SystemColor)
+end)
+
+-- ─────────────────────────────────────────────
+-- KEYBOARD SHORTCUT — / or Enter to open
+-- ─────────────────────────────────────────────
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-
-    if input.KeyCode == TOGGLE_KEY then
-        enabled = not enabled
-
-        print("Godmode:", enabled and "ON" or "OFF")
-
-        if enabled then
-            pcall(godmodefunc)
+    if input.KeyCode == Enum.KeyCode.Slash then
+        if not isOpen then
+            openChat()
+            -- Pre-fill with "/"
+            task.defer(function()
+                ChatInput.Text = "/"
+                ChatInput.CursorPosition = 2
+            end)
         end
     end
 end)
+
+-- ─────────────────────────────────────────────
+-- DRAGGABLE WINDOW (optional quality of life)
+-- ─────────────────────────────────────────────
+do
+    local dragging = false
+    local dragStart, startPos
+
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = ChatWindow.Position
+        end
+    end)
+
+    TitleBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            ChatWindow.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
