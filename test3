@@ -15,11 +15,19 @@
 -- │  create policy "read"   on messages for select using (true); │
 -- │  create policy "insert" on messages for insert               │
 -- │    with check (true);                                        │
--- │  create policy "delete" on messages for delete               │
--- │    using (true);   -- used by ChatPurge server script        │
 -- │                                                              │
--- │  Companion script: ChatPurge.lua → ServerScriptService       │
--- │  (handles the Supabase DELETE every 3 minutes)               │
+-- │  Automatic Supabase-side deletion every 3 minutes:           │
+-- │  Enable the pg_cron extension and run:                       │
+-- │                                                              │
+-- │  select cron.schedule(                                       │
+-- │    'purge-old-messages',                                     │
+-- │    '*/3 * * * *',                                            │
+-- │    $$delete from messages                                    │
+-- │      where created_at < now() - interval '3 minutes'$$      │
+-- │  );                                                          │
+-- │                                                              │
+-- │  Companion: ChatPurge.lua → ServerScriptService              │
+-- │  (Roblox-side backup purge, also runs every 3 min)           │
 -- └──────────────────────────────────────────────────────────────┘
 
 -- ════════════════════════════════════════════════════════════════
@@ -34,6 +42,11 @@ local MAX_MSG_LEN   = 200   -- character cap per message
 local MSG_LIFETIME  = 180   -- seconds a message lives in the GUI (3 min)
 local EXPIRE_CHECK  = 10    -- how often the expiry sweep runs (seconds)
 local WARN_BEFORE   = 30    -- seconds before expiry to start dimming text
+
+-- Drag distance threshold in pixels — movements under this are
+-- treated as a click so the chat opens normally.
+-- Movements over this are treated as a drag and won't open the chat.
+local DRAG_THRESHOLD = 6
 -- ════════════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -53,7 +66,7 @@ local function hideDefaultChat()
     end)
 end
 hideDefaultChat()
-LocalPlayer.CharacterAdded:Connect(hideDefaultChat)  -- re-hide on respawn
+LocalPlayer.CharacterAdded:Connect(hideDefaultChat)
 
 -- ──────────────────────────────────────────────────────────────
 -- 2. COLOUR PALETTE
@@ -102,10 +115,10 @@ end
 
 local function stroke(parent, col, thickness)
     local s = Instance.new("UIStroke")
-    s.Color = col or C.Border
-    s.Thickness = thickness or 1
+    s.Color           = col or C.Border
+    s.Thickness       = thickness or 1
     s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    s.Parent = parent
+    s.Parent          = parent
 end
 
 local function nameColor(name)
@@ -115,8 +128,7 @@ local function nameColor(name)
 end
 
 -- ──────────────────────────────────────────────────────────────
--- 5. ISO-8601 → Unix epoch (seconds, UTC-corrected)
---    Handles Supabase timestamps like "2024-05-01T12:34:56.789Z"
+-- 5. ISO-8601 → Unix epoch (UTC-corrected)
 -- ──────────────────────────────────────────────────────────────
 local function isoToEpoch(s)
     if not s then return os.time() end
@@ -127,7 +139,6 @@ local function isoToEpoch(s)
         hour  = tonumber(h),  min   = tonumber(m),  sec  = tonumber(sec),
         isdst = false,
     })
-    -- Subtract the local-to-UTC offset so we compare against os.time() (UTC)
     local utcOffset = os.difftime(os.time(), os.time(os.date("!*t", os.time())))
     return localT - utcOffset
 end
@@ -152,25 +163,16 @@ local function request(path, method, body)
             Body    = body and HttpService:JSONEncode(body) or nil,
         })
     end)
-    if not ok then
-        return nil, "network error: " .. tostring(res)
-    end
+    if not ok then return nil, "network: " .. tostring(res) end
     if res.StatusCode >= 400 then
         return nil, "HTTP " .. res.StatusCode .. ": " .. tostring(res.Body)
     end
-    -- POST / DELETE — no body to decode
-    if method == "POST" or method == "DELETE" then
-        return true, nil
-    end
+    if method == "POST" or method == "DELETE" then return true, nil end
     local jok, parsed = pcall(HttpService.JSONDecode, HttpService, res.Body)
-    if not jok then
-        return nil, "JSON decode error"
-    end
+    if not jok then return nil, "JSON decode error" end
     return parsed, nil
 end
 
--- Fetch recent history (only rows newer than MSG_LIFETIME are shown;
--- stale ones are skipped inside addMsg)
 local function fetchHistory()
     return request(
         "/messages?select=id,username,content,created_at"
@@ -180,7 +182,6 @@ local function fetchHistory()
     )
 end
 
--- Fetch only rows with id > lastId (incremental poll)
 local function fetchSince(lastId)
     return request(
         "/messages?select=id,username,content,created_at"
@@ -190,34 +191,30 @@ local function fetchSince(lastId)
     )
 end
 
--- Insert a new message row
 local function postMessage(username, content)
-    return request("/messages", "POST", {
-        username = username,
-        content  = content,
-    })
+    return request("/messages", "POST", {username = username, content = content})
 end
 
 -- ──────────────────────────────────────────────────────────────
 -- 7. SCREEN GUI ROOT
 -- ──────────────────────────────────────────────────────────────
 local Gui = Instance.new("ScreenGui")
-Gui.Name             = "SupaChatGui"
-Gui.ResetOnSpawn     = false
-Gui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
-Gui.DisplayOrder     = 10
-Gui.IgnoreGuiInset   = false
-Gui.Parent           = PlayerGui
+Gui.Name           = "SupaChatGui"
+Gui.ResetOnSpawn   = false
+Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.DisplayOrder   = 10
+Gui.IgnoreGuiInset = false
+Gui.Parent         = PlayerGui
 
 -- ──────────────────────────────────────────────────────────────
--- 8. TOGGLE BUTTON  (Roblox speech-bubble icon)
+-- 8. TOGGLE BUTTON  (Roblox speech-bubble icon, draggable)
 -- ──────────────────────────────────────────────────────────────
 local Toggle = Instance.new("ImageButton")
 Toggle.Name             = "ChatToggle"
 Toggle.Size             = UDim2.new(0, 44, 0, 44)
 Toggle.Position         = UDim2.new(0, 12, 0, 12)
 Toggle.BackgroundColor3 = C.BG
-Toggle.Image            = "rbxassetid://7547547855"   -- Roblox chat speech-bubble
+Toggle.Image            = "rbxassetid://7547547855"
 Toggle.ImageColor3      = C.Text
 Toggle.AutoButtonColor  = false
 Toggle.ZIndex           = 20
@@ -228,7 +225,7 @@ stroke(Toggle, C.Border)
 Toggle.MouseEnter:Connect(function() tw(Toggle, {BackgroundColor3 = C.Surface}) end)
 Toggle.MouseLeave:Connect(function() tw(Toggle, {BackgroundColor3 = C.BG})      end)
 
--- Unread badge (shown when window is closed and new messages arrive)
+-- Unread badge
 local Badge = Instance.new("Frame")
 Badge.Size             = UDim2.new(0, 18, 0, 18)
 Badge.Position         = UDim2.new(1, -4, 0, -4)
@@ -240,14 +237,74 @@ Badge.Parent           = Toggle
 corner(Badge, 9)
 
 local BadgeTxt = Instance.new("TextLabel")
-BadgeTxt.Size                 = UDim2.fromScale(1, 1)
+BadgeTxt.Size                   = UDim2.fromScale(1, 1)
 BadgeTxt.BackgroundTransparency = 1
-BadgeTxt.Text                 = "0"
-BadgeTxt.TextSize             = 9
-BadgeTxt.Font                 = Enum.Font.GothamBold
-BadgeTxt.TextColor3           = Color3.new(1, 1, 1)
-BadgeTxt.ZIndex               = 23
-BadgeTxt.Parent               = Badge
+BadgeTxt.Text                   = "0"
+BadgeTxt.TextSize               = 9
+BadgeTxt.Font                   = Enum.Font.GothamBold
+BadgeTxt.TextColor3             = Color3.new(1, 1, 1)
+BadgeTxt.ZIndex                 = 23
+BadgeTxt.Parent                 = Badge
+
+-- ──────────────────────────────────────────────────────────────
+-- 8a. DRAGGABLE TOGGLE BUTTON
+--     Tracks how far the cursor moves while held.
+--     If the total delta is under DRAG_THRESHOLD px it counts as a
+--     click and the chat opens.  If it's over the threshold the
+--     button repositions and the chat does NOT open.
+-- ──────────────────────────────────────────────────────────────
+local toggleDragging  = false
+local toggleDragStart = nil   -- Vector3 cursor position on press
+local toggleStartPos  = nil   -- UDim2 position of Toggle on press
+local toggleMoved     = false -- true once the button has been dragged past threshold
+
+Toggle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        toggleDragging  = true
+        toggleMoved     = false
+        toggleDragStart = input.Position
+        toggleStartPos  = Toggle.Position
+    end
+end)
+
+Toggle.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        toggleDragging = false
+        -- toggleMoved is read by MouseButton1Click; reset after a frame
+        task.defer(function() toggleMoved = false end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not toggleDragging then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+    and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+    local delta = input.Position - toggleDragStart
+
+    if not toggleMoved and (math.abs(delta.X) > DRAG_THRESHOLD
+                        or  math.abs(delta.Y) > DRAG_THRESHOLD) then
+        toggleMoved = true
+    end
+
+    if toggleMoved then
+        -- Clamp inside the screen viewport
+        local vp     = game.Workspace.CurrentCamera.ViewportSize
+        local btnW   = Toggle.AbsoluteSize.X
+        local btnH   = Toggle.AbsoluteSize.Y
+        local newX   = math.clamp(toggleStartPos.X.Offset + delta.X, 0, vp.X - btnW)
+        local newY   = math.clamp(toggleStartPos.Y.Offset + delta.Y, 0, vp.Y - btnH)
+        Toggle.Position = UDim2.new(0, newX, 0, newY)
+    end
+end)
+
+-- Override the click signal: only open/close if the button wasn't dragged
+Toggle.MouseButton1Click:Connect(function()
+    if toggleMoved then return end   -- was a drag, not a click
+    -- handled in section 13 (openChat / closeChat)
+end)
 
 -- ──────────────────────────────────────────────────────────────
 -- 9. CHAT WINDOW FRAME
@@ -255,14 +312,14 @@ BadgeTxt.Parent               = Badge
 local WIN_W, WIN_H = 358, 292
 
 local Win = Instance.new("Frame")
-Win.Name              = "ChatWindow"
-Win.Size              = UDim2.new(0, WIN_W, 0, WIN_H)
-Win.Position          = UDim2.new(0, 12, 0, 62)   -- sits just below the toggle
-Win.BackgroundColor3  = C.BG
-Win.Visible           = false
-Win.ClipsDescendants  = true
-Win.ZIndex            = 15
-Win.Parent            = Gui
+Win.Name             = "ChatWindow"
+Win.Size             = UDim2.new(0, WIN_W, 0, WIN_H)
+Win.Position         = UDim2.new(0, 12, 0, 62)
+Win.BackgroundColor3 = C.BG
+Win.Visible          = false
+Win.ClipsDescendants = true
+Win.ZIndex           = 15
+Win.Parent           = Gui
 corner(Win, 12)
 stroke(Win, C.Border)
 
@@ -274,7 +331,6 @@ Header.ZIndex           = 16
 Header.Parent           = Win
 corner(Header, 12)
 
--- Covers the bottom rounded corners of the header so it looks flat at the join
 local HeaderFill = Instance.new("Frame")
 HeaderFill.Size             = UDim2.new(1, 0, 0.5, 0)
 HeaderFill.Position         = UDim2.new(0, 0, 0.5, 0)
@@ -283,7 +339,6 @@ HeaderFill.BorderSizePixel  = 0
 HeaderFill.ZIndex           = 16
 HeaderFill.Parent           = Header
 
--- Connection status dot
 local Dot = Instance.new("Frame")
 Dot.Size             = UDim2.new(0, 7, 0, 7)
 Dot.Position         = UDim2.new(0, 12, 0.5, 0)
@@ -294,28 +349,28 @@ Dot.Parent           = Header
 corner(Dot, 4)
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size                 = UDim2.new(1, -110, 1, 0)
-TitleLabel.Position             = UDim2.new(0, 26, 0, 0)
+TitleLabel.Size                   = UDim2.new(1, -110, 1, 0)
+TitleLabel.Position               = UDim2.new(0, 26, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text                 = "Chat"
-TitleLabel.TextSize             = 13
-TitleLabel.Font                 = Enum.Font.GothamBold
-TitleLabel.TextColor3           = C.Text
-TitleLabel.TextXAlignment       = Enum.TextXAlignment.Left
-TitleLabel.ZIndex               = 17
-TitleLabel.Parent               = Header
+TitleLabel.Text                   = "Chat"
+TitleLabel.TextSize               = 13
+TitleLabel.Font                   = Enum.Font.GothamBold
+TitleLabel.TextColor3             = C.Text
+TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
+TitleLabel.ZIndex                 = 17
+TitleLabel.Parent                 = Header
 
 local StatusTxt = Instance.new("TextLabel")
-StatusTxt.Size                 = UDim2.new(0, 110, 1, 0)
-StatusTxt.Position             = UDim2.new(1, -144, 0, 0)
+StatusTxt.Size                   = UDim2.new(0, 110, 1, 0)
+StatusTxt.Position               = UDim2.new(1, -144, 0, 0)
 StatusTxt.BackgroundTransparency = 1
-StatusTxt.Text                 = "connecting..."
-StatusTxt.TextSize             = 10
-StatusTxt.Font                 = Enum.Font.Gotham
-StatusTxt.TextColor3           = C.Muted
-StatusTxt.TextXAlignment       = Enum.TextXAlignment.Right
-StatusTxt.ZIndex               = 17
-StatusTxt.Parent               = Header
+StatusTxt.Text                   = "connecting..."
+StatusTxt.TextSize               = 10
+StatusTxt.Font                   = Enum.Font.Gotham
+StatusTxt.TextColor3             = C.Muted
+StatusTxt.TextXAlignment         = Enum.TextXAlignment.Right
+StatusTxt.ZIndex                 = 17
+StatusTxt.Parent                 = Header
 
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size             = UDim2.new(0, 26, 0, 26)
@@ -335,16 +390,16 @@ CloseBtn.MouseLeave:Connect(function() tw(CloseBtn, {BackgroundColor3 = Color3.f
 
 -- ── Message scroll frame ─────────────────────────────────────
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size                 = UDim2.new(1, -10, 1, -82)
-Scroll.Position             = UDim2.new(0, 5, 0, 42)
+Scroll.Size                   = UDim2.new(1, -10, 1, -82)
+Scroll.Position               = UDim2.new(0, 5, 0, 42)
 Scroll.BackgroundTransparency = 1
-Scroll.BorderSizePixel      = 0
-Scroll.ScrollBarThickness   = 2
-Scroll.ScrollBarImageColor3 = C.Accent
-Scroll.CanvasSize           = UDim2.new(0, 0, 0, 0)
-Scroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
-Scroll.ZIndex               = 16
-Scroll.Parent               = Win
+Scroll.BorderSizePixel        = 0
+Scroll.ScrollBarThickness     = 2
+Scroll.ScrollBarImageColor3   = C.Accent
+Scroll.CanvasSize             = UDim2.new(0, 0, 0, 0)
+Scroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+Scroll.ZIndex                 = 16
+Scroll.Parent                 = Win
 
 local MsgList = Instance.new("UIListLayout")
 MsgList.SortOrder = Enum.SortOrder.LayoutOrder
@@ -369,19 +424,19 @@ corner(InputRow, 8)
 stroke(InputRow, C.Border)
 
 local Input = Instance.new("TextBox")
-Input.Size                 = UDim2.new(1, -44, 1, 0)
-Input.Position             = UDim2.new(0, 10, 0, 0)
+Input.Size                   = UDim2.new(1, -44, 1, 0)
+Input.Position               = UDim2.new(0, 10, 0, 0)
 Input.BackgroundTransparency = 1
-Input.Text                 = ""
-Input.PlaceholderText      = "Message..."
-Input.PlaceholderColor3    = C.Muted
-Input.TextSize             = 13
-Input.Font                 = Enum.Font.Gotham
-Input.TextColor3           = C.Text
-Input.TextXAlignment       = Enum.TextXAlignment.Left
-Input.ClearTextOnFocus     = false
-Input.ZIndex               = 17
-Input.Parent               = InputRow
+Input.Text                   = ""
+Input.PlaceholderText        = "Message..."
+Input.PlaceholderColor3      = C.Muted
+Input.TextSize               = 13
+Input.Font                   = Enum.Font.Gotham
+Input.TextColor3             = C.Text
+Input.TextXAlignment         = Enum.TextXAlignment.Left
+Input.ClearTextOnFocus       = false
+Input.ZIndex                 = 17
+Input.Parent                 = InputRow
 
 local SendBtn = Instance.new("TextButton")
 SendBtn.Size             = UDim2.new(0, 30, 0, 24)
@@ -405,45 +460,33 @@ SendBtn.MouseLeave:Connect(function() tw(SendBtn, {BackgroundColor3 = C.Accent})
 local isOpen      = false
 local unread      = 0
 local order       = 0
-local seenIds     = {}   -- [dbId] = true   — prevents duplicate rows
-local lastId      = 0    -- highest db id we've seen; used for incremental polls
-local rowRegistry = {}   -- [Frame] = createdEpoch   — drives the expiry sweep
+local seenIds     = {}   -- [dbId] = true
+local lastId      = 0
+local rowRegistry = {}   -- [Frame] = createdEpoch
 
 -- ──────────────────────────────────────────────────────────────
 -- 11. ADD MESSAGE ROW
---     sender     : display name (string)
---     text       : message body (string)
---     isSystem   : true → shows as a muted system note
---     dbId       : Supabase row id (number, optional) — used for dedup
---     createdAt  : ISO-8601 timestamp string from Supabase (optional)
 -- ──────────────────────────────────────────────────────────────
 local function addMsg(sender, text, isSystem, dbId, createdAt)
-    -- ── Deduplicate by database id ────────────────────────────
     if dbId then
         if seenIds[dbId] then return end
         seenIds[dbId] = true
         if dbId > lastId then lastId = dbId end
     end
 
-    -- ── Resolve the message's birth time ─────────────────────
     local epoch = createdAt and isoToEpoch(createdAt) or os.time()
-
-    -- Skip rows already older than MSG_LIFETIME (shouldn't happen
-    -- if ChatPurge is running, but guards against clock drift)
     if (os.time() - epoch) >= MSG_LIFETIME then return end
 
     order += 1
 
-    -- ── Build the row frame ───────────────────────────────────
     local row = Instance.new("Frame")
-    row.Size              = UDim2.new(1, -6, 0, 0)
-    row.AutomaticSize     = Enum.AutomaticSize.Y
+    row.Size                   = UDim2.new(1, -6, 0, 0)
+    row.AutomaticSize          = Enum.AutomaticSize.Y
     row.BackgroundTransparency = 1
-    row.LayoutOrder       = order
-    row.ZIndex            = 17
-    row.Parent            = Scroll
+    row.LayoutOrder            = order
+    row.ZIndex                 = 17
+    row.Parent                 = Scroll
 
-    -- Register so the expiry sweep can track and fade it
     rowRegistry[row] = epoch
 
     local rowPad = Instance.new("UIPadding")
@@ -452,50 +495,46 @@ local function addMsg(sender, text, isSystem, dbId, createdAt)
     rowPad.Parent       = row
 
     local rowLayout = Instance.new("UIListLayout")
-    rowLayout.FillDirection    = Enum.FillDirection.Horizontal
+    rowLayout.FillDirection     = Enum.FillDirection.Horizontal
     rowLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-    rowLayout.Padding          = UDim.new(0, 5)
-    rowLayout.Parent           = row
+    rowLayout.Padding           = UDim.new(0, 5)
+    rowLayout.Parent            = row
 
-    -- Sender name tag
     local nameLabel = Instance.new("TextLabel")
-    nameLabel.AutomaticSize    = Enum.AutomaticSize.XY
-    nameLabel.Size             = UDim2.new(0, 0, 0, 0)
+    nameLabel.AutomaticSize          = Enum.AutomaticSize.XY
+    nameLabel.Size                   = UDim2.new(0, 0, 0, 0)
     nameLabel.BackgroundTransparency = 1
-    nameLabel.Text             = (isSystem and "●" or sender) .. ":"
-    nameLabel.TextSize         = 12
-    nameLabel.Font             = Enum.Font.GothamBold
-    nameLabel.TextColor3       = isSystem and C.Muted or nameColor(sender)
-    nameLabel.TextXAlignment   = Enum.TextXAlignment.Left
-    nameLabel.TextYAlignment   = Enum.TextYAlignment.Top
-    nameLabel.ZIndex           = 18
-    nameLabel.LayoutOrder      = 1
-    nameLabel.Parent           = row
+    nameLabel.Text                   = (isSystem and "●" or sender) .. ":"
+    nameLabel.TextSize               = 12
+    nameLabel.Font                   = Enum.Font.GothamBold
+    nameLabel.TextColor3             = isSystem and C.Muted or nameColor(sender)
+    nameLabel.TextXAlignment         = Enum.TextXAlignment.Left
+    nameLabel.TextYAlignment         = Enum.TextYAlignment.Top
+    nameLabel.ZIndex                 = 18
+    nameLabel.LayoutOrder            = 1
+    nameLabel.Parent                 = row
 
-    -- Message body
     local msgLabel = Instance.new("TextLabel")
-    msgLabel.AutomaticSize     = Enum.AutomaticSize.Y
-    msgLabel.Size              = UDim2.new(1, -96, 0, 0)
+    msgLabel.AutomaticSize          = Enum.AutomaticSize.Y
+    msgLabel.Size                   = UDim2.new(1, -96, 0, 0)
     msgLabel.BackgroundTransparency = 1
-    msgLabel.Text              = text
-    msgLabel.TextSize          = 13
-    msgLabel.Font              = Enum.Font.Gotham
-    msgLabel.TextColor3        = isSystem and C.System or C.Text
-    msgLabel.TextWrapped       = true
-    msgLabel.TextXAlignment    = Enum.TextXAlignment.Left
-    msgLabel.TextYAlignment    = Enum.TextYAlignment.Top
-    msgLabel.ZIndex            = 18
-    msgLabel.LayoutOrder       = 2
-    msgLabel.Parent            = row
+    msgLabel.Text                   = text
+    msgLabel.TextSize               = 13
+    msgLabel.Font                   = Enum.Font.Gotham
+    msgLabel.TextColor3             = isSystem and C.System or C.Text
+    msgLabel.TextWrapped            = true
+    msgLabel.TextXAlignment         = Enum.TextXAlignment.Left
+    msgLabel.TextYAlignment         = Enum.TextYAlignment.Top
+    msgLabel.ZIndex                 = 18
+    msgLabel.LayoutOrder            = 2
+    msgLabel.Parent                 = row
 
-    -- Auto-scroll to bottom
     task.defer(function()
         Scroll.CanvasPosition = Vector2.new(0, math.huge)
     end)
 
-    -- Increment unread badge when window is closed
     if not isOpen then
-        unread += 1
+        unread        += 1
         Badge.Visible  = true
         BadgeTxt.Text  = tostring(math.min(unread, 99))
     end
@@ -503,9 +542,9 @@ end
 
 -- ──────────────────────────────────────────────────────────────
 -- 12. MESSAGE EXPIRY SWEEP
---     Runs every EXPIRE_CHECK seconds.
---     • At (MSG_LIFETIME - WARN_BEFORE) seconds: dims text to Muted
---     • At MSG_LIFETIME seconds:                 fades out and destroys the row
+--     Every EXPIRE_CHECK seconds:
+--       • age >= (MSG_LIFETIME - WARN_BEFORE): dim text to Muted
+--       • age >= MSG_LIFETIME:                 fade out + destroy row
 -- ──────────────────────────────────────────────────────────────
 local WARN_AT = MSG_LIFETIME - WARN_BEFORE
 
@@ -515,7 +554,6 @@ task.spawn(function()
         local now = os.time()
 
         for frame, epoch in pairs(rowRegistry) do
-            -- Guard: frame may have been destroyed by something else
             if not frame or not frame.Parent then
                 rowRegistry[frame] = nil
                 continue
@@ -524,31 +562,22 @@ task.spawn(function()
             local age = now - epoch
 
             if age >= MSG_LIFETIME then
-                -- Hard expire — unregister first to prevent double-processing
                 rowRegistry[frame] = nil
-
-                -- Fade every TextLabel inside the row, then destroy the frame
                 for _, child in ipairs(frame:GetDescendants()) do
                     if child:IsA("TextLabel") then
                         tw(child, {TextTransparency = 1}, FADE)
                     end
                 end
-                local fadeTween = TweenService:Create(frame, FADE, {BackgroundTransparency = 1})
-                fadeTween:Play()
-                fadeTween.Completed:Once(function()
-                    if frame and frame.Parent then
-                        frame:Destroy()
-                    end
+                local t = TweenService:Create(frame, FADE, {BackgroundTransparency = 1})
+                t:Play()
+                t.Completed:Once(function()
+                    if frame and frame.Parent then frame:Destroy() end
                 end)
 
             elseif age >= WARN_AT then
-                -- Warning zone — gently dim all text in the row
                 for _, child in ipairs(frame:GetDescendants()) do
-                    if child:IsA("TextLabel") then
-                        -- Only tween if not already at muted colour
-                        if child.TextColor3 ~= C.Muted then
-                            tw(child, {TextColor3 = C.Muted}, FADE)
-                        end
+                    if child:IsA("TextLabel") and child.TextColor3 ~= C.Muted then
+                        tw(child, {TextColor3 = C.Muted}, FADE)
                     end
                 end
             end
@@ -558,11 +587,20 @@ end)
 
 -- ──────────────────────────────────────────────────────────────
 -- 13. OPEN / CLOSE WINDOW
+--     The window is positioned relative to the toggle button's
+--     current position so it always appears attached to it.
 -- ──────────────────────────────────────────────────────────────
+local function getWinPos()
+    -- Place the window 6px below the toggle button
+    local tp = Toggle.Position
+    return UDim2.new(tp.X.Scale, tp.X.Offset, tp.Y.Scale, tp.Y.Offset + 50)
+end
+
 local function openChat()
     isOpen        = true
     unread        = 0
     Badge.Visible = false
+    Win.Position  = getWinPos()
     Win.Size      = UDim2.new(0, WIN_W, 0, 0)
     Win.Visible   = true
     tw(Win, {Size = UDim2.new(0, WIN_W, 0, WIN_H)}, SMOOTH)
@@ -579,9 +617,12 @@ local function closeChat()
     end)
 end
 
+-- Toggle click — only fires when it wasn't a drag (toggleMoved guard)
 Toggle.MouseButton1Click:Connect(function()
+    if toggleMoved then return end
     if isOpen then closeChat() else openChat() end
 end)
+
 CloseBtn.MouseButton1Click:Connect(closeChat)
 
 -- ──────────────────────────────────────────────────────────────
@@ -591,45 +632,39 @@ local sending = false
 
 local function doSend()
     if sending then return end
-    local raw = Input.Text:match("^%s*(.-)%s*$")   -- trim whitespace
+    local raw = Input.Text:match("^%s*(.-)%s*$")
     if raw == "" then return end
     local text = raw:sub(1, MAX_MSG_LEN)
     Input.Text = ""
     sending    = true
-
     task.spawn(function()
         local ok, err = postMessage(LocalPlayer.Name, text)
         sending = false
         if not ok then
-            -- Show error locally; don't add to Supabase
             addMsg("System", "Send failed: " .. tostring(err), true)
         end
-        -- Our own message will arrive via the next poll and be deduped by id
     end)
 end
 
 SendBtn.MouseButton1Click:Connect(doSend)
-Input.FocusLost:Connect(function(enterPressed)
-    if enterPressed then doSend() end
-end)
+Input.FocusLost:Connect(function(enter) if enter then doSend() end end)
 
 -- ──────────────────────────────────────────────────────────────
 -- 15. STATUS BAR HELPER
 -- ──────────────────────────────────────────────────────────────
 local function setStatus(txt, textCol, dotCol)
-    StatusTxt.Text        = txt
-    StatusTxt.TextColor3  = textCol or C.Muted
-    Dot.BackgroundColor3  = dotCol  or C.Muted
+    StatusTxt.Text       = txt
+    StatusTxt.TextColor3 = textCol or C.Muted
+    Dot.BackgroundColor3 = dotCol  or C.Muted
 end
 
 -- ──────────────────────────────────────────────────────────────
 -- 16. MAIN CONNECTION + POLL LOOP
 -- ──────────────────────────────────────────────────────────────
 task.spawn(function()
-    task.wait(1)   -- short delay so the GUI finishes parenting
+    task.wait(1)
     setStatus("connecting...", C.Muted, C.Muted)
 
-    -- Load history
     local hist, err = fetchHistory()
     if not hist then
         setStatus("offline", C.Error, C.Error)
@@ -644,7 +679,6 @@ task.spawn(function()
 
     setStatus("live", C.Online, C.Online)
 
-    -- Incremental poll loop — only fetches rows newer than lastId
     while true do
         task.wait(POLL_INTERVAL)
         local rows, _ = fetchSince(lastId)
@@ -657,7 +691,7 @@ task.spawn(function()
 end)
 
 -- ──────────────────────────────────────────────────────────────
--- 17. DRAGGABLE WINDOW  (grab the header to move)
+-- 17. DRAGGABLE CHAT WINDOW  (grab the header bar)
 -- ──────────────────────────────────────────────────────────────
 do
     local dragging, dragStart, startPos = false, nil, nil
@@ -677,18 +711,18 @@ do
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            Win.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+        local d = input.Position - dragStart
+        Win.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + d.X,
+            startPos.Y.Scale, startPos.Y.Offset + d.Y
+        )
     end)
 end
 
 -- ──────────────────────────────────────────────────────────────
--- 18. KEYBOARD SHORTCUT  — press / to open and focus input
+-- 18. KEYBOARD SHORTCUT  — press / to open
 -- ──────────────────────────────────────────────────────────────
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
