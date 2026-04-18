@@ -25,8 +25,8 @@
 -- ════════════════════════════════════════════════════════════════
 --  CONFIG  ← fill these in
 -- ════════════════════════════════════════════════════════════════
-local SUPABASE_URL      = "https://YOUR_PROJECT_REF.supabase.co"
-local SUPABASE_ANON_KEY = "YOUR_ANON_KEY"
+local SUPABASE_URL      = "https://qfquqnwnnaacxeihxnus.supabase.co"
+local SUPABASE_ANON_KEY = "sb_publishable_dVUXibT8T0pxEftEK4dkNA_ruJkKRPf"
 
 local POLL_INTERVAL = 2.5   -- seconds between new-message polls
 local HISTORY_LIMIT = 60    -- messages loaded on first connect
