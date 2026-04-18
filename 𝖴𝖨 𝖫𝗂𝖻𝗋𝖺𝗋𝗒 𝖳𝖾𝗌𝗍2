@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2081,6 +2081,8 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 
 local activeConnection = nil
+local charConnection   = nil  -- CharacterAdded listener
+local isEnabled        = false
 
 local function startPhysicsLoop(root)
     if activeConnection then
@@ -2096,7 +2098,7 @@ local function startPhysicsLoop(root)
         end
 
         local oldV = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = oldV * 0 + Vector3.new(0, 0, 0)
+        root.AssemblyLinearVelocity = Vector3.zero
         RunService.RenderStepped:Wait()
         root.AssemblyLinearVelocity = oldV
         RunService.Stepped:Wait()
@@ -2113,44 +2115,67 @@ end
 
 local function applyStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
+    local root     = char:FindFirstChild("HumanoidRootPart")
     if not humanoid or not root then return end
 
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead,        false)
     humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,     false)
     root.CanCollide = false
 end
 
 local function removeStateOverrides(char)
     local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
+    local root     = char:FindFirstChild("HumanoidRootPart")
     if humanoid then
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead,        true)
         humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,     true)
     end
-    if root then
-        root.CanCollide = true
-    end
+    if root then root.CanCollide = true end
+end
+
+-- called every time a fresh character spawns while toggle is ON
+local function onCharacterAdded(char)
+    -- wait for HumanoidRootPart to exist (it may not be parented yet)
+    local root = char:WaitForChild("HumanoidRootPart", 5)
+    if not root then return end
+
+    stopPhysicsLoop()          -- kill any stale loop from the old body
+    applyStateOverrides(char)
+    startPhysicsLoop(root)
 end
 
 Tab:AddToggle({
     Label   = "Loop Perma Death",
     Default = false,
     Callback = function(value)
-        local char = player.Character
-        if not char then return end
-
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
+        isEnabled = value
 
         if value then
-            applyStateOverrides(char)
-            startPhysicsLoop(root)
+            -- apply to current character immediately
+            local char = player.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    applyStateOverrides(char)
+                    startPhysicsLoop(root)
+                end
+            end
+
+            -- re-apply automatically on every respawn
+            charConnection = player.CharacterAdded:Connect(onCharacterAdded)
         else
+            -- tear everything down
             stopPhysicsLoop()
-            removeStateOverrides(char)
+
+            if charConnection then
+                charConnection:Disconnect()
+                charConnection = nil
+            end
+
+            local char = player.Character
+            if char then removeStateOverrides(char) end
         end
     end,
 })
