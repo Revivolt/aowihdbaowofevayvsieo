@@ -39,7 +39,7 @@ local SUPABASE_ANON_KEY = "sb_publishable_dVUXibT8T0pxEftEK4dkNA_ruJkKRPf"
 local POLL_INTERVAL = 2.5   -- seconds between new-message polls
 local HISTORY_LIMIT = 60    -- messages loaded on first connect
 local MAX_MSG_LEN   = 200   -- character cap per message
-local MSG_LIFETIME  = 180   -- seconds a message lives in the GUI (3 min)
+local MSG_LIFETIME  = 60   -- seconds a message lives in the GUI (3 min)
 local EXPIRE_CHECK  = 10    -- how often the expiry sweep runs (seconds)
 local WARN_BEFORE   = 30    -- seconds before expiry to start dimming text
 
