@@ -1,6 +1,6 @@
 -- CustomChatGUI.lua
 -- LocalScript — place inside StarterPlayerScripts
--- test
+--
 -- ┌──────────────────────────────────────────────────────────────┐
 -- │  Supabase table — run this once in the SQL editor:           │
 -- │                                                              │
@@ -41,7 +41,7 @@ local SUPABASE_ANON_KEY = "sb_publishable_dVUXibT8T0pxEftEK4dkNA_ruJkKRPf"
 local POLL_INTERVAL  = 2.5   -- seconds between polls
 local HISTORY_LIMIT  = 60    -- rows loaded on connect per channel
 local MAX_MSG_LEN    = 200   -- character cap per message
-local MSG_LIFETIME   = 60   -- seconds a row lives in the GUI (3 min)
+local MSG_LIFETIME   = 180   -- seconds a row lives in the GUI (3 min)
 local EXPIRE_CHECK   = 10    -- expiry sweep interval (seconds)
 local WARN_BEFORE    = 30    -- seconds before expiry to start dimming
 local DRAG_THRESHOLD = 6     -- px — drag vs click threshold for toggle btn
@@ -509,12 +509,13 @@ local unread      = 0
 local order       = 0
 local rowRegistry = {}   -- [Frame] = createdEpoch
 
--- Channel state table — keyed by "server" and "global"
+-- Channel state — keyed by "server" and "global"
+-- cache: array of {sender,text,isSystem,dbId,createdAt,epoch} — persists across tab switches
 local ch = {
-    server = { seenIds = {}, lastId = 0, loaded = false },
-    global = { seenIds = {}, lastId = 0, loaded = false },
+    server = { seenIds = {}, lastId = 0, loaded = false, cache = {} },
+    global = { seenIds = {}, lastId = 0, loaded = false, cache = {} },
 }
-local activeChannel = "server"   -- which tab is currently visible
+local activeChannel = "server"
 
 -- ──────────────────────────────────────────────────────────────
 -- 11. TAB SWITCHING VISUALS
@@ -532,27 +533,11 @@ local function refreshTabVisuals()
 end
 
 -- ──────────────────────────────────────────────────────────────
--- 12. ADD MESSAGE ROW
---     scope: "server" | "global" — only shown when tab matches
 -- ──────────────────────────────────────────────────────────────
-local function addMsg(sender, text, isSystem, dbId, createdAt, scope)
-    scope = scope or "global"
-
-    -- Only show rows for the active channel
-    if scope ~= activeChannel then return end
-
-    local state = ch[scope]
-
-    -- Deduplicate by database id
-    if dbId then
-        if state.seenIds[dbId] then return end
-        state.seenIds[dbId] = true
-        if dbId > state.lastId then state.lastId = dbId end
-    end
-
-    local epoch = createdAt and isoToEpoch(createdAt) or os.time()
-    if (os.time() - epoch) >= MSG_LIFETIME then return end
-
+-- 12. RENDER ONE MESSAGE ROW INTO THE SCROLL FRAME
+--     Does NOT touch the cache — call cacheAndRender for that.
+-- ──────────────────────────────────────────────────────────────
+local function renderRow(sender, text, isSystem, epoch)
     order += 1
 
     local row = Instance.new("Frame")
@@ -608,6 +593,42 @@ local function addMsg(sender, text, isSystem, dbId, createdAt, scope)
     task.defer(function()
         Scroll.CanvasPosition = Vector2.new(0, math.huge)
     end)
+end
+
+-- ──────────────────────────────────────────────────────────────
+-- 13. ADD MESSAGE (dedup + cache + render if active tab)
+--     scope: "server" | "global"
+-- ──────────────────────────────────────────────────────────────
+local function addMsg(sender, text, isSystem, dbId, createdAt, scope)
+    scope = scope or "global"
+
+    local state = ch[scope]
+
+    -- Deduplicate by database id
+    if dbId then
+        if state.seenIds[dbId] then return end
+        state.seenIds[dbId] = true
+        if dbId > state.lastId then state.lastId = dbId end
+    end
+
+    local epoch = createdAt and isoToEpoch(createdAt) or os.time()
+    -- Skip rows already past their lifetime
+    if (os.time() - epoch) >= MSG_LIFETIME then return end
+
+    -- Always write to this channel's cache so it survives tab switches
+    table.insert(state.cache, {
+        sender    = sender,
+        text      = text,
+        isSystem  = isSystem,
+        dbId      = dbId,
+        createdAt = createdAt,
+        epoch     = epoch,
+    })
+
+    -- Only render immediately if this channel is the one on screen
+    if scope ~= activeChannel then return end
+
+    renderRow(sender, text, isSystem, epoch)
 
     if not isOpen then
         unread       += 1
@@ -616,10 +637,9 @@ local function addMsg(sender, text, isSystem, dbId, createdAt, scope)
     end
 end
 
+-- 14. CLEAR SCROLL DOM  (does NOT touch the cache)
 -- ──────────────────────────────────────────────────────────────
--- 13. CLEAR SCROLL + RELOAD FOR CHANNEL SWITCH
--- ──────────────────────────────────────────────────────────────
-local function clearMessages()
+local function clearScrollDOM()
     for _, child in ipairs(Scroll:GetChildren()) do
         if child:IsA("Frame") then
             rowRegistry[child] = nil
@@ -629,8 +649,25 @@ local function clearMessages()
     order = 0
 end
 
+-- Re-render a channel's cached messages into the (now empty) scroll frame.
+-- Prunes expired entries from the cache at the same time.
+local function renderCacheForChannel(channel)
+    local state = ch[channel]
+    local now   = os.time()
+    local fresh = {}
+    for _, entry in ipairs(state.cache) do
+        if (now - entry.epoch) < MSG_LIFETIME then
+            table.insert(fresh, entry)
+        end
+    end
+    state.cache = fresh
+    for _, entry in ipairs(fresh) do
+        renderRow(entry.sender, entry.text, entry.isSystem, entry.epoch)
+    end
+end
+
 -- ──────────────────────────────────────────────────────────────
--- 14. STATUS HELPER
+-- 16. STATUS HELPER
 -- ──────────────────────────────────────────────────────────────
 local function setStatus(txt, textCol, dotCol)
     StatusTxt.Text       = txt
@@ -639,31 +676,41 @@ local function setStatus(txt, textCol, dotCol)
 end
 
 -- ──────────────────────────────────────────────────────────────
--- 15. LOAD CHANNEL  (history + starts poll if first load)
+-- 15. LOAD CHANNEL
+--     First visit:  fetch history from Supabase, cache + render it,
+--                   then start the poll loop.
+--     Repeat visit: clear the DOM, re-render from cache instantly,
+--                   resume the poll loop for fresh messages.
 -- ──────────────────────────────────────────────────────────────
-local pollThread = nil   -- current coroutine running the poll loop
+local pollThread = nil
 
 local function loadChannel(channel)
-    -- Cancel previous poll
+    -- Cancel the previous channel's poll
     if pollThread then
         task.cancel(pollThread)
         pollThread = nil
     end
 
-    clearMessages()
+    -- Clear only the visible DOM rows — cache survives
+    clearScrollDOM()
     activeChannel = channel
     refreshTabVisuals()
 
     local state = ch[channel]
 
-    setStatus("loading...", C.Muted, C.Muted)
-
-    task.spawn(function()
-        if not state.loaded then
+    if state.loaded then
+        -- Already have data: re-render from cache immediately (no network call)
+        renderCacheForChannel(channel)
+        setStatus("live", C.Online, C.Online)
+    else
+        -- First time loading this channel
+        setStatus("loading...", C.Muted, C.Muted)
+        task.spawn(function()
             local hist, err = fetchHistory(channel)
             if not hist then
                 setStatus("offline", C.Error, C.Error)
-                addMsg("System", "Could not load messages: " .. tostring(err), true, nil, nil, channel)
+                addMsg("System", "Could not load messages: " .. tostring(err),
+                    true, nil, nil, channel)
                 return
             end
             for _, row in ipairs(hist) do
@@ -671,26 +718,29 @@ local function loadChannel(channel)
                     row.id, row.created_at, channel)
             end
             state.loaded = true
-        end
+            setStatus("live", C.Online, C.Online)
+        end)
+    end
 
-        setStatus("live", C.Online, C.Online)
-
-        -- Poll loop for this channel
-        pollThread = task.spawn(function()
-            while true do
-                task.wait(POLL_INTERVAL)
-                local rows, _ = fetchSince(state.lastId, channel)
-                if rows then
-                    for _, row in ipairs(rows) do
-                        if row.id > state.lastId then
-                            state.lastId = row.id
-                        end
-                        addMsg(row.username or "?", row.content or "", false,
-                            row.id, row.created_at, channel)
+    -- Start poll loop for this channel (runs independently of history load)
+    pollThread = task.spawn(function()
+        -- Small delay on first load so history finishes before poll fires
+        if not state.loaded then task.wait(1) end
+        while true do
+            task.wait(POLL_INTERVAL)
+            -- Guard: channel may have switched while we were waiting
+            if activeChannel ~= channel then return end
+            local rows, _ = fetchSince(state.lastId, channel)
+            if rows then
+                for _, row in ipairs(rows) do
+                    if row.id > state.lastId then
+                        state.lastId = row.id
                     end
+                    addMsg(row.username or "?", row.content or "", false,
+                        row.id, row.created_at, channel)
                 end
             end
-        end)
+        end
     end)
 end
 
