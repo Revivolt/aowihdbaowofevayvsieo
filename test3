@@ -1,13 +1,14 @@
 -- CustomChatGUI.lua
 -- LocalScript — place inside StarterPlayerScripts
---
+-- test
 -- ┌──────────────────────────────────────────────────────────────┐
 -- │  Supabase table — run this once in the SQL editor:           │
 -- │                                                              │
 -- │  create table messages (                                     │
 -- │    id         bigint generated always as identity            │
 -- │                       primary key,                           │
--- │    server_id  text not null,                                 │
+-- │    channel    text not null,   -- 'server' or 'global'       │
+-- │    server_id  text not null,   -- game.JobId (server msgs)   │
 -- │    username   text not null,                                 │
 -- │    content    text not null,                                 │
 -- │    created_at timestamptz default now()                      │
@@ -16,6 +17,10 @@
 -- │  create policy "read"   on messages for select using (true); │
 -- │  create policy "insert" on messages for insert               │
 -- │    with check (true);                                        │
+-- │                                                              │
+-- │  If upgrading an existing table, just add the column:        │
+-- │  alter table messages                                        │
+-- │    add column channel text not null default 'global';        │
 -- │                                                              │
 -- │  pg_cron purge (run once):                                   │
 -- │  select cron.schedule(                                       │
@@ -172,11 +177,16 @@ local function request(path, method, body)
     return parsed, nil
 end
 
--- serverFilter: if true, adds &server_id=eq.<SERVER_ID> to the query
-local function fetchHistory(serverFilter)
-    local filter = serverFilter and ("&server_id=eq." .. SERVER_ID) or ""
+-- Fetch history for a channel.
+-- Server channel: filter by channel='server' AND server_id=<SERVER_ID>
+-- Global channel: filter by channel='global' only (all servers)
+local function fetchHistory(channel)
+    local filter = "&channel=eq." .. channel
+    if channel == "server" then
+        filter = filter .. "&server_id=eq." .. SERVER_ID
+    end
     return request(
-        "/messages?select=id,server_id,username,content,created_at"
+        "/messages?select=id,channel,server_id,username,content,created_at"
             .. "&order=created_at.asc"
             .. "&limit=" .. HISTORY_LIMIT
             .. filter,
@@ -184,10 +194,13 @@ local function fetchHistory(serverFilter)
     )
 end
 
-local function fetchSince(lastId, serverFilter)
-    local filter = serverFilter and ("&server_id=eq." .. SERVER_ID) or ""
+local function fetchSince(lastId, channel)
+    local filter = "&channel=eq." .. channel
+    if channel == "server" then
+        filter = filter .. "&server_id=eq." .. SERVER_ID
+    end
     return request(
-        "/messages?select=id,server_id,username,content,created_at"
+        "/messages?select=id,channel,server_id,username,content,created_at"
             .. "&order=id.asc"
             .. "&id=gt." .. lastId
             .. filter,
@@ -195,9 +208,13 @@ local function fetchSince(lastId, serverFilter)
     )
 end
 
-local function postMessage(username, content)
+-- Post a message — stamps channel and server_id correctly.
+-- Server messages carry the real JobId; global messages use "global" as server_id
+-- so the column is never empty, but only server rows are ever filtered by it.
+local function postMessage(username, content, channel)
     return request("/messages", "POST", {
-        server_id = SERVER_ID,
+        channel   = channel,
+        server_id = (channel == "server") and SERVER_ID or "global",
         username  = username,
         content   = content,
     })
@@ -637,33 +654,21 @@ local function loadChannel(channel)
     activeChannel = channel
     refreshTabVisuals()
 
-    local state      = ch[channel]
-    local isServer   = (channel == "server")
+    local state = ch[channel]
 
     setStatus("loading...", C.Muted, C.Muted)
 
     task.spawn(function()
         if not state.loaded then
-            -- First-time load: fetch history
-            local hist, err = fetchHistory(isServer)
+            local hist, err = fetchHistory(channel)
             if not hist then
                 setStatus("offline", C.Error, C.Error)
                 addMsg("System", "Could not load messages: " .. tostring(err), true, nil, nil, channel)
                 return
             end
             for _, row in ipairs(hist) do
-                -- Determine scope from server_id column
-                local scope = (row.server_id == SERVER_ID) and "server" or "global"
-                -- For server channel only show matching server_id rows
-                -- (filter already applied server-side, but double-check)
-                if not isServer or scope == "server" then
-                    -- temporarily force activeChannel match
-                    local prev = activeChannel
-                    activeChannel = channel
-                    addMsg(row.username or "?", row.content or "", false,
-                        row.id, row.created_at, channel)
-                    activeChannel = prev
-                end
+                addMsg(row.username or "?", row.content or "", false,
+                    row.id, row.created_at, channel)
             end
             state.loaded = true
         end
@@ -674,10 +679,9 @@ local function loadChannel(channel)
         pollThread = task.spawn(function()
             while true do
                 task.wait(POLL_INTERVAL)
-                local rows, _ = fetchSince(state.lastId, isServer)
+                local rows, _ = fetchSince(state.lastId, channel)
                 if rows then
                     for _, row in ipairs(rows) do
-                        -- Update lastId even if not displayed (keeps cursor fresh)
                         if row.id > state.lastId then
                             state.lastId = row.id
                         end
@@ -793,7 +797,7 @@ local function doSend()
     Input.Text = ""
     sending    = true
     task.spawn(function()
-        local ok, err = postMessage(LocalPlayer.Name, text)
+        local ok, err = postMessage(LocalPlayer.Name, text, activeChannel)
         sending = false
         if not ok then
             addMsg("System", "Send failed: " .. tostring(err), true, nil, nil, activeChannel)
