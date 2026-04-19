@@ -7,6 +7,7 @@
 -- │  create table messages (                                     │
 -- │    id         bigint generated always as identity            │
 -- │                       primary key,                           │
+-- │    server_id  text not null,                                 │
 -- │    username   text not null,                                 │
 -- │    content    text not null,                                 │
 -- │    created_at timestamptz default now()                      │
@@ -16,18 +17,14 @@
 -- │  create policy "insert" on messages for insert               │
 -- │    with check (true);                                        │
 -- │                                                              │
--- │  Automatic Supabase-side deletion every 3 minutes:           │
--- │  Enable the pg_cron extension and run:                       │
--- │                                                              │
+-- │  pg_cron purge (run once):                                   │
 -- │  select cron.schedule(                                       │
--- │    'purge-old-messages',                                     │
--- │    '*/3 * * * *',                                            │
--- │    $$delete from messages                                    │
+-- │    'purge-old-messages', '*/3 * * * *',                      │
+-- │    $$delete from public.messages                             │
 -- │      where created_at < now() - interval '3 minutes'$$      │
 -- │  );                                                          │
 -- │                                                              │
 -- │  Companion: ChatPurge.lua → ServerScriptService              │
--- │  (Roblox-side backup purge, also runs every 3 min)           │
 -- └──────────────────────────────────────────────────────────────┘
 
 -- ════════════════════════════════════════════════════════════════
@@ -36,17 +33,13 @@
 local SUPABASE_URL      = "https://qfquqnwnnaacxeihxnus.supabase.co"
 local SUPABASE_ANON_KEY = "sb_publishable_dVUXibT8T0pxEftEK4dkNA_ruJkKRPf"
 
-local POLL_INTERVAL = 2.5   -- seconds between new-message polls
-local HISTORY_LIMIT = 60    -- messages loaded on first connect
-local MAX_MSG_LEN   = 200   -- character cap per message
-local MSG_LIFETIME  = 60   -- seconds a message lives in the GUI (3 min)
-local EXPIRE_CHECK  = 10    -- how often the expiry sweep runs (seconds)
-local WARN_BEFORE   = 30    -- seconds before expiry to start dimming text
-
--- Drag distance threshold in pixels — movements under this are
--- treated as a click so the chat opens normally.
--- Movements over this are treated as a drag and won't open the chat.
-local DRAG_THRESHOLD = 6
+local POLL_INTERVAL  = 2.5   -- seconds between polls
+local HISTORY_LIMIT  = 60    -- rows loaded on connect per channel
+local MAX_MSG_LEN    = 200   -- character cap per message
+local MSG_LIFETIME   = 60   -- seconds a row lives in the GUI (3 min)
+local EXPIRE_CHECK   = 10    -- expiry sweep interval (seconds)
+local WARN_BEFORE    = 30    -- seconds before expiry to start dimming
+local DRAG_THRESHOLD = 6     -- px — drag vs click threshold for toggle btn
 -- ════════════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -56,6 +49,9 @@ local HttpService      = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Stable server identifier — same for everyone in this server instance
+local SERVER_ID = tostring(game.JobId ~= "" and game.JobId or "studio-test")
 
 -- ──────────────────────────────────────────────────────────────
 -- 1. HIDE DEFAULT ROBLOX CHAT BUTTON
@@ -72,17 +68,20 @@ LocalPlayer.CharacterAdded:Connect(hideDefaultChat)
 -- 2. COLOUR PALETTE
 -- ──────────────────────────────────────────────────────────────
 local C = {
-    BG       = Color3.fromRGB(16,  16,  22),
-    Surface  = Color3.fromRGB(24,  24,  33),
-    Elevated = Color3.fromRGB(32,  32,  44),
-    Border   = Color3.fromRGB(48,  48,  66),
-    Accent   = Color3.fromRGB(85,  125, 255),
-    AccentHi = Color3.fromRGB(105, 148, 255),
-    Text     = Color3.fromRGB(222, 222, 238),
-    Muted    = Color3.fromRGB(110, 110, 138),
-    System   = Color3.fromRGB(155, 155, 180),
-    Error    = Color3.fromRGB(255, 85,  85),
-    Online   = Color3.fromRGB(72,  210, 128),
+    BG         = Color3.fromRGB(16,  16,  22),
+    Surface    = Color3.fromRGB(24,  24,  33),
+    Elevated   = Color3.fromRGB(32,  32,  44),
+    Border     = Color3.fromRGB(48,  48,  66),
+    Accent     = Color3.fromRGB(85,  125, 255),
+    AccentHi   = Color3.fromRGB(105, 148, 255),
+    AccentDim  = Color3.fromRGB(50,  75,  160),
+    Text       = Color3.fromRGB(222, 222, 238),
+    Muted      = Color3.fromRGB(110, 110, 138),
+    System     = Color3.fromRGB(155, 155, 180),
+    Error      = Color3.fromRGB(255, 85,  85),
+    Online     = Color3.fromRGB(72,  210, 128),
+    TabActive  = Color3.fromRGB(85,  125, 255),
+    TabInactive= Color3.fromRGB(32,  32,  44),
     Names = {
         Color3.fromRGB(100, 170, 255),
         Color3.fromRGB(120, 215, 155),
@@ -173,26 +172,35 @@ local function request(path, method, body)
     return parsed, nil
 end
 
-local function fetchHistory()
+-- serverFilter: if true, adds &server_id=eq.<SERVER_ID> to the query
+local function fetchHistory(serverFilter)
+    local filter = serverFilter and ("&server_id=eq." .. SERVER_ID) or ""
     return request(
-        "/messages?select=id,username,content,created_at"
+        "/messages?select=id,server_id,username,content,created_at"
             .. "&order=created_at.asc"
-            .. "&limit=" .. HISTORY_LIMIT,
+            .. "&limit=" .. HISTORY_LIMIT
+            .. filter,
         "GET"
     )
 end
 
-local function fetchSince(lastId)
+local function fetchSince(lastId, serverFilter)
+    local filter = serverFilter and ("&server_id=eq." .. SERVER_ID) or ""
     return request(
-        "/messages?select=id,username,content,created_at"
+        "/messages?select=id,server_id,username,content,created_at"
             .. "&order=id.asc"
-            .. "&id=gt." .. lastId,
+            .. "&id=gt." .. lastId
+            .. filter,
         "GET"
     )
 end
 
 local function postMessage(username, content)
-    return request("/messages", "POST", {username = username, content = content})
+    return request("/messages", "POST", {
+        server_id = SERVER_ID,
+        username  = username,
+        content   = content,
+    })
 end
 
 -- ──────────────────────────────────────────────────────────────
@@ -246,17 +254,11 @@ BadgeTxt.TextColor3             = Color3.new(1, 1, 1)
 BadgeTxt.ZIndex                 = 23
 BadgeTxt.Parent                 = Badge
 
--- ──────────────────────────────────────────────────────────────
--- 8a. DRAGGABLE TOGGLE BUTTON
---     Tracks how far the cursor moves while held.
---     If the total delta is under DRAG_THRESHOLD px it counts as a
---     click and the chat opens.  If it's over the threshold the
---     button repositions and the chat does NOT open.
--- ──────────────────────────────────────────────────────────────
+-- ── Draggable toggle ─────────────────────────────────────────
 local toggleDragging  = false
-local toggleDragStart = nil   -- Vector3 cursor position on press
-local toggleStartPos  = nil   -- UDim2 position of Toggle on press
-local toggleMoved     = false -- true once the button has been dragged past threshold
+local toggleDragStart = nil
+local toggleStartPos  = nil
+local toggleMoved     = false
 
 Toggle.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -272,7 +274,6 @@ Toggle.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
     or input.UserInputType == Enum.UserInputType.Touch then
         toggleDragging = false
-        -- toggleMoved is read by MouseButton1Click; reset after a frame
         task.defer(function() toggleMoved = false end)
     end
 end)
@@ -290,26 +291,21 @@ UserInputService.InputChanged:Connect(function(input)
     end
 
     if toggleMoved then
-        -- Clamp inside the screen viewport
-        local vp     = game.Workspace.CurrentCamera.ViewportSize
-        local btnW   = Toggle.AbsoluteSize.X
-        local btnH   = Toggle.AbsoluteSize.Y
-        local newX   = math.clamp(toggleStartPos.X.Offset + delta.X, 0, vp.X - btnW)
-        local newY   = math.clamp(toggleStartPos.Y.Offset + delta.Y, 0, vp.Y - btnH)
-        Toggle.Position = UDim2.new(0, newX, 0, newY)
+        local vp   = game.Workspace.CurrentCamera.ViewportSize
+        local btnW = Toggle.AbsoluteSize.X
+        local btnH = Toggle.AbsoluteSize.Y
+        Toggle.Position = UDim2.new(0,
+            math.clamp(toggleStartPos.X.Offset + delta.X, 0, vp.X - btnW),
+            0,
+            math.clamp(toggleStartPos.Y.Offset + delta.Y, 0, vp.Y - btnH)
+        )
     end
-end)
-
--- Override the click signal: only open/close if the button wasn't dragged
-Toggle.MouseButton1Click:Connect(function()
-    if toggleMoved then return end   -- was a drag, not a click
-    -- handled in section 13 (openChat / closeChat)
 end)
 
 -- ──────────────────────────────────────────────────────────────
 -- 9. CHAT WINDOW FRAME
 -- ──────────────────────────────────────────────────────────────
-local WIN_W, WIN_H = 358, 292
+local WIN_W, WIN_H = 380, 300
 
 local Win = Instance.new("Frame")
 Win.Name             = "ChatWindow"
@@ -325,12 +321,13 @@ stroke(Win, C.Border)
 
 -- ── Header bar ──────────────────────────────────────────────
 local Header = Instance.new("Frame")
-Header.Size             = UDim2.new(1, 0, 0, 38)
+Header.Size             = UDim2.new(1, 0, 0, 42)
 Header.BackgroundColor3 = C.Surface
 Header.ZIndex           = 16
 Header.Parent           = Win
 corner(Header, 12)
 
+-- Flatten header bottom corners
 local HeaderFill = Instance.new("Frame")
 HeaderFill.Size             = UDim2.new(1, 0, 0.5, 0)
 HeaderFill.Position         = UDim2.new(0, 0, 0.5, 0)
@@ -339,6 +336,7 @@ HeaderFill.BorderSizePixel  = 0
 HeaderFill.ZIndex           = 16
 HeaderFill.Parent           = Header
 
+-- Status dot (left side)
 local Dot = Instance.new("Frame")
 Dot.Size             = UDim2.new(0, 7, 0, 7)
 Dot.Position         = UDim2.new(0, 12, 0.5, 0)
@@ -348,9 +346,10 @@ Dot.ZIndex           = 17
 Dot.Parent           = Header
 corner(Dot, 4)
 
+-- "Chat" title label (left side, after dot)
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size                   = UDim2.new(1, -110, 1, 0)
-TitleLabel.Position               = UDim2.new(0, 26, 0, 0)
+TitleLabel.Size                   = UDim2.new(0, 40, 1, 0)
+TitleLabel.Position               = UDim2.new(0, 24, 0, 0)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Text                   = "Chat"
 TitleLabel.TextSize               = 13
@@ -360,9 +359,54 @@ TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
 TitleLabel.ZIndex                 = 17
 TitleLabel.Parent                 = Header
 
+-- ── Tab buttons — Server and Global ──────────────────────────
+-- Container sits right of title, centred in header
+local TabContainer = Instance.new("Frame")
+TabContainer.Size             = UDim2.new(0, 162, 0, 26)
+TabContainer.Position         = UDim2.new(0, 72, 0.5, 0)
+TabContainer.AnchorPoint      = Vector2.new(0, 0.5)
+TabContainer.BackgroundColor3 = C.Elevated
+TabContainer.ZIndex           = 17
+TabContainer.Parent           = Header
+corner(TabContainer, 7)
+stroke(TabContainer, C.Border)
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.FillDirection  = Enum.FillDirection.Horizontal
+TabLayout.SortOrder      = Enum.SortOrder.LayoutOrder
+TabLayout.Padding        = UDim.new(0, 2)
+TabLayout.Parent         = TabContainer
+
+local TabPad = Instance.new("UIPadding")
+TabPad.PaddingLeft   = UDim.new(0, 2)
+TabPad.PaddingRight  = UDim.new(0, 2)
+TabPad.PaddingTop    = UDim.new(0, 2)
+TabPad.PaddingBottom = UDim.new(0, 2)
+TabPad.Parent        = TabContainer
+
+local function makeTab(labelText, layoutOrder)
+    local btn = Instance.new("TextButton")
+    btn.Size             = UDim2.new(0, 77, 1, 0)
+    btn.BackgroundColor3 = C.TabInactive
+    btn.Text             = labelText
+    btn.TextSize         = 12
+    btn.Font             = Enum.Font.GothamBold
+    btn.TextColor3       = C.Muted
+    btn.AutoButtonColor  = false
+    btn.ZIndex           = 18
+    btn.LayoutOrder      = layoutOrder
+    btn.Parent           = TabContainer
+    corner(btn, 5)
+    return btn
+end
+
+local ServerTab = makeTab("Server", 1)
+local GlobalTab = makeTab("Global", 2)
+
+-- Status label (right side of header, shows "live" / "connecting...")
 local StatusTxt = Instance.new("TextLabel")
-StatusTxt.Size                   = UDim2.new(0, 110, 1, 0)
-StatusTxt.Position               = UDim2.new(1, -144, 0, 0)
+StatusTxt.Size                   = UDim2.new(0, 80, 1, 0)
+StatusTxt.Position               = UDim2.new(1, -88, 0, 0)
 StatusTxt.BackgroundTransparency = 1
 StatusTxt.Text                   = "connecting..."
 StatusTxt.TextSize               = 10
@@ -372,26 +416,10 @@ StatusTxt.TextXAlignment         = Enum.TextXAlignment.Right
 StatusTxt.ZIndex                 = 17
 StatusTxt.Parent                 = Header
 
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size             = UDim2.new(0, 26, 0, 26)
-CloseBtn.Position         = UDim2.new(1, -32, 0.5, 0)
-CloseBtn.AnchorPoint      = Vector2.new(0, 0.5)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(50, 26, 26)
-CloseBtn.Text             = "✕"
-CloseBtn.TextSize         = 10
-CloseBtn.Font             = Enum.Font.GothamBold
-CloseBtn.TextColor3       = C.Error
-CloseBtn.AutoButtonColor  = false
-CloseBtn.ZIndex           = 18
-CloseBtn.Parent           = Header
-corner(CloseBtn, 6)
-CloseBtn.MouseEnter:Connect(function() tw(CloseBtn, {BackgroundColor3 = Color3.fromRGB(80, 26, 26)}) end)
-CloseBtn.MouseLeave:Connect(function() tw(CloseBtn, {BackgroundColor3 = Color3.fromRGB(50, 26, 26)}) end)
-
 -- ── Message scroll frame ─────────────────────────────────────
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size                   = UDim2.new(1, -10, 1, -82)
-Scroll.Position               = UDim2.new(0, 5, 0, 42)
+Scroll.Size                   = UDim2.new(1, -10, 1, -86)
+Scroll.Position               = UDim2.new(0, 5, 0, 46)
 Scroll.BackgroundTransparency = 1
 Scroll.BorderSizePixel        = 0
 Scroll.ScrollBarThickness     = 2
@@ -456,22 +484,53 @@ SendBtn.MouseLeave:Connect(function() tw(SendBtn, {BackgroundColor3 = C.Accent})
 
 -- ──────────────────────────────────────────────────────────────
 -- 10. RUNTIME STATE
+--     Each channel (server / global) has its own seen-ids set
+--     and last-fetched-id so polls are independent.
 -- ──────────────────────────────────────────────────────────────
 local isOpen      = false
 local unread      = 0
 local order       = 0
-local seenIds     = {}   -- [dbId] = true
-local lastId      = 0
 local rowRegistry = {}   -- [Frame] = createdEpoch
 
+-- Channel state table — keyed by "server" and "global"
+local ch = {
+    server = { seenIds = {}, lastId = 0, loaded = false },
+    global = { seenIds = {}, lastId = 0, loaded = false },
+}
+local activeChannel = "server"   -- which tab is currently visible
+
 -- ──────────────────────────────────────────────────────────────
--- 11. ADD MESSAGE ROW
+-- 11. TAB SWITCHING VISUALS
 -- ──────────────────────────────────────────────────────────────
-local function addMsg(sender, text, isSystem, dbId, createdAt)
+local function refreshTabVisuals()
+    if activeChannel == "server" then
+        tw(ServerTab, {BackgroundColor3 = C.TabActive,   TextColor3 = C.Text})
+        tw(GlobalTab, {BackgroundColor3 = C.TabInactive, TextColor3 = C.Muted})
+        Input.PlaceholderText = "Message this server..."
+    else
+        tw(GlobalTab, {BackgroundColor3 = C.TabActive,   TextColor3 = C.Text})
+        tw(ServerTab, {BackgroundColor3 = C.TabInactive, TextColor3 = C.Muted})
+        Input.PlaceholderText = "Message everyone..."
+    end
+end
+
+-- ──────────────────────────────────────────────────────────────
+-- 12. ADD MESSAGE ROW
+--     scope: "server" | "global" — only shown when tab matches
+-- ──────────────────────────────────────────────────────────────
+local function addMsg(sender, text, isSystem, dbId, createdAt, scope)
+    scope = scope or "global"
+
+    -- Only show rows for the active channel
+    if scope ~= activeChannel then return end
+
+    local state = ch[scope]
+
+    -- Deduplicate by database id
     if dbId then
-        if seenIds[dbId] then return end
-        seenIds[dbId] = true
-        if dbId > lastId then lastId = dbId end
+        if state.seenIds[dbId] then return end
+        state.seenIds[dbId] = true
+        if dbId > state.lastId then state.lastId = dbId end
     end
 
     local epoch = createdAt and isoToEpoch(createdAt) or os.time()
@@ -534,17 +593,105 @@ local function addMsg(sender, text, isSystem, dbId, createdAt)
     end)
 
     if not isOpen then
-        unread        += 1
-        Badge.Visible  = true
-        BadgeTxt.Text  = tostring(math.min(unread, 99))
+        unread       += 1
+        Badge.Visible = true
+        BadgeTxt.Text = tostring(math.min(unread, 99))
     end
 end
 
 -- ──────────────────────────────────────────────────────────────
--- 12. MESSAGE EXPIRY SWEEP
---     Every EXPIRE_CHECK seconds:
---       • age >= (MSG_LIFETIME - WARN_BEFORE): dim text to Muted
---       • age >= MSG_LIFETIME:                 fade out + destroy row
+-- 13. CLEAR SCROLL + RELOAD FOR CHANNEL SWITCH
+-- ──────────────────────────────────────────────────────────────
+local function clearMessages()
+    for _, child in ipairs(Scroll:GetChildren()) do
+        if child:IsA("Frame") then
+            rowRegistry[child] = nil
+            child:Destroy()
+        end
+    end
+    order = 0
+end
+
+-- ──────────────────────────────────────────────────────────────
+-- 14. STATUS HELPER
+-- ──────────────────────────────────────────────────────────────
+local function setStatus(txt, textCol, dotCol)
+    StatusTxt.Text       = txt
+    StatusTxt.TextColor3 = textCol or C.Muted
+    Dot.BackgroundColor3 = dotCol  or C.Muted
+end
+
+-- ──────────────────────────────────────────────────────────────
+-- 15. LOAD CHANNEL  (history + starts poll if first load)
+-- ──────────────────────────────────────────────────────────────
+local pollThread = nil   -- current coroutine running the poll loop
+
+local function loadChannel(channel)
+    -- Cancel previous poll
+    if pollThread then
+        task.cancel(pollThread)
+        pollThread = nil
+    end
+
+    clearMessages()
+    activeChannel = channel
+    refreshTabVisuals()
+
+    local state      = ch[channel]
+    local isServer   = (channel == "server")
+
+    setStatus("loading...", C.Muted, C.Muted)
+
+    task.spawn(function()
+        if not state.loaded then
+            -- First-time load: fetch history
+            local hist, err = fetchHistory(isServer)
+            if not hist then
+                setStatus("offline", C.Error, C.Error)
+                addMsg("System", "Could not load messages: " .. tostring(err), true, nil, nil, channel)
+                return
+            end
+            for _, row in ipairs(hist) do
+                -- Determine scope from server_id column
+                local scope = (row.server_id == SERVER_ID) and "server" or "global"
+                -- For server channel only show matching server_id rows
+                -- (filter already applied server-side, but double-check)
+                if not isServer or scope == "server" then
+                    -- temporarily force activeChannel match
+                    local prev = activeChannel
+                    activeChannel = channel
+                    addMsg(row.username or "?", row.content or "", false,
+                        row.id, row.created_at, channel)
+                    activeChannel = prev
+                end
+            end
+            state.loaded = true
+        end
+
+        setStatus("live", C.Online, C.Online)
+
+        -- Poll loop for this channel
+        pollThread = task.spawn(function()
+            while true do
+                task.wait(POLL_INTERVAL)
+                local rows, _ = fetchSince(state.lastId, isServer)
+                if rows then
+                    for _, row in ipairs(rows) do
+                        -- Update lastId even if not displayed (keeps cursor fresh)
+                        if row.id > state.lastId then
+                            state.lastId = row.id
+                        end
+                        addMsg(row.username or "?", row.content or "", false,
+                            row.id, row.created_at, channel)
+                    end
+                end
+            end
+        end)
+    end)
+end
+
+-- ──────────────────────────────────────────────────────────────
+-- 16. MESSAGE EXPIRY SWEEP
 -- ──────────────────────────────────────────────────────────────
 local WARN_AT = MSG_LIFETIME - WARN_BEFORE
 
@@ -552,15 +699,12 @@ task.spawn(function()
     while true do
         task.wait(EXPIRE_CHECK)
         local now = os.time()
-
         for frame, epoch in pairs(rowRegistry) do
             if not frame or not frame.Parent then
                 rowRegistry[frame] = nil
                 continue
             end
-
             local age = now - epoch
-
             if age >= MSG_LIFETIME then
                 rowRegistry[frame] = nil
                 for _, child in ipairs(frame:GetDescendants()) do
@@ -573,7 +717,6 @@ task.spawn(function()
                 t.Completed:Once(function()
                     if frame and frame.Parent then frame:Destroy() end
                 end)
-
             elseif age >= WARN_AT then
                 for _, child in ipairs(frame:GetDescendants()) do
                     if child:IsA("TextLabel") and child.TextColor3 ~= C.Muted then
@@ -586,12 +729,9 @@ task.spawn(function()
 end)
 
 -- ──────────────────────────────────────────────────────────────
--- 13. OPEN / CLOSE WINDOW
---     The window is positioned relative to the toggle button's
---     current position so it always appears attached to it.
+-- 17. OPEN / CLOSE WINDOW
 -- ──────────────────────────────────────────────────────────────
 local function getWinPos()
-    -- Place the window 6px below the toggle button
     local tp = Toggle.Position
     return UDim2.new(tp.X.Scale, tp.X.Offset, tp.Y.Scale, tp.Y.Offset + 50)
 end
@@ -604,6 +744,11 @@ local function openChat()
     Win.Size      = UDim2.new(0, WIN_W, 0, 0)
     Win.Visible   = true
     tw(Win, {Size = UDim2.new(0, WIN_W, 0, WIN_H)}, SMOOTH)
+    -- Load the active channel on first open
+    if not ch[activeChannel].loaded or pollThread == nil then
+        task.wait(0.05)
+        loadChannel(activeChannel)
+    end
     task.wait(0.1)
     Input:CaptureFocus()
 end
@@ -617,16 +762,26 @@ local function closeChat()
     end)
 end
 
--- Toggle click — only fires when it wasn't a drag (toggleMoved guard)
 Toggle.MouseButton1Click:Connect(function()
     if toggleMoved then return end
     if isOpen then closeChat() else openChat() end
 end)
 
-CloseBtn.MouseButton1Click:Connect(closeChat)
+-- ──────────────────────────────────────────────────────────────
+-- 18. TAB BUTTON CLICKS
+-- ──────────────────────────────────────────────────────────────
+ServerTab.MouseButton1Click:Connect(function()
+    if activeChannel == "server" then return end
+    loadChannel("server")
+end)
+
+GlobalTab.MouseButton1Click:Connect(function()
+    if activeChannel == "global" then return end
+    loadChannel("global")
+end)
 
 -- ──────────────────────────────────────────────────────────────
--- 14. SEND MESSAGE
+-- 19. SEND MESSAGE
 -- ──────────────────────────────────────────────────────────────
 local sending = false
 
@@ -641,8 +796,9 @@ local function doSend()
         local ok, err = postMessage(LocalPlayer.Name, text)
         sending = false
         if not ok then
-            addMsg("System", "Send failed: " .. tostring(err), true)
+            addMsg("System", "Send failed: " .. tostring(err), true, nil, nil, activeChannel)
         end
+        -- Poll will pick up our own message and dedup it by id
     end)
 end
 
@@ -650,48 +806,7 @@ SendBtn.MouseButton1Click:Connect(doSend)
 Input.FocusLost:Connect(function(enter) if enter then doSend() end end)
 
 -- ──────────────────────────────────────────────────────────────
--- 15. STATUS BAR HELPER
--- ──────────────────────────────────────────────────────────────
-local function setStatus(txt, textCol, dotCol)
-    StatusTxt.Text       = txt
-    StatusTxt.TextColor3 = textCol or C.Muted
-    Dot.BackgroundColor3 = dotCol  or C.Muted
-end
-
--- ──────────────────────────────────────────────────────────────
--- 16. MAIN CONNECTION + POLL LOOP
--- ──────────────────────────────────────────────────────────────
-task.spawn(function()
-    task.wait(1)
-    setStatus("connecting...", C.Muted, C.Muted)
-
-    local hist, err = fetchHistory()
-    if not hist then
-        setStatus("offline", C.Error, C.Error)
-        addMsg("System",
-            "Could not reach Supabase — check SUPABASE_URL and SUPABASE_ANON_KEY.", true)
-        return
-    end
-
-    for _, row in ipairs(hist) do
-        addMsg(row.username or "?", row.content or "", false, row.id, row.created_at)
-    end
-
-    setStatus("live", C.Online, C.Online)
-
-    while true do
-        task.wait(POLL_INTERVAL)
-        local rows, _ = fetchSince(lastId)
-        if rows then
-            for _, row in ipairs(rows) do
-                addMsg(row.username or "?", row.content or "", false, row.id, row.created_at)
-            end
-        end
-    end
-end)
-
--- ──────────────────────────────────────────────────────────────
--- 17. DRAGGABLE CHAT WINDOW  (grab the header bar)
+-- 20. DRAGGABLE CHAT WINDOW  (grab header to move)
 -- ──────────────────────────────────────────────────────────────
 do
     local dragging, dragStart, startPos = false, nil, nil
@@ -703,13 +818,11 @@ do
             startPos  = Win.Position
         end
     end)
-
     Header.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = false
         end
     end)
-
     UserInputService.InputChanged:Connect(function(input)
         if not dragging then return end
         if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
@@ -722,7 +835,7 @@ do
 end
 
 -- ──────────────────────────────────────────────────────────────
--- 18. KEYBOARD SHORTCUT  — press / to open
+-- 21. KEYBOARD SHORTCUT  — / to open
 -- ──────────────────────────────────────────────────────────────
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
@@ -734,3 +847,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         end)
     end
 end)
+
+-- ──────────────────────────────────────────────────────────────
+-- 22. INITIALISE — set default tab visual on script start
+-- ──────────────────────────────────────────────────────────────
+refreshTabVisuals()
