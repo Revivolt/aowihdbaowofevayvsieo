@@ -275,8 +275,12 @@ function NovaUI:CreateWindow(cfg)
         Parent         = GetGuiParent(),
     })
 
-    local Main = New("Frame", {
+    -- Using TextButton instead of Frame so the entire window area sinks
+    -- input and prevents the game camera from responding to drags.
+    local Main = New("TextButton", {
         Name                   = "Main",
+        Text                   = "",
+        AutoButtonColor        = false,
         Size                   = sz,
         Position               = pos,
         BackgroundColor3       = Theme.Background,
@@ -289,8 +293,12 @@ function NovaUI:CreateWindow(cfg)
     Stroke(Theme.Border, 1, Main)
 
     -- ── Title bar ────────────────────────────────────────
-    local TitleBar = New("Frame", {
+    -- Using TextButton instead of Frame so that mouse/touch inputs are
+    -- consumed by the GUI and never reach the game's camera controller.
+    local TitleBar = New("TextButton", {
         Name                   = "TitleBar",
+        Text                   = "",
+        AutoButtonColor        = false,
         Size                   = UDim2.new(1, 0, 0, 44),
         Position               = UDim2.new(0, 0, 0, 0),
         BackgroundTransparency = 1,
