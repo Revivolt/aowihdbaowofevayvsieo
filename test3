@@ -46,13 +46,13 @@
 -- ════════════════════════════════════════════════════════════════════
 --  CONFIG  ← fill these in
 -- ════════════════════════════════════════════════════════════════════
-local SUPABASE_URL      = "https://YOUR_PROJECT_REF.supabase.co"
-local SUPABASE_ANON_KEY = "YOUR_ANON_KEY"
+local SUPABASE_URL      = "https://qfquqnwnnaacxeihxnus.supabase.co"
+local SUPABASE_ANON_KEY = "sb_publishable_dVUXibT8T0pxEftEK4dkNA_ruJkKRPf"
 
 local POLL_INTERVAL     = 2.5   -- seconds between chat polls
 local HISTORY_LIMIT     = 60    -- messages loaded per channel
 local MAX_MSG_LEN       = 200   -- character cap per message
-local MSG_LIFETIME      = 180   -- seconds a message lives in GUI
+local MSG_LIFETIME      = 30   -- seconds a message lives in GUI
 local EXPIRE_CHECK      = 10    -- expiry sweep interval (seconds)
 local WARN_BEFORE       = 30    -- seconds before expiry to dim text
 local HEARTBEAT_INTERVAL = 20   -- how often we ping our presence (seconds)
