@@ -46,13 +46,13 @@
 -- ════════════════════════════════════════════════════════════════════
 --  CONFIG  ← fill these in
 -- ════════════════════════════════════════════════════════════════════
-local SUPABASE_URL      = "https://qfquqnwnnaacxeihxnus.supabase.co"
-local SUPABASE_ANON_KEY = "sb_publishable_dVUXibT8T0pxEftEK4dkNA_ruJkKRPf"
+local SUPABASE_URL      = "https://YOUR_PROJECT_REF.supabase.co"
+local SUPABASE_ANON_KEY = "YOUR_ANON_KEY"
 
 local POLL_INTERVAL     = 2.5   -- seconds between chat polls
 local HISTORY_LIMIT     = 60    -- messages loaded per channel
 local MAX_MSG_LEN       = 200   -- character cap per message
-local MSG_LIFETIME      = 30   -- seconds a message lives in GUI
+local MSG_LIFETIME      = 180   -- seconds a message lives in GUI
 local EXPIRE_CHECK      = 10    -- expiry sweep interval (seconds)
 local WARN_BEFORE       = 30    -- seconds before expiry to dim text
 local HEARTBEAT_INTERVAL = 20   -- how often we ping our presence (seconds)
@@ -245,6 +245,16 @@ local function fetchPlayers()
     return request("/players?select=username,server_id,place_id&order=username.asc", "GET")
 end
 
+-- Fetch players in the same game (same place_id) across ALL servers
+local function fetchGamePlayers()
+    return request(
+        "/players?select=username,server_id,place_id"
+        .. "&place_id=eq." .. PLACE_ID
+        .. "&order=username.asc",
+        "GET"
+    )
+end
+
 -- ──────────────────────────────────────────────────────────────────
 -- 7. SCREEN GUI ROOT
 -- ──────────────────────────────────────────────────────────────────
@@ -385,9 +395,9 @@ TitleLabel.TextXAlignment         = Enum.TextXAlignment.Left
 TitleLabel.ZIndex                 = 17
 TitleLabel.Parent                 = Header
 
--- ── Three tab buttons — Server | Global | Players ────────────
+-- ── Four tab buttons — Server | Global | Players | Game ───────
 local TabContainer = Instance.new("Frame")
-TabContainer.Size             = UDim2.new(0, 232, 0, 26)
+TabContainer.Size             = UDim2.new(0, 306, 0, 26)
 TabContainer.Position         = UDim2.new(0, 64, 0.5, 0)
 TabContainer.AnchorPoint      = Vector2.new(0, 0.5)
 TabContainer.BackgroundColor3 = C.Elevated
@@ -410,7 +420,7 @@ end
 
 local function makeTab(label, order)
     local b = Instance.new("TextButton")
-    b.Size             = UDim2.new(0, 74, 1, 0)
+    b.Size             = UDim2.new(0, 72, 1, 0)
     b.BackgroundColor3 = C.TabInactive
     b.Text             = label
     b.TextSize         = 11
@@ -427,6 +437,7 @@ end
 local ServerTab  = makeTab("Server",  1)
 local GlobalTab  = makeTab("Global",  2)
 local PlayersTab = makeTab("Players", 3)
+local GameTab    = makeTab("Game",    4)
 
 local StatusTxt = Instance.new("TextLabel")
 StatusTxt.Size                   = UDim2.new(0, 60, 1, 0)
@@ -563,6 +574,7 @@ local function refreshTabVisuals()
         server  = ServerTab,
         global  = GlobalTab,
         players = PlayersTab,
+        game    = GameTab,
     }
     for id, btn in pairs(tabs) do
         if id == activeChannel then
@@ -572,10 +584,10 @@ local function refreshTabVisuals()
         end
     end
     -- Show/hide the correct scrolling area and input bar
-    local isPlayers = (activeChannel == "players")
-    Scroll.Visible        = not isPlayers
-    PlayersScroll.Visible = isPlayers
-    InputRow.Visible      = not isPlayers
+    local isPlayersList = (activeChannel == "players" or activeChannel == "game")
+    Scroll.Visible        = not isPlayersList
+    PlayersScroll.Visible = isPlayersList
+    InputRow.Visible      = not isPlayersList
     if activeChannel == "server" then
         Input.PlaceholderText = "Message this server..."
     elseif activeChannel == "global" then
@@ -684,13 +696,13 @@ local function clearPlayersDOM()
     end
 end
 
-local function renderPlayers(list)
+local function renderPlayers(list, mode)
     clearPlayersDOM()
     if not list or #list == 0 then
         -- Empty state label
         local lbl = Instance.new("TextLabel")
         lbl.Size=UDim2.new(1,0,0,40); lbl.BackgroundTransparency=1
-        lbl.Text="No players online right now."
+        lbl.Text = (mode == "game") and "No other players in this game right now." or "No players online right now."
         lbl.TextSize=12; lbl.Font=Enum.Font.Gotham
         lbl.TextColor3=C.Muted; lbl.ZIndex=17
         lbl.Parent=PlayersScroll
@@ -834,15 +846,14 @@ local function loadChannel(channel)
     activeChannel = channel
     refreshTabVisuals()
 
-    -- ── Players tab ───────────────────────────────────────────
-    if channel == "players" then
+    -- ── Players / Game tabs ──────────────────────────────────
+    if channel == "players" or channel == "game" then
         setStatus("loading...", C.Muted, C.Muted)
         clearPlayersDOM()
         task.spawn(function()
-            local list, err = fetchPlayers()
+            local list, err = (channel == "game") and fetchGamePlayers() or fetchPlayers()
             if not list then
                 setStatus("offline", C.Error, C.Error)
-                -- Show error in players area
                 local lbl = Instance.new("TextLabel")
                 lbl.Size=UDim2.new(1,0,0,40); lbl.BackgroundTransparency=1
                 lbl.Text="Could not load players: " .. tostring(err)
@@ -851,8 +862,11 @@ local function loadChannel(channel)
                 lbl.Parent=PlayersScroll
                 return
             end
-            renderPlayers(list)
-            setStatus(tostring(#list) .. " online", C.Online, C.Online)
+            renderPlayers(list, channel)
+            local label = (channel == "game")
+                and (tostring(#list) .. " in this game")
+                or  (tostring(#list) .. " online")
+            setStatus(label, C.Online, C.Online)
         end)
         return
     end
@@ -987,8 +1001,13 @@ GlobalTab.MouseButton1Click:Connect(function()
 end)
 
 PlayersTab.MouseButton1Click:Connect(function()
-    -- Always refresh the list when clicking the Players tab
     loadChannel("players")
+    if isOpen then Input:ReleaseFocus() end
+end)
+
+GameTab.MouseButton1Click:Connect(function()
+    -- Always refresh — shows players in this game across all servers
+    loadChannel("game")
     if isOpen then Input:ReleaseFocus() end
 end)
 
@@ -999,7 +1018,7 @@ local sending = false
 
 local function doSend()
     if sending then return end
-    if activeChannel == "players" then return end
+    if activeChannel == "players" or activeChannel == "game" then return end
     local raw = Input.Text:match("^%s*(.-)%s*$")
     if raw == "" then return end
     local text = raw:sub(1, MAX_MSG_LEN)
