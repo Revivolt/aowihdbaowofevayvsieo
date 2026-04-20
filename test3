@@ -1,6 +1,6 @@
 -- CustomChatGUI.lua
 -- LocalScript — place inside StarterPlayerScripts
---
+-- test
 -- ┌──────────────────────────────────────────────────────────────────┐
 -- │  Run these in the Supabase SQL editor (once):                    │
 -- │                                                                  │
@@ -86,27 +86,27 @@ LocalPlayer.CharacterAdded:Connect(hideDefaultChat)
 -- 2. COLOUR PALETTE
 -- ──────────────────────────────────────────────────────────────────
 local C = {
-    BG          = Color3.fromRGB(16,  16,  22),
-    Surface     = Color3.fromRGB(24,  24,  33),
-    Elevated    = Color3.fromRGB(32,  32,  44),
-    Border      = Color3.fromRGB(48,  48,  66),
+    BG          = Color3.fromRGB(14,  14,  14),
+    Surface     = Color3.fromRGB(22,  22,  22),
+    Elevated    = Color3.fromRGB(30,  30,  30),
+    Border      = Color3.fromRGB(50,  50,  50),
     Accent      = Color3.fromRGB(85,  125, 255),
     AccentHi    = Color3.fromRGB(105, 148, 255),
-    Text        = Color3.fromRGB(222, 222, 238),
-    Muted       = Color3.fromRGB(110, 110, 138),
-    System      = Color3.fromRGB(155, 155, 180),
+    Text        = Color3.fromRGB(225, 225, 225),
+    Muted       = Color3.fromRGB(110, 110, 110),
+    System      = Color3.fromRGB(160, 160, 160),
     Error       = Color3.fromRGB(255, 85,  85),
     Online      = Color3.fromRGB(72,  210, 128),
     JoinBtn     = Color3.fromRGB(50,  100, 50),
     JoinBtnHi   = Color3.fromRGB(60,  130, 60),
-    JoinBtnSelf = Color3.fromRGB(35,  35,  50),
+    JoinBtnSelf = Color3.fromRGB(30,  30,  30),
     TabActive   = Color3.fromRGB(85,  125, 255),
-    TabInactive = Color3.fromRGB(32,  32,  44),
+    TabInactive = Color3.fromRGB(30,  30,  30),
     Names = {
         Color3.fromRGB(100, 170, 255),
         Color3.fromRGB(120, 215, 155),
         Color3.fromRGB(255, 185, 95),
-        Color3.fromRGB(215, 115, 255),
+        Color3.fromRGB(200, 100, 255),
         Color3.fromRGB(95,  215, 215),
         Color3.fromRGB(255, 125, 125),
     },
@@ -274,7 +274,7 @@ Toggle.Name             = "ChatToggle"
 Toggle.Size             = UDim2.new(0, 44, 0, 44)
 Toggle.Position         = UDim2.new(0, 12, 0, 12)
 Toggle.BackgroundColor3 = C.BG
-Toggle.Image            = "rbxassetid://7547547855"
+Toggle.Image            = "rbxassetid://3926305904"
 Toggle.ImageColor3      = C.Text
 Toggle.AutoButtonColor  = false
 Toggle.ZIndex           = 20
@@ -397,9 +397,9 @@ TitleLabel.Parent                 = Header
 
 -- ── Four tab buttons — Server | Global | Players | Game ───────
 local TabContainer = Instance.new("Frame")
-TabContainer.Size             = UDim2.new(0, 306, 0, 26)
-TabContainer.Position         = UDim2.new(0, 64, 0.5, 0)
-TabContainer.AnchorPoint      = Vector2.new(0, 0.5)
+TabContainer.Size             = UDim2.new(0, 230, 0, 26)
+TabContainer.Position         = UDim2.new(0.5, 0, 0.5, 0)
+TabContainer.AnchorPoint      = Vector2.new(0.5, 0.5)
 TabContainer.BackgroundColor3 = C.Elevated
 TabContainer.ZIndex           = 17
 TabContainer.Parent           = Header
@@ -420,7 +420,7 @@ end
 
 local function makeTab(label, order)
     local b = Instance.new("TextButton")
-    b.Size             = UDim2.new(0, 72, 1, 0)
+    b.Size             = UDim2.new(0, 54, 1, 0)
     b.BackgroundColor3 = C.TabInactive
     b.Text             = label
     b.TextSize         = 11
@@ -440,8 +440,8 @@ local PlayersTab = makeTab("Players", 3)
 local GameTab    = makeTab("Game",    4)
 
 local StatusTxt = Instance.new("TextLabel")
-StatusTxt.Size                   = UDim2.new(0, 60, 1, 0)
-StatusTxt.Position               = UDim2.new(1, -66, 0, 0)
+StatusTxt.Size                   = UDim2.new(0, 70, 1, 0)
+StatusTxt.Position               = UDim2.new(1, -76, 0, 0)
 StatusTxt.BackgroundTransparency = 1
 StatusTxt.Text                   = "..."
 StatusTxt.TextSize               = 10
