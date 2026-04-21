@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2285,7 +2285,7 @@ Tab:AddToggle({
                 end
 
                 oldV = root.AssemblyLinearVelocity
-                root.AssemblyLinearVelocity = oldV * 100e100 + Vector3.new(0, 100e100, 0)
+                root.AssemblyLinearVelocity = oldV * 500 + Vector3.new(0, 500, 0)
             end)
 
             rendered = RunService.RenderStepped:Connect(function()
