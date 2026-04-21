@@ -1,58 +1,107 @@
---test
+-- Remote Spammer | LocalScript
+-- Collects all RemoteEvents and RemoteFunctions in the game and fires them on a loop.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
-local player = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
 
-local activeConnection = nil
+-- Config
+local FIRE_INTERVAL = 0.1   -- seconds between each fire cycle
+local SCAN_INTERVAL = 5.0   -- seconds between re-scanning for new remotes
+local FIRE_ARGS    = {}     -- arguments to pass; tweak per-game as needed
 
-local function startPhysicsLoop(root)
-    if activeConnection then
-        activeConnection:Disconnect()
-        activeConnection = nil
+-- Storage
+local remoteEvents    = {}
+local remoteFunctions = {}
+
+-- Recursively collect all remotes under a given instance
+local function scanForRemotes(root)
+    for _, obj in ipairs(root:GetDescendants()) do
+        if obj:IsA("RemoteEvent") then
+            remoteEvents[obj] = true
+        elseif obj:IsA("RemoteFunction") then
+            remoteFunctions[obj] = true
+        end
+    end
+end
+
+-- Initial scan across the whole DataModel
+local function fullScan()
+    remoteEvents    = {}
+    remoteFunctions = {}
+
+    -- Common containers
+    local targets = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("ReplicatedFirst"),
+        game:GetService("Workspace"),
+        game:GetService("Players"),
+        game:GetService("StarterGui"),
+        game:GetService("StarterPack"),
+        game:GetService("StarterPlayer"),
+        game:GetService("Lighting"),
+        game:GetService("SoundService"),
+    }
+
+    for _, container in ipairs(targets) do
+        pcall(scanForRemotes, container)
     end
 
-    activeConnection = RunService.Heartbeat:Connect(function()
-        if not root or not root.Parent then
-            if activeConnection then activeConnection:Disconnect() end
-            activeConnection = nil
-            return
+    -- Also try the raw game tree (executor-dependent)
+    pcall(function()
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("RemoteEvent") then
+                remoteEvents[obj] = true
+            elseif obj:IsA("RemoteFunction") then
+                remoteFunctions[obj] = true
+            end
         end
-
-        local oldV = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = oldV * 0 + Vector3.new(0, 0, 0)
-        RunService.RenderStepped:Wait()
-        root.AssemblyLinearVelocity = oldV
-        RunService.Stepped:Wait()
-        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
     end)
+
+    local evCount  = 0
+    local fnCount  = 0
+    for _ in pairs(remoteEvents)    do evCount  = evCount  + 1 end
+    for _ in pairs(remoteFunctions) do fnCount  = fnCount  + 1 end
+    print(string.format("[RemoteSpammer] Scan complete — %d RemoteEvents, %d RemoteFunctions", evCount, fnCount))
 end
 
-local function triggerPhysics()
-    local char = player.Character
-    if not char then return end
+-- Fire loop
+local function fireAll()
+    for remote in pairs(remoteEvents) do
+        pcall(function()
+            remote:FireServer(table.unpack(FIRE_ARGS))
+        end)
+    end
 
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid then return end
-
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-    root.CanCollide = false
-
-    startPhysicsLoop(root)
-    print("--- PHYSICS TRIGGERED ---")
+    for remote in pairs(remoteFunctions) do
+        pcall(function()
+            -- InvokeServer can yield; wrap in a new thread so we don't stall
+            task.spawn(function()
+                remote:InvokeServer(table.unpack(FIRE_ARGS))
+            end)
+        end)
+    end
 end
 
--- Nothing runs until F is pressed
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Enum.KeyCode.F then
-        triggerPhysics()
+-- Bootstrap
+fullScan()
+
+-- Periodic re-scan (games load remotes dynamically)
+task.spawn(function()
+    while true do
+        task.wait(SCAN_INTERVAL)
+        fullScan()
     end
 end)
 
-print("--- FLING LOADED, PRESS F TO ACTIVATE ---")
+-- Main fire loop
+task.spawn(function()
+    while true do
+        task.wait(FIRE_INTERVAL)
+        fireAll()
+    end
+end)
+
+print("[RemoteSpammer] Running — interval:", FIRE_INTERVAL, "s")
