@@ -1,249 +1,269 @@
--- WeightDisplay LocalScript
--- Place this inside StarterPlayerScripts or StarterCharacterScripts
--- Displays the total mass/weight of all players in the server
+-- LocalScript: BodyScaleClient
+-- Place in: StarterPlayerScripts
+-- Replication method: direct NumberValue mutation on client-owned character
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-local LocalPlayer = Players.LocalPlayer
+local player = Players.LocalPlayer
 
--- ─── GUI Setup ───────────────────────────────────────────────────────────────
+-- ─── Scale definitions ────────────────────────────────────────
+-- These are the exact NumberValue child names inside Humanoid.
+-- Writing .Value here replicates to server because the client
+-- owns the character's network instance.
+local SCALES = {
+    { name = "BodyTypeScale",   min = 0.0,  max = 1.0,  default = 0.3  },
+    { name = "HeadScale",       min = 0.95, max = 1.0,  default = 1.0  },
+    { name = "BodyHeightScale", min = 0.9,  max = 1.05, default = 1.0  },
+    { name = "BodyWidthScale",  min = 0.7,  max = 1.0,  default = 1.0  },
+    { name = "BodyDepthScale",  min = 0.7,  max = 1.0,  default = 1.0  },
+    { name = "ProportionScale", min = 0.0,  max = 1.0,  default = 0.0  },
+}
 
+-- Current values table (keyed by scale name)
+local currentValues = {}
+for _, s in ipairs(SCALES) do
+    currentValues[s.name] = s.default
+end
+
+-- ─── Apply scales to character ────────────────────────────────
+local function applyScales(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    for _, s in ipairs(SCALES) do
+        local nv = humanoid:FindFirstChild(s.name)
+        if nv then
+            nv.Value = math.clamp(currentValues[s.name], s.min, s.max)
+        end
+    end
+end
+
+-- ─── Build ScreenGui ──────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "WeightDisplay"
-screenGui.ResetOnSpawn = false
+screenGui.Name           = "BodyScaleGui"
+screenGui.ResetOnSpawn   = false
+screenGui.IgnoreGuiInset = true
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = LocalPlayer.PlayerGui
+screenGui.Parent         = player.PlayerGui
 
--- Main frame
-local frame = Instance.new("Frame")
-frame.Name = "WeightFrame"
-frame.Size = UDim2.new(0, 260, 0, 400)
-frame.Position = UDim2.new(0, 16, 0.5, -200)
-frame.BackgroundColor3 = Color3.fromRGB(10, 10, 18)
-frame.BackgroundTransparency = 0.15
-frame.BorderSizePixel = 0
-frame.Parent = screenGui
+local PANEL_W, PANEL_H = 272, 56 + (#SCALES * 46) + 12
 
--- Rounded corners
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = frame
+local panel = Instance.new("Frame")
+panel.Size             = UDim2.new(0, PANEL_W, 0, PANEL_H)
+panel.Position         = UDim2.new(0, 14, 0.5, -PANEL_H / 2)
+panel.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+panel.BorderSizePixel  = 0
+panel.Parent           = screenGui
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
 
--- Accent border
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(80, 180, 255)
-stroke.Thickness = 1.5
-stroke.Transparency = 0.4
-stroke.Parent = frame
+-- Drop shadow illusion
+local shadow = Instance.new("Frame")
+shadow.Size             = UDim2.new(1, 8, 1, 8)
+shadow.Position         = UDim2.new(0, -4, 0, 4)
+shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+shadow.BackgroundTransparency = 0.6
+shadow.BorderSizePixel  = 0
+shadow.ZIndex           = panel.ZIndex - 1
+shadow.Parent           = panel
+Instance.new("UICorner", shadow).CornerRadius = UDim.new(0, 12)
 
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 36)
-titleBar.BackgroundColor3 = Color3.fromRGB(80, 180, 255)
-titleBar.BackgroundTransparency = 0.2
-titleBar.BorderSizePixel = 0
-titleBar.Parent = frame
+-- Title bar (also drag handle)
+local titleBar = Instance.new("TextLabel")
+titleBar.Size             = UDim2.new(1, 0, 0, 38)
+titleBar.BackgroundColor3 = Color3.fromRGB(28, 28, 42)
+titleBar.BorderSizePixel  = 0
+titleBar.Text             = "  Body Scale"
+titleBar.TextColor3       = Color3.fromRGB(200, 210, 255)
+titleBar.TextSize         = 15
+titleBar.Font             = Enum.Font.GothamBold
+titleBar.TextXAlignment   = Enum.TextXAlignment.Left
+titleBar.Parent           = panel
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 10)
-titleCorner.Parent = titleBar
+-- Round only top corners on title bar (cover bottom corners)
+local titleCover = Instance.new("Frame")
+titleCover.Size             = UDim2.new(1, 0, 0, 10)
+titleCover.Position         = UDim2.new(0, 0, 1, -10)
+titleCover.BackgroundColor3 = Color3.fromRGB(28, 28, 42)
+titleCover.BorderSizePixel  = 0
+titleCover.Parent           = titleBar
 
--- Cover bottom corners of title bar
-local titleFix = Instance.new("Frame")
-titleFix.Size = UDim2.new(1, 0, 0, 10)
-titleFix.Position = UDim2.new(0, 0, 1, -10)
-titleFix.BackgroundColor3 = Color3.fromRGB(80, 180, 255)
-titleFix.BackgroundTransparency = 0.2
-titleFix.BorderSizePixel = 0
-titleFix.Parent = titleBar
+-- ─── Drag logic ───────────────────────────────────────────────
+local dragging, dragStart, panelStart
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 1, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "⚖  PLAYER WEIGHTS"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize = 13
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Parent = titleBar
-
--- Scroll frame for player list
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Name = "PlayerList"
-scrollFrame.Size = UDim2.new(1, -12, 1, -44)
-scrollFrame.Position = UDim2.new(0, 6, 0, 40)
-scrollFrame.BackgroundTransparency = 1
-scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 3
-scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 180, 255)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scrollFrame.Parent = frame
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.SortOrder = Enum.SortOrder.Name
-listLayout.Padding = UDim.new(0, 4)
-listLayout.Parent = scrollFrame
-
-local listPadding = Instance.new("UIPadding")
-listPadding.PaddingTop = UDim.new(0, 4)
-listPadding.PaddingBottom = UDim.new(0, 4)
-listPadding.Parent = scrollFrame
-
--- ─── Utility Functions ────────────────────────────────────────────────────────
-
--- Calculate total mass of a character model
-local function getCharacterWeight(character)
-	if not character then return 0 end
-	local totalMass = 0
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			totalMass = totalMass + part:GetMass()
-		end
-	end
-	return totalMass
-end
-
--- Format mass number nicely
-local function formatWeight(mass)
-	return string.format("%.2f kg", mass)
-end
-
--- ─── Row Creation ─────────────────────────────────────────────────────────────
-
-local function createPlayerRow(player)
-	local isLocal = (player == LocalPlayer)
-
-	local row = Instance.new("Frame")
-	row.Name = player.Name
-	row.Size = UDim2.new(1, -6, 0, 46)
-	row.BackgroundColor3 = isLocal
-		and Color3.fromRGB(30, 80, 140)
-		or Color3.fromRGB(22, 22, 35)
-	row.BackgroundTransparency = isLocal and 0.1 or 0.2
-	row.BorderSizePixel = 0
-	row.Parent = scrollFrame
-
-	local rowCorner = Instance.new("UICorner")
-	rowCorner.CornerRadius = UDim.new(0, 7)
-	rowCorner.Parent = row
-
-	if isLocal then
-		local rowStroke = Instance.new("UIStroke")
-		rowStroke.Color = Color3.fromRGB(80, 180, 255)
-		rowStroke.Thickness = 1
-		rowStroke.Transparency = 0.3
-		rowStroke.Parent = row
-	end
-
-	-- Avatar thumbnail
-	local avatar = Instance.new("ImageLabel")
-	avatar.Size = UDim2.new(0, 34, 0, 34)
-	avatar.Position = UDim2.new(0, 6, 0.5, -17)
-	avatar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-	avatar.BorderSizePixel = 0
-	avatar.Image = Players:GetUserThumbnailAsync(
-		player.UserId,
-		Enum.ThumbnailType.HeadShot,
-		Enum.ThumbnailSize.Size48x48
-	)
-	avatar.Parent = row
-
-	local avatarCorner = Instance.new("UICorner")
-	avatarCorner.CornerRadius = UDim.new(0.5, 0)
-	avatarCorner.Parent = avatar
-
-	-- Player name
-	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Name = "NameLabel"
-	nameLabel.Size = UDim2.new(1, -100, 0, 18)
-	nameLabel.Position = UDim2.new(0, 48, 0, 6)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = isLocal and ("★ " .. player.Name) or player.Name
-	nameLabel.TextColor3 = isLocal
-		and Color3.fromRGB(120, 200, 255)
-		or Color3.fromRGB(220, 220, 230)
-	nameLabel.TextSize = 12
-	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	nameLabel.Parent = row
-
-	-- Weight label
-	local weightLabel = Instance.new("TextLabel")
-	weightLabel.Name = "WeightLabel"
-	weightLabel.Size = UDim2.new(1, -48, 0, 16)
-	weightLabel.Position = UDim2.new(0, 48, 0, 24)
-	weightLabel.BackgroundTransparency = 1
-	weightLabel.Text = "Loading..."
-	weightLabel.TextColor3 = Color3.fromRGB(160, 210, 160)
-	weightLabel.TextSize = 11
-	weightLabel.Font = Enum.Font.Gotham
-	weightLabel.TextXAlignment = Enum.TextXAlignment.Left
-	weightLabel.Parent = row
-
-	return row
-end
-
--- ─── Update Logic ─────────────────────────────────────────────────────────────
-
-local rows = {}
-
-local function updateWeights()
-	for _, player in ipairs(Players:GetPlayers()) do
-		local row = scrollFrame:FindFirstChild(player.Name)
-		if row then
-			local weightLabel = row:FindFirstChild("WeightLabel")
-			if weightLabel then
-				local char = player.Character
-				if char then
-					local mass = getCharacterWeight(char)
-					weightLabel.Text = "Weight: " .. formatWeight(mass)
-					weightLabel.TextColor3 = player == LocalPlayer
-						and Color3.fromRGB(100, 230, 180)
-						or Color3.fromRGB(160, 210, 160)
-				else
-					weightLabel.Text = "No character"
-					weightLabel.TextColor3 = Color3.fromRGB(160, 100, 100)
-				end
-			end
-		end
-	end
-end
-
-local function addPlayer(player)
-	if scrollFrame:FindFirstChild(player.Name) then return end
-	local row = createPlayerRow(player)
-	rows[player] = row
-
-	-- Handle character loading
-	local function onCharAdded(char)
-		task.wait(1) -- Wait for character parts to load
-		updateWeights()
-	end
-	player.CharacterAdded:Connect(onCharAdded)
-end
-
-local function removePlayer(player)
-	local row = scrollFrame:FindFirstChild(player.Name)
-	if row then
-		row:Destroy()
-	end
-	rows[player] = nil
-end
-
--- ─── Initialise ───────────────────────────────────────────────────────────────
-
--- Add all current players
-for _, player in ipairs(Players:GetPlayers()) do
-	addPlayer(player)
-end
-
--- Listen for players joining/leaving
-Players.PlayerAdded:Connect(addPlayer)
-Players.PlayerRemoving:Connect(removePlayer)
-
--- Update weights every 0.5 seconds
-RunService.Heartbeat:Connect(function()
-	updateWeights()
+titleBar.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1
+    or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging   = true
+        dragStart  = inp.Position
+        panelStart = panel.Position
+    end
 end)
+
+UserInputService.InputChanged:Connect(function(inp)
+    if not dragging then return end
+    if inp.UserInputType == Enum.UserInputType.MouseMovement
+    or inp.UserInputType == Enum.UserInputType.Touch then
+        local d = inp.Position - dragStart
+        panel.Position = UDim2.new(
+            panelStart.X.Scale, panelStart.X.Offset + d.X,
+            panelStart.Y.Scale, panelStart.Y.Offset + d.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1
+    or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+-- ─── Slider factory ───────────────────────────────────────────
+local sliderRefresh = {}  -- [scaleName] = refresh(val) fn
+
+local function lerp(a, b, t)   return a + (b - a) * t end
+local function invLerp(a, b, v) return math.clamp((v - a) / (b - a), 0, 1) end
+local function round3(n)        return math.floor(n * 1000 + 0.5) / 1000 end
+
+for i, scaleDef in ipairs(SCALES) do
+    local sName = scaleDef.name
+    local sMin  = scaleDef.min
+    local sMax  = scaleDef.max
+    local yBase = 42 + (i - 1) * 46
+
+    -- Row container
+    local row = Instance.new("Frame")
+    row.Size                  = UDim2.new(1, -16, 0, 42)
+    row.Position              = UDim2.new(0, 8, 0, yBase)
+    row.BackgroundTransparency = 1
+    row.Parent                = panel
+
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Size               = UDim2.new(1, -58, 0, 16)
+    label.BackgroundTransparency = 1
+    label.Text               = sName:gsub("Body", ""):gsub("Scale", "")
+    label.TextColor3         = Color3.fromRGB(170, 175, 210)
+    label.TextSize           = 12
+    label.Font               = Enum.Font.Gotham
+    label.TextXAlignment     = Enum.TextXAlignment.Left
+    label.Parent             = row
+
+    -- Value readout
+    local valLbl = Instance.new("TextLabel")
+    valLbl.Size              = UDim2.new(0, 54, 0, 16)
+    valLbl.Position          = UDim2.new(1, -54, 0, 0)
+    valLbl.BackgroundTransparency = 1
+    valLbl.TextColor3        = Color3.fromRGB(100, 195, 255)
+    valLbl.TextSize          = 12
+    valLbl.Font              = Enum.Font.GothamMono
+    valLbl.TextXAlignment    = Enum.TextXAlignment.Right
+    valLbl.Parent            = row
+
+    -- Track
+    local track = Instance.new("Frame")
+    track.Size               = UDim2.new(1, 0, 0, 7)
+    track.Position           = UDim2.new(0, 0, 0, 26)
+    track.BackgroundColor3   = Color3.fromRGB(45, 45, 65)
+    track.BorderSizePixel    = 0
+    track.Parent             = row
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+    -- Fill
+    local fill = Instance.new("Frame")
+    fill.Size                = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3    = Color3.fromRGB(80, 155, 255)
+    fill.BorderSizePixel     = 0
+    fill.Parent              = track
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+    -- Thumb (invisible hitbox + visible dot)
+    local thumb = Instance.new("TextButton")
+    thumb.Size               = UDim2.new(0, 18, 0, 18)
+    thumb.Position           = UDim2.new(0, -9, 0.5, -9)
+    thumb.BackgroundColor3   = Color3.fromRGB(210, 225, 255)
+    thumb.Text               = ""
+    thumb.BorderSizePixel    = 0
+    thumb.AutoButtonColor    = false
+    thumb.Parent             = track
+    Instance.new("UICorner", thumb).CornerRadius = UDim.new(1, 0)
+
+    -- Refresh visuals from a value
+    local function refresh(val)
+        local t = invLerp(sMin, sMax, val)
+        fill.Size      = UDim2.new(t, 0, 1, 0)
+        thumb.Position = UDim2.new(t, -9, 0.5, -9)
+        valLbl.Text    = string.format("%.3f", val)
+    end
+    refresh(currentValues[sName])
+    sliderRefresh[sName] = refresh
+
+    -- Compute value from absolute X
+    local function valueFromX(absX)
+        local tAbs = track.AbsolutePosition.X
+        local tW   = track.AbsoluteSize.X
+        local t    = math.clamp((absX - tAbs) / tW, 0, 1)
+        return round3(lerp(sMin, sMax, t))
+    end
+
+    local held = false
+
+    local function onDrag(absX)
+        local v = valueFromX(absX)
+        currentValues[sName] = v
+        refresh(v)
+        -- Apply immediately — replicates via network ownership
+        local char = player.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                local nv = hum:FindFirstChild(sName)
+                if nv then nv.Value = v end
+            end
+        end
+    end
+
+    thumb.MouseButton1Down:Connect(function() held = true end)
+    track.MouseButton1Down:Connect(function(_, x)
+        held = true
+        onDrag(x)  -- x here is absolute screen X from InputObject
+    end)
+
+    -- Touch support on track
+    track.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.Touch then
+            held = true
+            onDrag(inp.Position.X)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(inp)
+        if not held then return end
+        if inp.UserInputType == Enum.UserInputType.MouseMovement
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            onDrag(inp.Position.X)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            held = false
+        end
+    end)
+end
+
+-- ─── Re-apply on respawn ──────────────────────────────────────
+local function onCharacterAdded(character)
+    -- Wait a tick for the Humanoid and its NumberValue children to exist
+    task.wait(0.5)
+    applyScales(character)
+end
+
+if player.Character then
+    task.spawn(onCharacterAdded, player.Character)
+end
+player.CharacterAdded:Connect(onCharacterAdded)
