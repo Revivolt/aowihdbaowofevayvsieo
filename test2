@@ -1,49 +1,45 @@
--- AvatarSwapper.lua — Executor script
--- Fetches your saved Roblox outfits and applies them in-game.
--- Works with Synapse X, KRNL, Fluxus, Solara, Wave, etc.
+-- AvatarSwapper.lua (Fixed) — Executor script
+-- Bypasses ApplyDescriptionAsync blocks via manual asset insertion.
+-- Tested pattern: Synapse X, KRNL, Fluxus, Solara, Wave
+-- test
 
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local RunService       = game:GetService("RunService")
 local TweenService     = game:GetService("TweenService")
+local HttpService      = game:GetService("HttpService")
+local InsertService    = game:GetService("InsertService")
 
 local lp        = Players.LocalPlayer
 local character = lp.Character or lp.CharacterAdded:Wait()
 local humanoid  = character:WaitForChild("Humanoid")
 local userId    = lp.UserId
 
--- ─── HTTP ABSTRACTION ─────────────────────────────────────────────────────────
--- Detects whichever HTTP function your executor exposes.
+-- ─── HTTP ABSTRACTION ────────────────────────────────────────────────────────
 local function httpGet(url)
+    local res
     if syn and syn.request then
-        local res = syn.request({ Url = url, Method = "GET" })
-        return res.Body
+        res = syn.request({ Url = url, Method = "GET" })
     elseif http and http.request then
-        local res = http.request({ Url = url, Method = "GET" })
-        return res.Body
+        res = http.request({ Url = url, Method = "GET" })
     elseif request then
-        local res = request({ Url = url, Method = "GET" })
-        return res.Body
+        res = request({ Url = url, Method = "GET" })
     elseif http_request then
-        local res = http_request({ Url = url, Method = "GET" })
-        return res.Body
+        res = http_request({ Url = url, Method = "GET" })
     else
-        error("[AvatarSwapper] No HTTP function found in this executor.")
+        error("[AvatarSwapper] No HTTP function found.")
     end
+    return res.Body
 end
 
--- ─── FETCH OUTFIT LIST ────────────────────────────────────────────────────────
+-- ─── FETCH OUTFIT LIST ───────────────────────────────────────────────────────
 local function fetchOutfits()
     local url = string.format(
         "https://avatar.roblox.com/v1/users/%d/outfits?page=1&itemsPerPage=50&isEditable=true",
         userId
     )
     local ok, body = pcall(httpGet, url)
-    if not ok then
-        warn("[AvatarSwapper] HTTP error:", body)
-        return {}
-    end
-    local decoded = game:GetService("HttpService"):JSONDecode(body)
+    if not ok then warn("[AvatarSwapper] HTTP error:", body) return {} end
+    local decoded = HttpService:JSONDecode(body)
     local list = {}
     if decoded and decoded.data then
         for _, entry in ipairs(decoded.data) do
@@ -53,51 +49,144 @@ local function fetchOutfits()
     return list
 end
 
--- ─── APPLY OUTFIT ─────────────────────────────────────────────────────────────
--- Executors run in the client VM but some support ApplyDescriptionAsync
--- via the elevated identity level. Falls back to manual asset swapping
--- if the async method is blocked by the game.
-local function applyOutfit(outfitId, statusCb)
-    statusCb("Fetching description...")
-
-    local ok, desc = pcall(function()
+-- ─── FETCH OUTFIT ASSET IDs ──────────────────────────────────────────────────
+-- Returns a HumanoidDescription AND a flat list of assetIds for manual insertion.
+local function fetchOutfitDetails(outfitId)
+    -- 1. HumanoidDescription (used for body colours, scales, body part IDs)
+    local ok1, desc = pcall(function()
         return Players:GetHumanoidDescriptionFromOutfitIdAsync(outfitId)
     end)
 
-    if not ok or not desc then
-        statusCb("ERR: Could not load description")
-        warn("[AvatarSwapper] GetHumanoidDescriptionFromOutfitIdAsync failed:", desc)
-        return
+    -- 2. Raw asset list from avatar API (accessories, clothing, etc.)
+    local url = string.format(
+        "https://avatar.roblox.com/v1/outfits/%d/details",
+        outfitId
+    )
+    local ok2, body = pcall(httpGet, url)
+    local assetIds = {}
+    if ok2 then
+        local decoded = pcall(function() return HttpService:JSONDecode(body) end) and HttpService:JSONDecode(body)
+        if decoded and decoded.assets then
+            for _, asset in ipairs(decoded.assets) do
+                table.insert(assetIds, asset.id)
+            end
+        end
     end
 
-    -- Refresh character reference in case of respawn
+    return (ok1 and desc or nil), assetIds
+end
+
+-- ─── LAYER 2: MANUAL ACCESSORY SWAP ─────────────────────────────────────────
+-- Removes existing accessories, inserts new ones from asset IDs directly.
+local function manualAccessorySwap(char, desc, assetIds)
+    -- Apply colours and scales from description (these rarely get blocked)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and desc then
+        -- Body colours are safe to set directly
+        local bc = char:FindFirstChildOfClass("BodyColors")
+        if bc then
+            bc.HeadColor3   = desc.HeadColor
+            bc.TorsoColor3  = desc.TorsoColor
+            bc.LeftArmColor3  = desc.LeftArmColor
+            bc.RightArmColor3 = desc.RightArmColor
+            bc.LeftLegColor3  = desc.LeftLegColor
+            bc.RightLegColor3 = desc.RightLegColor
+        end
+    end
+
+    -- Remove existing accessories
+    for _, obj in ipairs(char:GetChildren()) do
+        if obj:IsA("Accessory") or obj:IsA("Shirt")
+        or obj:IsA("Pants") or obj:IsA("ShirtGraphic") then
+            obj:Destroy()
+        end
+    end
+
+    -- Insert each asset by ID
+    for _, assetId in ipairs(assetIds) do
+        local ok, model = pcall(function()
+            return InsertService:LoadAsset(assetId)
+        end)
+        if ok and model then
+            for _, child in ipairs(model:GetChildren()) do
+                if child:IsA("Accessory") or child:IsA("Shirt")
+                or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+                    child.Parent = char
+                end
+            end
+            model:Destroy()
+        end
+    end
+end
+
+-- ─── APPLY OUTFIT (3-layer fallback) ─────────────────────────────────────────
+local function applyOutfit(outfitId, statusCb)
+    statusCb("Fetching outfit data...")
+
+    local desc, assetIds = fetchOutfitDetails(outfitId)
+
+    -- Refresh character reference
     character = lp.Character or lp.CharacterAdded:Wait()
     humanoid  = character:FindFirstChildOfClass("Humanoid")
 
     if not humanoid then
-        statusCb("ERR: No Humanoid")
+        statusCb("ERR: No Humanoid found")
         return
     end
 
-    statusCb("Applying...")
-    local applyOk, applyErr = pcall(function()
-        humanoid:ApplyDescriptionAsync(desc)
-    end)
+    -- ── Layer 1: Standard ApplyDescriptionAsync ───────────────────────────
+    if desc then
+        statusCb("Trying ApplyDescriptionAsync...")
+        local ok, err = pcall(function()
+            humanoid:ApplyDescriptionAsync(desc)
+        end)
+        if ok then
+            statusCb("Done! (Layer 1)")
+            return
+        end
+        warn("[AvatarSwapper] Layer 1 blocked:", err)
+    end
 
-    if applyOk then
-        statusCb("Done!")
+    -- ── Layer 2: Manual asset insertion ──────────────────────────────────
+    statusCb("Trying manual asset swap (Layer 2)...")
+    if #assetIds > 0 then
+        local ok2, err2 = pcall(manualAccessorySwap, character, desc, assetIds)
+        if ok2 then
+            statusCb("Done! (Layer 2)")
+            return
+        end
+        warn("[AvatarSwapper] Layer 2 failed:", err2)
     else
-        -- Some games block ApplyDescriptionAsync — warn but don't crash
-        warn("[AvatarSwapper] ApplyDescriptionAsync blocked:", applyErr)
-        statusCb("Blocked by game")
+        warn("[AvatarSwapper] No asset IDs fetched, skipping Layer 2")
+    end
+
+    -- ── Layer 3: Force character reload with appearance ───────────────────
+    -- This respawns the character; the server re-applies the saved avatar.
+    -- Only works if the game allows LoadCharacter.
+    statusCb("Trying character reload (Layer 3)...")
+    local ok3, err3 = pcall(function()
+        lp:LoadCharacter()
+    end)
+    if ok3 then
+        statusCb("Done! (Layer 3 — respawned)")
+    else
+        warn("[AvatarSwapper] Layer 3 blocked:", err3)
+        statusCb("All layers blocked by this game.")
     end
 end
 
--- ─── GUI ──────────────────────────────────────────────────────────────────────
--- Destroy any previous instance (re-execute safe)
-local OLD = lp:FindFirstChild("PlayerGui") and
-            lp.PlayerGui:FindFirstChild("AvatarSwapperGui")
-if OLD then OLD:Destroy() end
+-- ─── GUI SETUP ───────────────────────────────────────────────────────────────
+do
+    local pg = lp:FindFirstChild("PlayerGui")
+    local old = pg and pg:FindFirstChild("AvatarSwapperGui")
+    if old then old:Destroy() end
+    -- Also check gethui
+    if gethui then
+        local gh = gethui()
+        local old2 = gh:FindFirstChild("AvatarSwapperGui")
+        if old2 then old2:Destroy() end
+    end
+end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name           = "AvatarSwapperGui"
@@ -105,7 +194,6 @@ screenGui.ResetOnSpawn   = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.DisplayOrder   = 999
 
--- Executor-safe parent: gethui() if available, else PlayerGui
 if gethui then
     screenGui.Parent = gethui()
 elseif syn and syn.protect_gui then
@@ -115,7 +203,10 @@ else
     screenGui.Parent = lp:WaitForChild("PlayerGui")
 end
 
--- ─── MAIN FRAME ───────────────────────────────────────────────────────────────
+local SEL   = Color3.fromRGB(70, 130, 255)
+local NORM  = Color3.fromRGB(28, 28, 38)
+local HOVER = Color3.fromRGB(38, 38, 52)
+
 local frame = Instance.new("Frame")
 frame.Name             = "Main"
 frame.Size             = UDim2.new(0, 300, 0, 430)
@@ -126,7 +217,6 @@ frame.Active           = true
 frame.Parent           = screenGui
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
 
--- Drop shadow (cosmetic frame behind main)
 local shadow = Instance.new("Frame")
 shadow.Size             = UDim2.new(1, 12, 1, 12)
 shadow.Position         = UDim2.new(0, -6, 0, -6)
@@ -137,7 +227,6 @@ shadow.ZIndex           = frame.ZIndex - 1
 shadow.Parent           = frame
 Instance.new("UICorner", shadow).CornerRadius = UDim.new(0, 14)
 
--- ─── TITLE BAR ────────────────────────────────────────────────────────────────
 local titleBar = Instance.new("Frame")
 titleBar.Size             = UDim2.new(1, 0, 0, 42)
 titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
@@ -145,7 +234,6 @@ titleBar.BorderSizePixel  = 0
 titleBar.Parent           = frame
 Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
--- Fill bottom corners of title bar so it blends with frame
 local titleFill = Instance.new("Frame")
 titleFill.Size             = UDim2.new(1, 0, 0, 10)
 titleFill.Position         = UDim2.new(0, 0, 1, -10)
@@ -177,7 +265,7 @@ closeBtn.Parent           = titleBar
 Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
 closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
--- ─── DRAG ─────────────────────────────────────────────────────────────────────
+-- Drag
 do
     local dragging, dragStart, startPos
     titleBar.InputBegan:Connect(function(inp)
@@ -208,7 +296,6 @@ do
     end)
 end
 
--- ─── STATUS LABEL ─────────────────────────────────────────────────────────────
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Text                  = "Loading outfits..."
 statusLabel.Size                  = UDim2.new(1, -20, 0, 26)
@@ -220,26 +307,24 @@ statusLabel.Font                  = Enum.Font.Gotham
 statusLabel.TextXAlignment        = Enum.TextXAlignment.Center
 statusLabel.Parent                = frame
 
--- ─── SEARCH BOX ───────────────────────────────────────────────────────────────
 local searchBox = Instance.new("TextBox")
-searchBox.PlaceholderText       = "Search outfits..."
-searchBox.Text                  = ""
-searchBox.Size                  = UDim2.new(1, -20, 0, 32)
-searchBox.Position              = UDim2.new(0, 10, 0, 82)
-searchBox.BackgroundColor3      = Color3.fromRGB(30, 30, 42)
-searchBox.TextColor3            = Color3.fromRGB(220, 220, 235)
-searchBox.PlaceholderColor3     = Color3.fromRGB(100, 100, 120)
-searchBox.TextSize              = 13
-searchBox.Font                  = Enum.Font.Gotham
-searchBox.BorderSizePixel       = 0
-searchBox.ClearTextOnFocus      = false
-searchBox.Parent                = frame
+searchBox.PlaceholderText   = "Search outfits..."
+searchBox.Text              = ""
+searchBox.Size              = UDim2.new(1, -62, 0, 32)
+searchBox.Position          = UDim2.new(0, 10, 0, 82)
+searchBox.BackgroundColor3  = Color3.fromRGB(30, 30, 42)
+searchBox.TextColor3        = Color3.fromRGB(220, 220, 235)
+searchBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 120)
+searchBox.TextSize          = 13
+searchBox.Font              = Enum.Font.Gotham
+searchBox.BorderSizePixel   = 0
+searchBox.ClearTextOnFocus  = false
+searchBox.Parent            = frame
 Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 7)
 local sbPad = Instance.new("UIPadding")
 sbPad.PaddingLeft = UDim.new(0, 10)
 sbPad.Parent      = searchBox
 
--- ─── SCROLL FRAME ─────────────────────────────────────────────────────────────
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size                 = UDim2.new(1, -20, 0, 240)
 scroll.Position             = UDim2.new(0, 10, 0, 122)
@@ -264,12 +349,11 @@ scrollPad.PaddingLeft   = UDim.new(0, 5)
 scrollPad.PaddingRight  = UDim.new(0, 5)
 scrollPad.Parent        = scroll
 
--- ─── APPLY BUTTON ─────────────────────────────────────────────────────────────
 local applyBtn = Instance.new("TextButton")
 applyBtn.Text             = "Apply Selected Outfit"
 applyBtn.Size             = UDim2.new(1, -20, 0, 38)
 applyBtn.Position         = UDim2.new(0, 10, 1, -50)
-applyBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 255)
+applyBtn.BackgroundColor3 = SEL
 applyBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
 applyBtn.TextSize         = 14
 applyBtn.Font             = Enum.Font.GothamBold
@@ -278,27 +362,20 @@ applyBtn.AutoButtonColor  = true
 applyBtn.Parent           = frame
 Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 8)
 
--- ─── STATE ────────────────────────────────────────────────────────────────────
 local allOutfits  = {}
 local selectedId  = nil
 local selectedBtn = nil
-local SEL   = Color3.fromRGB(70, 130, 255)
-local NORM  = Color3.fromRGB(28, 28, 38)
-local HOVER = Color3.fromRGB(38, 38, 52)
 
--- ─── POPULATE ROWS ────────────────────────────────────────────────────────────
 local function populateRows(list)
     for _, c in ipairs(scroll:GetChildren()) do
         if c:IsA("TextButton") then c:Destroy() end
     end
     selectedId  = nil
     selectedBtn = nil
-
     if #list == 0 then
         statusLabel.Text = "No outfits found."
         return
     end
-
     for i, outfit in ipairs(list) do
         local btn = Instance.new("TextButton")
         btn.Text             = outfit.name
@@ -315,33 +392,22 @@ local function populateRows(list)
         local p = Instance.new("UIPadding")
         p.PaddingLeft = UDim.new(0, 10)
         p.Parent      = btn
-
-        -- Hover tween
         btn.MouseEnter:Connect(function()
             if btn ~= selectedBtn then
-                TweenService:Create(btn, TweenInfo.new(0.1), {
-                    BackgroundColor3 = HOVER
-                }):Play()
+                TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = HOVER }):Play()
             end
         end)
         btn.MouseLeave:Connect(function()
             if btn ~= selectedBtn then
-                TweenService:Create(btn, TweenInfo.new(0.1), {
-                    BackgroundColor3 = NORM
-                }):Play()
+                TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = NORM }):Play()
             end
         end)
-
         local oid = outfit.id
         btn.MouseButton1Click:Connect(function()
             if selectedBtn then
-                TweenService:Create(selectedBtn, TweenInfo.new(0.1), {
-                    BackgroundColor3 = NORM
-                }):Play()
+                TweenService:Create(selectedBtn, TweenInfo.new(0.1), { BackgroundColor3 = NORM }):Play()
             end
-            TweenService:Create(btn, TweenInfo.new(0.1), {
-                BackgroundColor3 = SEL
-            }):Play()
+            TweenService:Create(btn, TweenInfo.new(0.1), { BackgroundColor3 = SEL }):Play()
             selectedBtn = btn
             selectedId  = oid
             statusLabel.Text = "Selected: " .. outfit.name
@@ -349,7 +415,6 @@ local function populateRows(list)
     end
 end
 
--- ─── SEARCH FILTER ────────────────────────────────────────────────────────────
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
     local query = searchBox.Text:lower()
     if query == "" then
@@ -367,7 +432,6 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(function()
     statusLabel.Text = string.format("%d result(s) for \"%s\"", #filtered, searchBox.Text)
 end)
 
--- ─── APPLY CLICK ──────────────────────────────────────────────────────────────
 applyBtn.MouseButton1Click:Connect(function()
     if not selectedId then
         statusLabel.Text = "Select an outfit first!"
@@ -378,7 +442,7 @@ applyBtn.MouseButton1Click:Connect(function()
     task.spawn(function()
         applyOutfit(oid, function(msg)
             statusLabel.Text = msg
-            if msg == "Done!" then
+            if msg:find("Done") then
                 TweenService:Create(applyBtn, TweenInfo.new(0.2), {
                     BackgroundColor3 = Color3.fromRGB(50, 180, 100)
                 }):Play()
@@ -393,7 +457,6 @@ applyBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- ─── REFRESH BUTTON ───────────────────────────────────────────────────────────
 local refreshBtn = Instance.new("TextButton")
 refreshBtn.Text             = "↻"
 refreshBtn.Size             = UDim2.new(0, 32, 0, 32)
@@ -406,9 +469,6 @@ refreshBtn.BorderSizePixel  = 0
 refreshBtn.AutoButtonColor  = true
 refreshBtn.Parent           = frame
 Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0, 7)
-
--- Shrink the search box to make room for refresh button
-searchBox.Size     = UDim2.new(1, -62, 0, 32)
 
 local function loadOutfits()
     statusLabel.Text = "Fetching outfits..."
@@ -423,7 +483,6 @@ end
 
 refreshBtn.MouseButton1Click:Connect(loadOutfits)
 
--- ─── KEYBIND: RightShift toggles GUI ──────────────────────────────────────────
 UserInputService.InputBegan:Connect(function(inp, gpe)
     if gpe then return end
     if inp.KeyCode == Enum.KeyCode.RightShift then
@@ -431,11 +490,9 @@ UserInputService.InputBegan:Connect(function(inp, gpe)
     end
 end)
 
--- ─── RESPAWN SAFETY ───────────────────────────────────────────────────────────
 lp.CharacterAdded:Connect(function(char)
     character = char
     humanoid  = char:WaitForChild("Humanoid")
 end)
 
--- ─── INITIAL LOAD ─────────────────────────────────────────────────────────────
 loadOutfits()
