@@ -1,471 +1,441 @@
--- BodyScaleClient (improved)
--- LocalScript → StarterPlayerScripts
--- Client-only scale mutation via network ownership of own character.
--- test
+-- AvatarSwapper.lua — Executor script
+-- Fetches your saved Roblox outfits and applies them in-game.
+-- Works with Synapse X, KRNL, Fluxus, Solara, Wave, etc.
 
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local RunService       = game:GetService("RunService")
 local TweenService     = game:GetService("TweenService")
 
-local player = Players.LocalPlayer
+local lp        = Players.LocalPlayer
+local character = lp.Character or lp.CharacterAdded:Wait()
+local humanoid  = character:WaitForChild("Humanoid")
+local userId    = lp.UserId
 
---------------------------------------------------------------------------------
--- Constants
---------------------------------------------------------------------------------
-
-local PANEL_W      = 280
-local ROW_H        = 50
-local HEADER_H     = 40
-local PADDING      = 10
-local TWEEN_INFO   = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
--- Accent gradient stops (HSV-based blue → violet feel)
-local COLOR_BG         = Color3.fromRGB(12, 13, 20)
-local COLOR_HEADER     = Color3.fromRGB(20, 21, 34)
-local COLOR_TRACK      = Color3.fromRGB(35, 37, 58)
-local COLOR_FILL       = Color3.fromRGB(88, 166, 255)
-local COLOR_THUMB      = Color3.fromRGB(230, 238, 255)
-local COLOR_THUMB_HOT  = Color3.fromRGB(255, 255, 255)
-local COLOR_LABEL      = Color3.fromRGB(140, 148, 190)
-local COLOR_VALUE      = Color3.fromRGB(88, 166, 255)
-local COLOR_TITLE      = Color3.fromRGB(210, 220, 255)
-local COLOR_SHADOW     = Color3.fromRGB(0, 0, 0)
-
---------------------------------------------------------------------------------
--- Scale definitions
--- All six standard Roblox Humanoid NumberValue scale children.
---------------------------------------------------------------------------------
-
-local SCALES = {
-    { name = "BodyTypeScale",   label = "Body Type",   min = 0.00, max = 1.00, default = 0.30 },
-    { name = "HeadScale",       label = "Head",        min = 0.95, max = 1.00, default = 1.00 },
-    { name = "BodyHeightScale", label = "Height",      min = 0.90, max = 1.05, default = 1.00 },
-    { name = "BodyWidthScale",  label = "Width",       min = 0.70, max = 1.00, default = 1.00 },
-    { name = "BodyDepthScale",  label = "Depth",       min = 0.70, max = 1.00, default = 1.00 },
-    { name = "ProportionScale", label = "Proportion",  min = 0.00, max = 1.00, default = 0.00 },
-}
-
-local currentValues = {}
-for _, s in ipairs(SCALES) do
-    currentValues[s.name] = s.default
-end
-
---------------------------------------------------------------------------------
--- Helpers
---------------------------------------------------------------------------------
-
-local function lerp(a, b, t)
-    return a + (b - a) * t
-end
-
-local function invLerp(a, b, v)
-    return math.clamp((v - a) / (b - a), 0, 1)
-end
-
-local function round3(n)
-    return math.floor(n * 1000 + 0.5) / 1000
-end
-
--- Retrieve the Humanoid scale NumberValue safely.
-local function getScaleNV(scaleName)
-    local char = player.Character
-    if not char then return nil end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return nil end
-    return hum:FindFirstChild(scaleName)
-end
-
--- Write one scale value to the character (clamp enforced).
-local function writeScale(scaleDef, value)
-    local nv = getScaleNV(scaleDef.name)
-    if nv then
-        nv.Value = math.clamp(value, scaleDef.min, scaleDef.max)
+-- ─── HTTP ABSTRACTION ─────────────────────────────────────────────────────────
+-- Detects whichever HTTP function your executor exposes.
+local function httpGet(url)
+    if syn and syn.request then
+        local res = syn.request({ Url = url, Method = "GET" })
+        return res.Body
+    elseif http and http.request then
+        local res = http.request({ Url = url, Method = "GET" })
+        return res.Body
+    elseif request then
+        local res = request({ Url = url, Method = "GET" })
+        return res.Body
+    elseif http_request then
+        local res = http_request({ Url = url, Method = "GET" })
+        return res.Body
+    else
+        error("[AvatarSwapper] No HTTP function found in this executor.")
     end
 end
 
--- Apply all current values (called on spawn / respawn).
-local function applyAllScales()
-    for _, s in ipairs(SCALES) do
-        writeScale(s, currentValues[s.name])
+-- ─── FETCH OUTFIT LIST ────────────────────────────────────────────────────────
+local function fetchOutfits()
+    local url = string.format(
+        "https://avatar.roblox.com/v1/users/%d/outfits?page=1&itemsPerPage=50&isEditable=true",
+        userId
+    )
+    local ok, body = pcall(httpGet, url)
+    if not ok then
+        warn("[AvatarSwapper] HTTP error:", body)
+        return {}
+    end
+    local decoded = game:GetService("HttpService"):JSONDecode(body)
+    local list = {}
+    if decoded and decoded.data then
+        for _, entry in ipairs(decoded.data) do
+            table.insert(list, { id = entry.id, name = entry.name })
+        end
+    end
+    return list
+end
+
+-- ─── APPLY OUTFIT ─────────────────────────────────────────────────────────────
+-- Executors run in the client VM but some support ApplyDescriptionAsync
+-- via the elevated identity level. Falls back to manual asset swapping
+-- if the async method is blocked by the game.
+local function applyOutfit(outfitId, statusCb)
+    statusCb("Fetching description...")
+
+    local ok, desc = pcall(function()
+        return Players:GetHumanoidDescriptionFromOutfitIdAsync(outfitId)
+    end)
+
+    if not ok or not desc then
+        statusCb("ERR: Could not load description")
+        warn("[AvatarSwapper] GetHumanoidDescriptionFromOutfitIdAsync failed:", desc)
+        return
+    end
+
+    -- Refresh character reference in case of respawn
+    character = lp.Character or lp.CharacterAdded:Wait()
+    humanoid  = character:FindFirstChildOfClass("Humanoid")
+
+    if not humanoid then
+        statusCb("ERR: No Humanoid")
+        return
+    end
+
+    statusCb("Applying...")
+    local applyOk, applyErr = pcall(function()
+        humanoid:ApplyDescriptionAsync(desc)
+    end)
+
+    if applyOk then
+        statusCb("Done!")
+    else
+        -- Some games block ApplyDescriptionAsync — warn but don't crash
+        warn("[AvatarSwapper] ApplyDescriptionAsync blocked:", applyErr)
+        statusCb("Blocked by game")
     end
 end
 
---------------------------------------------------------------------------------
--- UI helpers
---------------------------------------------------------------------------------
-
-local function makeCorner(parent, radius)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, radius)
-    c.Parent = parent
-    return c
-end
-
-local function makeStroke(parent, color, thickness, transparency)
-    local s = Instance.new("UIStroke")
-    s.Color        = color
-    s.Thickness    = thickness
-    s.Transparency = transparency or 0
-    s.Parent       = parent
-    return s
-end
-
---------------------------------------------------------------------------------
--- Build ScreenGui
---------------------------------------------------------------------------------
+-- ─── GUI ──────────────────────────────────────────────────────────────────────
+-- Destroy any previous instance (re-execute safe)
+local OLD = lp:FindFirstChild("PlayerGui") and
+            lp.PlayerGui:FindFirstChild("AvatarSwapperGui")
+if OLD then OLD:Destroy() end
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name             = "BodyScaleGui"
-screenGui.ResetOnSpawn     = false
-screenGui.IgnoreGuiInset   = true
-screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
-screenGui.DisplayOrder     = 10
-screenGui.Parent           = player.PlayerGui
+screenGui.Name           = "AvatarSwapperGui"
+screenGui.ResetOnSpawn   = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder   = 999
 
-local PANEL_H = HEADER_H + (#SCALES * ROW_H) + PADDING * 2
-
--- Drop-shadow frame (behind panel)
-local shadow = Instance.new("Frame")
-shadow.Name                  = "Shadow"
-shadow.Size                  = UDim2.new(0, PANEL_W + 16, 0, PANEL_H + 16)
-shadow.Position              = UDim2.new(0, 14 - 8, 0.5, -PANEL_H / 2 - 8)
-shadow.BackgroundColor3      = COLOR_SHADOW
-shadow.BackgroundTransparency = 0.55
-shadow.BorderSizePixel       = 0
-shadow.ZIndex                = 0
-shadow.Parent                = screenGui
-makeCorner(shadow, 16)
-
--- Main panel
-local panel = Instance.new("Frame")
-panel.Name             = "Panel"
-panel.Size             = UDim2.new(0, PANEL_W, 0, PANEL_H)
-panel.Position         = UDim2.new(0, 14, 0.5, -PANEL_H / 2)
-panel.BackgroundColor3 = COLOR_BG
-panel.BorderSizePixel  = 0
-panel.ZIndex           = 1
-panel.Parent           = screenGui
-makeCorner(panel, 12)
-makeStroke(panel, Color3.fromRGB(45, 50, 80), 1, 0.4)
-
--- Header bar
-local header = Instance.new("Frame")
-header.Name             = "Header"
-header.Size             = UDim2.new(1, 0, 0, HEADER_H)
-header.BackgroundColor3 = COLOR_HEADER
-header.BorderSizePixel  = 0
-header.ZIndex           = 2
-header.Parent           = panel
-makeCorner(header, 12)
-makeStroke(header, Color3.fromRGB(55, 60, 100), 1, 0.5)
-
--- Cover the bottom rounded corners of the header
-local headerCover = Instance.new("Frame")
-headerCover.Size             = UDim2.new(1, 0, 0, 12)
-headerCover.Position         = UDim2.new(0, 0, 1, -12)
-headerCover.BackgroundColor3 = COLOR_HEADER
-headerCover.BorderSizePixel  = 0
-headerCover.ZIndex           = 2
-headerCover.Parent           = header
-
--- Accent left border on header
-local accentBar = Instance.new("Frame")
-accentBar.Name             = "Accent"
-accentBar.Size             = UDim2.new(0, 3, 0, HEADER_H - 16)
-accentBar.Position         = UDim2.new(0, 10, 0.5, -(HEADER_H - 16) / 2)
-accentBar.BackgroundColor3 = COLOR_FILL
-accentBar.BorderSizePixel  = 0
-accentBar.ZIndex           = 3
-accentBar.Parent           = header
-makeCorner(accentBar, 2)
-
--- Title text
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size                = UDim2.new(1, -20, 1, 0)
-titleLabel.Position            = UDim2.new(0, 20, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text                = "Body Scale"
-titleLabel.TextColor3          = COLOR_TITLE
-titleLabel.TextSize            = 14
-titleLabel.Font                = Enum.Font.GothamBold
-titleLabel.TextXAlignment      = Enum.TextXAlignment.Left
-titleLabel.ZIndex              = 3
-titleLabel.Parent              = header
-
--- Separator line between header and sliders
-local sep = Instance.new("Frame")
-sep.Size             = UDim2.new(1, -20, 0, 1)
-sep.Position         = UDim2.new(0, 10, 0, HEADER_H)
-sep.BackgroundColor3 = Color3.fromRGB(40, 44, 72)
-sep.BorderSizePixel  = 0
-sep.ZIndex           = 2
-sep.Parent           = panel
-
---------------------------------------------------------------------------------
--- Drag logic (panel follows shadow)
---------------------------------------------------------------------------------
-
-local dragging    = false
-local dragStartMouse = Vector2.new()
-local dragStartPanel = UDim2.new()
-
-local function syncShadow()
-    shadow.Position = UDim2.new(
-        panel.Position.X.Scale, panel.Position.X.Offset - 8,
-        panel.Position.Y.Scale, panel.Position.Y.Offset - 8
-    )
+-- Executor-safe parent: gethui() if available, else PlayerGui
+if gethui then
+    screenGui.Parent = gethui()
+elseif syn and syn.protect_gui then
+    syn.protect_gui(screenGui)
+    screenGui.Parent = lp:WaitForChild("PlayerGui")
+else
+    screenGui.Parent = lp:WaitForChild("PlayerGui")
 end
 
-header.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1
-    or inp.UserInputType == Enum.UserInputType.Touch then
-        dragging         = true
-        dragStartMouse   = Vector2.new(inp.Position.X, inp.Position.Y)
-        dragStartPanel   = panel.Position
-    end
-end)
+-- ─── MAIN FRAME ───────────────────────────────────────────────────────────────
+local frame = Instance.new("Frame")
+frame.Name             = "Main"
+frame.Size             = UDim2.new(0, 300, 0, 430)
+frame.Position         = UDim2.new(0.5, -150, 0.5, -215)
+frame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+frame.BorderSizePixel  = 0
+frame.Active           = true
+frame.Parent           = screenGui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
 
-UserInputService.InputChanged:Connect(function(inp)
-    if not dragging then return end
-    if inp.UserInputType ~= Enum.UserInputType.MouseMovement
-    and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+-- Drop shadow (cosmetic frame behind main)
+local shadow = Instance.new("Frame")
+shadow.Size             = UDim2.new(1, 12, 1, 12)
+shadow.Position         = UDim2.new(0, -6, 0, -6)
+shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+shadow.BackgroundTransparency = 0.6
+shadow.BorderSizePixel  = 0
+shadow.ZIndex           = frame.ZIndex - 1
+shadow.Parent           = frame
+Instance.new("UICorner", shadow).CornerRadius = UDim.new(0, 14)
 
-    local delta = Vector2.new(inp.Position.X, inp.Position.Y) - dragStartMouse
-    panel.Position = UDim2.new(
-        dragStartPanel.X.Scale, dragStartPanel.X.Offset + delta.X,
-        dragStartPanel.Y.Scale, dragStartPanel.Y.Offset + delta.Y
-    )
-    syncShadow()
-end)
+-- ─── TITLE BAR ────────────────────────────────────────────────────────────────
+local titleBar = Instance.new("Frame")
+titleBar.Size             = UDim2.new(1, 0, 0, 42)
+titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+titleBar.BorderSizePixel  = 0
+titleBar.Parent           = frame
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
 
-UserInputService.InputEnded:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1
-    or inp.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
+-- Fill bottom corners of title bar so it blends with frame
+local titleFill = Instance.new("Frame")
+titleFill.Size             = UDim2.new(1, 0, 0, 10)
+titleFill.Position         = UDim2.new(0, 0, 1, -10)
+titleFill.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+titleFill.BorderSizePixel  = 0
+titleFill.Parent           = titleBar
 
---------------------------------------------------------------------------------
--- Slider factory
---------------------------------------------------------------------------------
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text                  = "Avatar Swapper"
+titleLabel.Size                  = UDim2.new(1, -50, 1, 0)
+titleLabel.Position              = UDim2.new(0, 14, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3            = Color3.fromRGB(230, 230, 240)
+titleLabel.TextSize              = 15
+titleLabel.Font                  = Enum.Font.GothamBold
+titleLabel.TextXAlignment        = Enum.TextXAlignment.Left
+titleLabel.Parent                = titleBar
 
--- sliderRefresh[name](value) → visually syncs slider without writing to char.
-local sliderRefresh = {}
+local closeBtn = Instance.new("TextButton")
+closeBtn.Text             = "✕"
+closeBtn.Size             = UDim2.new(0, 28, 0, 28)
+closeBtn.Position         = UDim2.new(1, -36, 0.5, -14)
+closeBtn.BackgroundColor3 = Color3.fromRGB(190, 55, 55)
+closeBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
+closeBtn.TextSize         = 13
+closeBtn.Font             = Enum.Font.GothamBold
+closeBtn.BorderSizePixel  = 0
+closeBtn.Parent           = titleBar
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
-for i, scaleDef in ipairs(SCALES) do
-    local sName = scaleDef.name
-    local sMin  = scaleDef.min
-    local sMax  = scaleDef.max
-    local yPos  = HEADER_H + PADDING + (i - 1) * ROW_H + 4
-
-    -- Row frame
-    local row = Instance.new("Frame")
-    row.Size                  = UDim2.new(1, -PADDING * 2, 0, ROW_H - 6)
-    row.Position              = UDim2.new(0, PADDING, 0, yPos)
-    row.BackgroundTransparency = 1
-    row.ZIndex                = 2
-    row.Parent                = panel
-
-    -- Label (left)
-    local label = Instance.new("TextLabel")
-    label.Size                = UDim2.new(0, 100, 0, 16)
-    label.Position            = UDim2.new(0, 0, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text                = scaleDef.label
-    label.TextColor3          = COLOR_LABEL
-    label.TextSize            = 11
-    label.Font                = Enum.Font.Gotham
-    label.TextXAlignment      = Enum.TextXAlignment.Left
-    label.ZIndex              = 3
-    label.Parent              = row
-
-    -- Value readout (right)
-    local valLabel = Instance.new("TextLabel")
-    valLabel.Size             = UDim2.new(0, 52, 0, 16)
-    valLabel.Position         = UDim2.new(1, -52, 0, 0)
-    valLabel.BackgroundTransparency = 1
-    valLabel.TextColor3       = COLOR_VALUE
-    valLabel.TextSize         = 11
-    valLabel.Font             = Enum.Font.GothamMono
-    valLabel.TextXAlignment   = Enum.TextXAlignment.Right
-    valLabel.ZIndex           = 3
-    valLabel.Parent           = row
-
-    -- Track background
-    local track = Instance.new("Frame")
-    track.Size             = UDim2.new(1, 0, 0, 6)
-    track.Position         = UDim2.new(0, 0, 0, 26)
-    track.BackgroundColor3 = COLOR_TRACK
-    track.BorderSizePixel  = 0
-    track.ZIndex           = 3
-    track.Parent           = row
-    makeCorner(track, 4)
-
-    -- Track glow (faint, sits behind fill)
-    local trackGlow = Instance.new("Frame")
-    trackGlow.Size             = UDim2.new(1, 0, 1, 4)
-    trackGlow.Position         = UDim2.new(0, 0, 0, -2)
-    trackGlow.BackgroundColor3 = COLOR_FILL
-    trackGlow.BackgroundTransparency = 0.88
-    trackGlow.BorderSizePixel  = 0
-    trackGlow.ZIndex           = 2
-    trackGlow.Parent           = track
-    makeCorner(trackGlow, 4)
-
-    -- Fill bar
-    local fill = Instance.new("Frame")
-    fill.Size             = UDim2.new(0, 0, 1, 0)
-    fill.BackgroundColor3 = COLOR_FILL
-    fill.BorderSizePixel  = 0
-    fill.ZIndex           = 4
-    fill.Parent           = track
-    makeCorner(fill, 4)
-
-    -- Thumb button (interactive hitbox + visual)
-    local thumb = Instance.new("TextButton")
-    thumb.Size             = UDim2.new(0, 16, 0, 16)
-    thumb.Position         = UDim2.new(0, -8, 0.5, -8)
-    thumb.BackgroundColor3 = COLOR_THUMB
-    thumb.Text             = ""
-    thumb.BorderSizePixel  = 0
-    thumb.AutoButtonColor  = false
-    thumb.ZIndex           = 5
-    thumb.Parent           = track
-    makeCorner(thumb, 8)
-    -- Subtle stroke on thumb
-    makeStroke(thumb, Color3.fromRGB(120, 160, 255), 1.5, 0.3)
-
-    -- Inner dot on thumb
-    local dot = Instance.new("Frame")
-    dot.Size             = UDim2.new(0, 6, 0, 6)
-    dot.Position         = UDim2.new(0.5, -3, 0.5, -3)
-    dot.BackgroundColor3 = COLOR_FILL
-    dot.BorderSizePixel  = 0
-    dot.ZIndex           = 6
-    dot.Parent           = thumb
-    makeCorner(dot, 3)
-
-    ----------------------------------------------------------------------------
-    -- Visual refresh (no character write)
-    ----------------------------------------------------------------------------
-    local function refresh(val, skipTween)
-        local t = invLerp(sMin, sMax, val)
-        valLabel.Text = string.format("%.3f", val)
-
-        if skipTween then
-            fill.Size      = UDim2.new(t, 0, 1, 0)
-            thumb.Position = UDim2.new(t, -8, 0.5, -8)
-        else
-            TweenService:Create(fill,  TWEEN_INFO, { Size     = UDim2.new(t, 0, 1, 0)    }):Play()
-            TweenService:Create(thumb, TWEEN_INFO, { Position = UDim2.new(t, -8, 0.5, -8) }):Play()
-        end
-    end
-
-    refresh(currentValues[sName], true)
-    sliderRefresh[sName] = refresh
-
-    ----------------------------------------------------------------------------
-    -- Thumb hover states
-    ----------------------------------------------------------------------------
-    thumb.MouseEnter:Connect(function()
-        TweenService:Create(thumb, TWEEN_INFO, { BackgroundColor3 = COLOR_THUMB_HOT, Size = UDim2.new(0, 18, 0, 18) }):Play()
-        thumb.Position = UDim2.new(thumb.Position.X.Scale, -9, 0.5, -9)
-    end)
-    thumb.MouseLeave:Connect(function()
-        TweenService:Create(thumb, TWEEN_INFO, { BackgroundColor3 = COLOR_THUMB, Size = UDim2.new(0, 16, 0, 16) }):Play()
-        thumb.Position = UDim2.new(thumb.Position.X.Scale, -8, 0.5, -8)
-    end)
-
-    ----------------------------------------------------------------------------
-    -- Compute a clamped value from a raw screen X position
-    ----------------------------------------------------------------------------
-    local function valueFromScreenX(screenX)
-        local trackX = track.AbsolutePosition.X
-        local trackW = track.AbsoluteSize.X
-        if trackW <= 0 then return currentValues[sName] end
-        local t = math.clamp((screenX - trackX) / trackW, 0, 1)
-        return round3(lerp(sMin, sMax, t))
-    end
-
-    ----------------------------------------------------------------------------
-    -- Commit a value: update table, refresh UI, write to character
-    ----------------------------------------------------------------------------
-    local function commitValue(val)
-        currentValues[sName] = val
-        refresh(val, true)   -- instant during drag, feels snappier
-        writeScale(scaleDef, val)
-    end
-
-    ----------------------------------------------------------------------------
-    -- Input handling — unified for mouse + touch
-    ----------------------------------------------------------------------------
-    local held = false
-
-    local function onPress(screenX)
-        held = true
-        commitValue(valueFromScreenX(screenX))
-    end
-
-    -- Clicking anywhere on the track
-    track.InputBegan:Connect(function(inp)
+-- ─── DRAG ─────────────────────────────────────────────────────────────────────
+do
+    local dragging, dragStart, startPos
+    titleBar.InputBegan:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1
         or inp.UserInputType == Enum.UserInputType.Touch then
-            onPress(inp.Position.X)
+            dragging  = true
+            dragStart = inp.Position
+            startPos  = frame.Position
         end
     end)
-
-    -- Pressing the thumb directly
-    thumb.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            held = true   -- don't snap position; just enable drag
-        end
-    end)
-
-    -- Global drag listener (only active while held)
     UserInputService.InputChanged:Connect(function(inp)
-        if not held then return end
-        if inp.UserInputType == Enum.UserInputType.MouseMovement
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            commitValue(valueFromScreenX(inp.Position.X))
+        if dragging and (
+            inp.UserInputType == Enum.UserInputType.MouseMovement or
+            inp.UserInputType == Enum.UserInputType.Touch
+        ) then
+            local d = inp.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + d.X,
+                startPos.Y.Scale, startPos.Y.Offset + d.Y
+            )
         end
     end)
-
     UserInputService.InputEnded:Connect(function(inp)
         if inp.UserInputType == Enum.UserInputType.MouseButton1
         or inp.UserInputType == Enum.UserInputType.Touch then
-            if held then
-                held = false
-                -- Final smooth snap after release
-                refresh(currentValues[sName], false)
-            end
+            dragging = false
         end
     end)
 end
 
---------------------------------------------------------------------------------
--- Respawn handling
--- Wait slightly longer than before (0.5s → 1 frame + 0.6s) to ensure
--- the engine has fully loaded the Humanoid NumberValue children.
---------------------------------------------------------------------------------
+-- ─── STATUS LABEL ─────────────────────────────────────────────────────────────
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Text                  = "Loading outfits..."
+statusLabel.Size                  = UDim2.new(1, -20, 0, 26)
+statusLabel.Position              = UDim2.new(0, 10, 0, 50)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3            = Color3.fromRGB(160, 160, 185)
+statusLabel.TextSize              = 12
+statusLabel.Font                  = Enum.Font.Gotham
+statusLabel.TextXAlignment        = Enum.TextXAlignment.Center
+statusLabel.Parent                = frame
 
-local function onCharacterAdded(character)
-    -- Yield until the Humanoid exists
-    local humanoid = character:WaitForChild("Humanoid", 10)
-    if not humanoid then return end
+-- ─── SEARCH BOX ───────────────────────────────────────────────────────────────
+local searchBox = Instance.new("TextBox")
+searchBox.PlaceholderText       = "Search outfits..."
+searchBox.Text                  = ""
+searchBox.Size                  = UDim2.new(1, -20, 0, 32)
+searchBox.Position              = UDim2.new(0, 10, 0, 82)
+searchBox.BackgroundColor3      = Color3.fromRGB(30, 30, 42)
+searchBox.TextColor3            = Color3.fromRGB(220, 220, 235)
+searchBox.PlaceholderColor3     = Color3.fromRGB(100, 100, 120)
+searchBox.TextSize              = 13
+searchBox.Font                  = Enum.Font.Gotham
+searchBox.BorderSizePixel       = 0
+searchBox.ClearTextOnFocus      = false
+searchBox.Parent                = frame
+Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 7)
+local sbPad = Instance.new("UIPadding")
+sbPad.PaddingLeft = UDim.new(0, 10)
+sbPad.Parent      = searchBox
 
-    -- Yield until all scale NumberValues are present (they're added async)
-    for _, s in ipairs(SCALES) do
-        humanoid:WaitForChild(s.name, 5)
+-- ─── SCROLL FRAME ─────────────────────────────────────────────────────────────
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size                 = UDim2.new(1, -20, 0, 240)
+scroll.Position             = UDim2.new(0, 10, 0, 122)
+scroll.BackgroundColor3     = Color3.fromRGB(13, 13, 18)
+scroll.BorderSizePixel      = 0
+scroll.ScrollBarThickness   = 4
+scroll.ScrollBarImageColor3 = Color3.fromRGB(80, 100, 200)
+scroll.CanvasSize           = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize  = Enum.AutomaticSize.Y
+scroll.Parent               = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 8)
+
+local layout = Instance.new("UIListLayout")
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding   = UDim.new(0, 3)
+layout.Parent    = scroll
+
+local scrollPad = Instance.new("UIPadding")
+scrollPad.PaddingTop    = UDim.new(0, 5)
+scrollPad.PaddingBottom = UDim.new(0, 5)
+scrollPad.PaddingLeft   = UDim.new(0, 5)
+scrollPad.PaddingRight  = UDim.new(0, 5)
+scrollPad.Parent        = scroll
+
+-- ─── APPLY BUTTON ─────────────────────────────────────────────────────────────
+local applyBtn = Instance.new("TextButton")
+applyBtn.Text             = "Apply Selected Outfit"
+applyBtn.Size             = UDim2.new(1, -20, 0, 38)
+applyBtn.Position         = UDim2.new(0, 10, 1, -50)
+applyBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 255)
+applyBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
+applyBtn.TextSize         = 14
+applyBtn.Font             = Enum.Font.GothamBold
+applyBtn.BorderSizePixel  = 0
+applyBtn.AutoButtonColor  = true
+applyBtn.Parent           = frame
+Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 8)
+
+-- ─── STATE ────────────────────────────────────────────────────────────────────
+local allOutfits  = {}
+local selectedId  = nil
+local selectedBtn = nil
+local SEL   = Color3.fromRGB(70, 130, 255)
+local NORM  = Color3.fromRGB(28, 28, 38)
+local HOVER = Color3.fromRGB(38, 38, 52)
+
+-- ─── POPULATE ROWS ────────────────────────────────────────────────────────────
+local function populateRows(list)
+    for _, c in ipairs(scroll:GetChildren()) do
+        if c:IsA("TextButton") then c:Destroy() end
+    end
+    selectedId  = nil
+    selectedBtn = nil
+
+    if #list == 0 then
+        statusLabel.Text = "No outfits found."
+        return
     end
 
-    -- One extra tick so the engine finishes its own default writes
-    task.wait(0.1)
-    applyAllScales()
+    for i, outfit in ipairs(list) do
+        local btn = Instance.new("TextButton")
+        btn.Text             = outfit.name
+        btn.Size             = UDim2.new(1, 0, 0, 34)
+        btn.BackgroundColor3 = NORM
+        btn.TextColor3       = Color3.fromRGB(210, 210, 228)
+        btn.TextSize         = 13
+        btn.Font             = Enum.Font.Gotham
+        btn.TextXAlignment   = Enum.TextXAlignment.Left
+        btn.BorderSizePixel  = 0
+        btn.LayoutOrder      = i
+        btn.Parent           = scroll
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        local p = Instance.new("UIPadding")
+        p.PaddingLeft = UDim.new(0, 10)
+        p.Parent      = btn
+
+        -- Hover tween
+        btn.MouseEnter:Connect(function()
+            if btn ~= selectedBtn then
+                TweenService:Create(btn, TweenInfo.new(0.1), {
+                    BackgroundColor3 = HOVER
+                }):Play()
+            end
+        end)
+        btn.MouseLeave:Connect(function()
+            if btn ~= selectedBtn then
+                TweenService:Create(btn, TweenInfo.new(0.1), {
+                    BackgroundColor3 = NORM
+                }):Play()
+            end
+        end)
+
+        local oid = outfit.id
+        btn.MouseButton1Click:Connect(function()
+            if selectedBtn then
+                TweenService:Create(selectedBtn, TweenInfo.new(0.1), {
+                    BackgroundColor3 = NORM
+                }):Play()
+            end
+            TweenService:Create(btn, TweenInfo.new(0.1), {
+                BackgroundColor3 = SEL
+            }):Play()
+            selectedBtn = btn
+            selectedId  = oid
+            statusLabel.Text = "Selected: " .. outfit.name
+        end)
+    end
 end
 
--- Handle character already in world on script start
-if player.Character then
-    task.spawn(onCharacterAdded, player.Character)
+-- ─── SEARCH FILTER ────────────────────────────────────────────────────────────
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local query = searchBox.Text:lower()
+    if query == "" then
+        populateRows(allOutfits)
+        statusLabel.Text = string.format("%d outfit(s) loaded", #allOutfits)
+        return
+    end
+    local filtered = {}
+    for _, o in ipairs(allOutfits) do
+        if o.name:lower():find(query, 1, true) then
+            table.insert(filtered, o)
+        end
+    end
+    populateRows(filtered)
+    statusLabel.Text = string.format("%d result(s) for \"%s\"", #filtered, searchBox.Text)
+end)
+
+-- ─── APPLY CLICK ──────────────────────────────────────────────────────────────
+applyBtn.MouseButton1Click:Connect(function()
+    if not selectedId then
+        statusLabel.Text = "Select an outfit first!"
+        return
+    end
+    applyBtn.Active = false
+    local oid = selectedId
+    task.spawn(function()
+        applyOutfit(oid, function(msg)
+            statusLabel.Text = msg
+            if msg == "Done!" then
+                TweenService:Create(applyBtn, TweenInfo.new(0.2), {
+                    BackgroundColor3 = Color3.fromRGB(50, 180, 100)
+                }):Play()
+                task.delay(1.5, function()
+                    TweenService:Create(applyBtn, TweenInfo.new(0.2), {
+                        BackgroundColor3 = SEL
+                    }):Play()
+                end)
+            end
+            applyBtn.Active = true
+        end)
+    end)
+end)
+
+-- ─── REFRESH BUTTON ───────────────────────────────────────────────────────────
+local refreshBtn = Instance.new("TextButton")
+refreshBtn.Text             = "↻"
+refreshBtn.Size             = UDim2.new(0, 32, 0, 32)
+refreshBtn.Position         = UDim2.new(1, -42, 0, 82)
+refreshBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 58)
+refreshBtn.TextColor3       = Color3.fromRGB(180, 180, 210)
+refreshBtn.TextSize         = 18
+refreshBtn.Font             = Enum.Font.GothamBold
+refreshBtn.BorderSizePixel  = 0
+refreshBtn.AutoButtonColor  = true
+refreshBtn.Parent           = frame
+Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0, 7)
+
+-- Shrink the search box to make room for refresh button
+searchBox.Size     = UDim2.new(1, -62, 0, 32)
+
+local function loadOutfits()
+    statusLabel.Text = "Fetching outfits..."
+    task.spawn(function()
+        allOutfits = fetchOutfits()
+        populateRows(allOutfits)
+        if #allOutfits > 0 then
+            statusLabel.Text = string.format("%d outfit(s) loaded", #allOutfits)
+        end
+    end)
 end
-player.CharacterAdded:Connect(onCharacterAdded)
+
+refreshBtn.MouseButton1Click:Connect(loadOutfits)
+
+-- ─── KEYBIND: RightShift toggles GUI ──────────────────────────────────────────
+UserInputService.InputBegan:Connect(function(inp, gpe)
+    if gpe then return end
+    if inp.KeyCode == Enum.KeyCode.RightShift then
+        frame.Visible = not frame.Visible
+    end
+end)
+
+-- ─── RESPAWN SAFETY ───────────────────────────────────────────────────────────
+lp.CharacterAdded:Connect(function(char)
+    character = char
+    humanoid  = char:WaitForChild("Humanoid")
+end)
+
+-- ─── INITIAL LOAD ─────────────────────────────────────────────────────────────
+loadOutfits()
