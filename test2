@@ -1,365 +1,211 @@
--- CenterOfMassGUI LocalScript
--- Place in: StarterCharacterScripts (recommended) or StarterPlayerScripts
--- Lets you offset the character's AssemblyCenterOfMass each frame via a GUI.
-
-local Players       = game:GetService("Players")
-local RunService    = game:GetService("RunService")
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-local player    = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid  = character:WaitForChild("Humanoid")
-local rootPart  = character:WaitForChild("HumanoidRootPart")
+local LocalPlayer = Players.LocalPlayer
+local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid    = Character:WaitForChild("Humanoid")
 
--- Re-acquire character on respawn
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid  = newChar:WaitForChild("Humanoid")
-    rootPart  = newChar:WaitForChild("HumanoidRootPart")
+-- Re-grab humanoid on respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character = char
+    Humanoid  = char:WaitForChild("Humanoid")
 end)
 
--- ─── GUI SETUP ───────────────────────────────────────────────────────────────
+-- ─── CONFIG ───────────────────────────────────────────────────────────────
+local SCALES = {
+    { name = "BodyHeightScale",     label = "Height",      min = 0.1, max = 3.0, default = 0.5  },
+    { name = "BodyWidthScale",      label = "Width",       min = 0.1, max = 3.0, default = 2.0  },
+    { name = "BodyDepthScale",      label = "Depth",       min = 0.1, max = 3.0, default = 1.0  },
+    { name = "BodyProportionScale", label = "Proportion",  min = 0.1, max = 2.0, default = 1.0  },
+    { name = "HeadScale",           label = "Head",        min = 0.1, max = 3.0, default = 1.0  },
+}
 
+local TRACK_W   = 200
+local THUMB_W   = 14
+local ROW_H     = 38
+local PAD       = 12
+local WIN_W     = TRACK_W + 90 + PAD * 2   -- label + track + value label
+local WIN_H     = PAD * 2 + 30 + #SCALES * ROW_H + 10
+
+-- ─── BUILD GUI ────────────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name          = "CenterOfMassGUI"
-screenGui.ResetOnSpawn  = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent        = player.PlayerGui
+screenGui.Name            = "ScaleGUI"
+screenGui.ResetOnSpawn    = false
+screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+screenGui.Parent          = LocalPlayer:WaitForChild("PlayerGui")
 
--- Main window frame
-local frame = Instance.new("Frame")
-frame.Name              = "MainFrame"
-frame.Size              = UDim2.new(0, 280, 0, 290)
-frame.Position          = UDim2.new(0, 20, 0.5, -145)
-frame.BackgroundColor3  = Color3.fromRGB(20, 20, 28)
-frame.BorderSizePixel   = 0
-frame.Active            = true
-frame.Parent            = screenGui
+local win = Instance.new("Frame")
+win.Size            = UDim2.fromOffset(WIN_W, WIN_H)
+win.Position        = UDim2.fromOffset(20, 120)
+win.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+win.BorderSizePixel = 0
+win.Active          = true   -- needed for dragging
+win.Parent          = screenGui
 
-local frameCorner = Instance.new("UICorner")
-frameCorner.CornerRadius = UDim.new(0, 10)
-frameCorner.Parent = frame
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent       = win
 
--- Title bar (also drag handle)
+-- Title bar
 local titleBar = Instance.new("Frame")
-titleBar.Name             = "TitleBar"
-titleBar.Size             = UDim2.new(1, 0, 0, 36)
-titleBar.BackgroundColor3 = Color3.fromRGB(98, 70, 220)
-titleBar.BorderSizePixel  = 0
-titleBar.Parent           = frame
+titleBar.Size              = UDim2.new(1, 0, 0, 28)
+titleBar.BackgroundColor3  = Color3.fromRGB(30, 30, 38)
+titleBar.BorderSizePixel   = 0
+titleBar.Parent            = win
 
 local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 10)
-titleCorner.Parent = titleBar
-
--- Square off bottom corners of title bar
-local titlePatch = Instance.new("Frame")
-titlePatch.Size             = UDim2.new(1, 0, 0.5, 0)
-titlePatch.Position         = UDim2.new(0, 0, 0.5, 0)
-titlePatch.BackgroundColor3 = Color3.fromRGB(98, 70, 220)
-titlePatch.BorderSizePixel  = 0
-titlePatch.Parent           = titleBar
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent       = titleBar
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Text             = "⚙  Center of Mass"
-titleLabel.Size             = UDim2.new(1, -40, 1, 0)
-titleLabel.Position         = UDim2.new(0, 10, 0, 0)
+titleLabel.Size              = UDim2.new(1, -8, 1, 0)
+titleLabel.Position          = UDim2.fromOffset(8, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.TextColor3       = Color3.fromRGB(255, 255, 255)
-titleLabel.TextSize         = 14
-titleLabel.Font             = Enum.Font.GothamBold
-titleLabel.TextXAlignment   = Enum.TextXAlignment.Left
-titleLabel.Parent           = titleBar
+titleLabel.Text              = "Scale Editor"
+titleLabel.TextColor3        = Color3.fromRGB(220, 220, 255)
+titleLabel.TextSize          = 13
+titleLabel.Font               = Enum.Font.GothamBold
+titleLabel.TextXAlignment     = Enum.TextXAlignment.Left
+titleLabel.Parent             = titleBar
 
--- Close button
-local closeBtn = Instance.new("TextButton")
-closeBtn.Text               = "✕"
-closeBtn.Size               = UDim2.new(0, 28, 0, 28)
-closeBtn.Position           = UDim2.new(1, -34, 0, 4)
-closeBtn.BackgroundColor3   = Color3.fromRGB(200, 70, 70)
-closeBtn.TextColor3         = Color3.fromRGB(255, 255, 255)
-closeBtn.TextSize           = 13
-closeBtn.Font               = Enum.Font.GothamBold
-closeBtn.BorderSizePixel    = 0
-closeBtn.Parent             = titleBar
+-- Drag logic for the window
+do
+    local dragging, dragStart, startPos
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging  = true
+            dragStart = input.Position
+            startPos  = win.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            win.Position = UDim2.fromOffset(
+                startPos.X.Offset + delta.X,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+end
 
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 6)
-closeCorner.Parent = closeBtn
+-- ─── HELPER: apply scale ──────────────────────────────────────────────────
+local function applyScale(scaleName, value)
+    local obj = Humanoid and Humanoid:FindFirstChild(scaleName)
+    if not obj then return end
+    obj.Value = value
+    -- flush engine pipeline
+    local orig = Humanoid.HipHeight
+    Humanoid.HipHeight = orig + 0.001
+    task.defer(function()
+        if Humanoid then
+            Humanoid.HipHeight = orig
+        end
+    end)
+end
 
--- ─── DRAG LOGIC ──────────────────────────────────────────────────────────────
-local dragging, dragStart, startPos = false, nil, nil
+-- ─── BUILD SLIDERS ────────────────────────────────────────────────────────
+for i, entry in ipairs(SCALES) do
+    local y = 30 + PAD + (i - 1) * ROW_H
 
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        dragging  = true
-        dragStart = input.Position
-        startPos  = frame.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-                  or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
-
--- ─── SLIDER FACTORY ──────────────────────────────────────────────────────────
-
--- Returns the slider frame and a function that returns current value (-20 to 20)
-local SLIDER_MIN, SLIDER_MAX = -20, 20
-
-local function makeSlider(parent, labelText, yOffset, color)
-    local container = Instance.new("Frame")
-    container.Size             = UDim2.new(1, -24, 0, 56)
-    container.Position         = UDim2.new(0, 12, 0, yOffset)
-    container.BackgroundTransparency = 1
-    container.Parent           = parent
-
+    -- Label
     local lbl = Instance.new("TextLabel")
-    lbl.Text            = labelText
-    lbl.Size            = UDim2.new(0, 80, 0, 18)
+    lbl.Size                  = UDim2.fromOffset(80, ROW_H - 6)
+    lbl.Position              = UDim2.fromOffset(PAD, y)
     lbl.BackgroundTransparency = 1
-    lbl.TextColor3      = Color3.fromRGB(200, 200, 220)
-    lbl.TextSize        = 13
-    lbl.Font            = Enum.Font.GothamBold
-    lbl.TextXAlignment  = Enum.TextXAlignment.Left
-    lbl.Parent          = container
-
-    local valLabel = Instance.new("TextLabel")
-    valLabel.Size       = UDim2.new(0, 50, 0, 18)
-    valLabel.Position   = UDim2.new(1, -50, 0, 0)
-    valLabel.BackgroundTransparency = 1
-    valLabel.TextColor3 = color
-    valLabel.TextSize   = 13
-    valLabel.Font       = Enum.Font.GothamBold
-    valLabel.TextXAlignment = Enum.TextXAlignment.Right
-    valLabel.Text       = "0.0"
-    valLabel.Parent     = container
+    lbl.Text                  = entry.label
+    lbl.TextColor3            = Color3.fromRGB(180, 180, 210)
+    lbl.TextSize              = 12
+    lbl.Font                  = Enum.Font.Gotham
+    lbl.TextXAlignment        = Enum.TextXAlignment.Left
+    lbl.Parent                = win
 
     -- Track background
     local track = Instance.new("Frame")
-    track.Size             = UDim2.new(1, 0, 0, 6)
-    track.Position         = UDim2.new(0, 0, 0, 30)
-    track.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-    track.BorderSizePixel  = 0
-    track.Parent           = container
+    track.Size              = UDim2.fromOffset(TRACK_W, 6)
+    track.Position          = UDim2.fromOffset(PAD + 82, y + (ROW_H - 6) / 2 - 3)
+    track.BackgroundColor3  = Color3.fromRGB(50, 50, 65)
+    track.BorderSizePixel   = 0
+    track.Parent            = win
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
 
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(1, 0)
-    trackCorner.Parent = track
-
-    -- Fill
+    -- Fill bar
     local fill = Instance.new("Frame")
-    fill.Size             = UDim2.new(0.5, 0, 1, 0)
-    fill.BackgroundColor3 = color
+    fill.Size             = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(100, 140, 255)
     fill.BorderSizePixel  = 0
     fill.Parent           = track
-
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(1, 0)
-    fillCorner.Parent = fill
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
     -- Thumb
-    local thumb = Instance.new("Frame")
-    thumb.Size             = UDim2.new(0, 16, 0, 16)
-    thumb.Position         = UDim2.new(0.5, -8, 0.5, -8)
-    thumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    thumb.BorderSizePixel  = 0
-    thumb.ZIndex           = 3
-    thumb.Parent           = track
+    local thumb = Instance.new("TextButton")
+    thumb.Size              = UDim2.fromOffset(THUMB_W, THUMB_W)
+    thumb.BackgroundColor3  = Color3.fromRGB(200, 210, 255)
+    thumb.BorderSizePixel   = 0
+    thumb.Text              = ""
+    thumb.ZIndex            = 5
+    thumb.Parent            = track
+    Instance.new("UICorner", thumb).CornerRadius = UDim.new(1, 0)
 
-    local thumbCorner = Instance.new("UICorner")
-    thumbCorner.CornerRadius = UDim.new(1, 0)
-    thumbCorner.Parent = thumb
+    -- Value label
+    local valLbl = Instance.new("TextLabel")
+    valLbl.Size                   = UDim2.fromOffset(36, ROW_H - 6)
+    valLbl.Position               = UDim2.fromOffset(PAD + 82 + TRACK_W + 6, y)
+    valLbl.BackgroundTransparency = 1
+    valLbl.TextColor3             = Color3.fromRGB(220, 220, 255)
+    valLbl.TextSize               = 11
+    valLbl.Font                   = Enum.Font.GothamMono
+    valLbl.TextXAlignment         = Enum.TextXAlignment.Left
+    valLbl.Parent                 = win
 
-    -- Value state
-    local currentValue = 0
-
-    local function setFromAlpha(alpha) -- alpha 0..1
+    -- ── set thumb position from a 0-1 alpha ──
+    local function setAlpha(alpha)
         alpha = math.clamp(alpha, 0, 1)
-        currentValue = SLIDER_MIN + (SLIDER_MAX - SLIDER_MIN) * alpha
-        fill.Size = UDim2.new(alpha, 0, 1, 0)
-        thumb.Position = UDim2.new(alpha, -8, 0.5, -8)
-        valLabel.Text = string.format("%.1f", currentValue)
+        local value = entry.min + (entry.max - entry.min) * alpha
+        local thumbX = alpha * (TRACK_W - THUMB_W)
+        thumb.Position  = UDim2.fromOffset(thumbX, -(THUMB_W - 6) / 2)
+        fill.Size       = UDim2.fromOffset(thumbX + THUMB_W / 2, 6)
+        valLbl.Text     = string.format("%.2f", value)
+        applyScale(entry.name, value)
     end
 
-    setFromAlpha(0.5) -- start at 0
+    -- init
+    local initAlpha = (entry.default - entry.min) / (entry.max - entry.min)
+    setAlpha(initAlpha)
 
+    -- drag
     local sliding = false
-
-    local function handleInput(input)
-        local trackAbsPos  = track.AbsolutePosition
-        local trackAbsSize = track.AbsoluteSize
-        local relX = (input.Position.X - trackAbsPos.X) / trackAbsSize.X
-        setFromAlpha(relX)
-    end
-
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            sliding = true
-            handleInput(input)
-        end
-    end)
-
     thumb.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
             sliding = true
         end
     end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement
-                     or input.UserInputType == Enum.UserInputType.Touch) then
-            handleInput(input)
-        end
-    end)
-
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
             sliding = false
         end
     end)
+    UserInputService.InputChanged:Connect(function(input)
+        if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local trackAbs = track.AbsolutePosition
+            local mouseX   = input.Position.X
+            local alpha    = (mouseX - trackAbs.X - THUMB_W / 2) / (TRACK_W - THUMB_W)
+            setAlpha(alpha)
+        end
+    end)
 
-    return container, function() return currentValue end
+    -- click anywhere on track to jump
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local trackAbs = track.AbsolutePosition
+            local alpha    = (input.Position.X - trackAbs.X - THUMB_W / 2) / (TRACK_W - THUMB_W)
+            setAlpha(alpha)
+        end
+    end)
 end
-
--- ─── CREATE SLIDERS ──────────────────────────────────────────────────────────
-
-local contentArea = Instance.new("Frame")
-contentArea.Size             = UDim2.new(1, 0, 1, -36)
-contentArea.Position         = UDim2.new(0, 0, 0, 36)
-contentArea.BackgroundTransparency = 1
-contentArea.Parent           = frame
-
-local _, getX = makeSlider(contentArea, "X  (left/right)",  10, Color3.fromRGB(255, 100, 100))
-local _, getY = makeSlider(contentArea, "Y  (up/down)",     76, Color3.fromRGB(100, 220, 100))
-local _, getZ = makeSlider(contentArea, "Z  (fwd/back)",   142, Color3.fromRGB(100, 160, 255))
-
--- Reset button
-local resetBtn = Instance.new("TextButton")
-resetBtn.Text             = "Reset to Zero"
-resetBtn.Size             = UDim2.new(1, -24, 0, 32)
-resetBtn.Position         = UDim2.new(0, 12, 0, 210)
-resetBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-resetBtn.TextColor3       = Color3.fromRGB(200, 200, 220)
-resetBtn.TextSize         = 13
-resetBtn.Font             = Enum.Font.GothamBold
-resetBtn.BorderSizePixel  = 0
-resetBtn.Parent           = contentArea
-
-local resetCorner = Instance.new("UICorner")
-resetCorner.CornerRadius = UDim.new(0, 8)
-resetCorner.Parent = resetBtn
-
--- Live readout label
-local readout = Instance.new("TextLabel")
-readout.Size             = UDim2.new(1, -24, 0, 24)
-readout.Position         = UDim2.new(0, 12, 0, 250)
-readout.BackgroundTransparency = 1
-readout.TextColor3       = Color3.fromRGB(140, 140, 160)
-readout.TextSize         = 11
-readout.Font             = Enum.Font.Gotham
-readout.TextXAlignment   = Enum.TextXAlignment.Left
-readout.Text             = "COM:  0.0,  0.0,  0.0"
-readout.Parent           = contentArea
-
--- ─── VISUAL INDICATOR (Billboard) ────────────────────────────────────────────
--- Floating dot above the calculated COM position on the character
-
-local billboard = Instance.new("BillboardGui")
-billboard.Name         = "COMIndicator"
-billboard.Size         = UDim2.new(0, 20, 0, 20)
-billboard.AlwaysOnTop  = false
-billboard.StudsOffset  = Vector3.new(0, 0, 0)
-billboard.Adornee      = rootPart
-billboard.Parent       = rootPart
-
-local dot = Instance.new("Frame")
-dot.Size             = UDim2.new(1, 0, 1, 0)
-dot.BackgroundColor3 = Color3.fromRGB(255, 220, 50)
-dot.BorderSizePixel  = 0
-dot.Parent           = billboard
-
-local dotCorner = Instance.new("UICorner")
-dotCorner.CornerRadius = UDim.new(1, 0)
-dotCorner.Parent = dot
-
--- ─── RUNTIME LOOP ────────────────────────────────────────────────────────────
--- AssemblyCenterOfMass is read-only for BaseParts; we simulate the offset
--- by applying a continuous BodyPosition force toward the offset world position,
--- which physically shifts how the character's mass center behaves.
--- We also reposition the billboard dot to match.
-
-local bodyPos = Instance.new("BodyPosition")
-bodyPos.MaxForce = Vector3.new(0, 0, 0) -- starts dormant
-bodyPos.P        = 10000
-bodyPos.D        = 500
-bodyPos.Parent   = rootPart
-
-local offsetX, offsetY, offsetZ = 0, 0, 0
-
-local function applyOffset()
-    local x, y, z = getX(), getY(), getZ()
-    offsetX, offsetY, offsetZ = x, y, z
-
-    if x == 0 and y == 0 and z == 0 then
-        bodyPos.MaxForce = Vector3.new(0, 0, 0)
-    else
-        local worldOffset = rootPart.CFrame:VectorToWorldSpace(Vector3.new(x, y, z))
-        bodyPos.Position  = rootPart.Position + worldOffset
-        bodyPos.MaxForce  = Vector3.new(
-            math.abs(x) * 5000,
-            math.abs(y) * 8000,
-            math.abs(z) * 5000
-        )
-    end
-
-    -- Move billboard dot to offset position
-    billboard.StudsOffset = Vector3.new(x, y, z)
-
-    readout.Text = string.format(
-        "COM:  %.1f,  %.1f,  %.1f", x, y, z
-    )
-end
-
-RunService.Heartbeat:Connect(function()
-    if rootPart and rootPart.Parent then
-        applyOffset()
-    end
-end)
-
--- Reset button zeroes sliders by destroying and rebuilding — simpler: just re-parent GUI
-resetBtn.MouseButton1Click:Connect(function()
-    -- Rebuild sliders at zero (quickest approach: reload the script via rejoin prompt is impractical,
-    -- so we just expose a reset signal via a value object)
-    -- Since sliders store state internally, we fire a RemoteEvent-free reset
-    -- by moving the BodyPosition back to dormant
-    bodyPos.MaxForce = Vector3.new(0, 0, 0)
-    billboard.StudsOffset = Vector3.new(0, 0, 0)
-    readout.Text = "COM:  0.0,  0.0,  0.0  (drag sliders)"
-    -- Note: sliders won't visually snap to zero without recreating them.
-    -- For a full visual reset, rejoin or move sliders back to center manually.
-end)
-
-print("[CenterOfMassGUI] Loaded — drag sliders to shift your center of mass!")
