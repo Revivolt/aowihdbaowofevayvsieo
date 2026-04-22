@@ -1,7 +1,256 @@
-local Players = game:GetService("Players") local RunService = game:GetService("RunService") local UserInputService = game:GetService("UserInputService")
-local player = Players.LocalPlayer local character = player.Character or player.CharacterAdded:Wait() local rootPart = character:WaitForChild("HumanoidRootPart")
--- ─── CoM Indicator (neon sphere) ────────────────────────────────────────────── local indicator = Instance.new("Part") indicator.Name = "CoM_Indicator" indicator.Size = Vector3.new(0.35, 0.35, 0.35) indicator.Shape = Enum.PartType.Ball indicator.Material = Enum.Material.Neon indicator.BrickColor = BrickColor.new("Bright red") indicator.CanCollide = false indicator.CanQuery = false indicator.CanTouch = false indicator.Anchored = true indicator.CastShadow = false indicator.Parent = workspace
--- ─── Offset state (studs) ───────────────────────────────────────────────────── local offset = Vector3.new(0, 0, 0)
--- ─── CoM calculation ────────────────────────────────────────────────────────── local function getCoM() local totalMass = 0 local weightedSum = Vector3.new(0, 0, 0) for _, part in ipairs(character:GetDescendants()) do if part:IsA("BasePart") and not part:IsA("Terrain") then local m = part.AssemblyMass > 0 and part.AssemblyMass or part:GetMass() weightedSum = weightedSum + part.Position * m totalMass = totalMass + m end end if totalMass == 0 then return rootPart.Position end return weightedSum / totalMass end
--- ─── GUI ────────────────────────────────────────────────────────────────────── local screenGui = Instance.new("ScreenGui") screenGui.Name = "CoM_GUI" screenGui.ResetOnSpawn = false screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling screenGui.Parent = player.PlayerGui
--- Main frame local frame = Instance.new("Frame") frame.Name = "MainFrame" frame.Size = UDim2.new(0, 260, 0, 210) frame.Position = UDim2.new(0, 20, 0.5, -105) frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22) frame.BorderSizePixel = 0 frame.Active = true frame.Draggable = true frame.Parent = screenGui
+-- CoM Visualizer + Offset GUI
+-- LocalScript — place inside StarterPlayerScripts or StarterCharacterScripts
+
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player    = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local rootPart  = character:WaitForChild("HumanoidRootPart")
+
+-- ─── CoM Indicator (neon sphere) ──────────────────────────────────────────────
+local indicator = Instance.new("Part")
+indicator.Name          = "CoM_Indicator"
+indicator.Size          = Vector3.new(0.35, 0.35, 0.35)
+indicator.Shape         = Enum.PartType.Ball
+indicator.Material      = Enum.Material.Neon
+indicator.BrickColor    = BrickColor.new("Bright red")
+indicator.CanCollide    = false
+indicator.CanQuery      = false
+indicator.CanTouch      = false
+indicator.Anchored      = true
+indicator.CastShadow    = false
+indicator.Parent        = workspace
+
+-- ─── Offset state (studs) ─────────────────────────────────────────────────────
+local offset = Vector3.new(0, 0, 0)
+
+-- ─── CoM calculation ──────────────────────────────────────────────────────────
+local function getCoM()
+    local totalMass   = 0
+    local weightedSum = Vector3.new(0, 0, 0)
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") and not part:IsA("Terrain") then
+            local m = part.AssemblyMass > 0 and part.AssemblyMass or part:GetMass()
+            weightedSum = weightedSum + part.Position * m
+            totalMass   = totalMass + m
+        end
+    end
+    if totalMass == 0 then return rootPart.Position end
+    return weightedSum / totalMass
+end
+
+-- ─── GUI ──────────────────────────────────────────────────────────────────────
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name           = "CoM_GUI"
+screenGui.ResetOnSpawn   = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent         = player.PlayerGui
+
+-- Main frame
+local frame = Instance.new("Frame")
+frame.Name             = "MainFrame"
+frame.Size             = UDim2.new(0, 260, 0, 210)
+frame.Position         = UDim2.new(0, 20, 0.5, -105)
+frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+frame.BorderSizePixel  = 0
+frame.Active           = true
+frame.Draggable        = true
+frame.Parent           = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = frame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color     = Color3.fromRGB(220, 50, 50)
+stroke.Thickness = 1.5
+stroke.Parent    = frame
+
+-- Title bar
+local title = Instance.new("TextLabel")
+title.Size             = UDim2.new(1, 0, 0, 32)
+title.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+title.BorderSizePixel  = 0
+title.Text             = "  CoM Offset"
+title.TextColor3       = Color3.fromRGB(255, 255, 255)
+title.TextSize         = 14
+title.Font             = Enum.Font.GothamBold
+title.TextXAlignment   = Enum.TextXAlignment.Left
+title.Parent           = frame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = title
+
+-- CoM readout label
+local readout = Instance.new("TextLabel")
+readout.Name                 = "Readout"
+readout.Size                 = UDim2.new(1, -16, 0, 22)
+readout.Position             = UDim2.new(0, 8, 0, 36)
+readout.BackgroundTransparency = 1
+readout.TextColor3           = Color3.fromRGB(180, 180, 180)
+readout.TextSize             = 11
+readout.Font                 = Enum.Font.Code
+readout.TextXAlignment       = Enum.TextXAlignment.Left
+readout.Text                 = "CoM: (0.00, 0.00, 0.00)"
+readout.Parent               = frame
+
+-- ─── Slider factory ───────────────────────────────────────────────────────────
+local function makeSlider(parent, label, yPos, range, default)
+    local MIN, MAX = range.min, range.max
+
+    local container = Instance.new("Frame")
+    container.Size                 = UDim2.new(1, -16, 0, 46)
+    container.Position             = UDim2.new(0, 8, 0, yPos)
+    container.BackgroundTransparency = 1
+    container.Parent               = parent
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size                 = UDim2.new(0.35, 0, 0, 16)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3           = Color3.fromRGB(220, 50, 50)
+    lbl.TextSize             = 12
+    lbl.Font                 = Enum.Font.GothamBold
+    lbl.Text                 = label
+    lbl.TextXAlignment       = Enum.TextXAlignment.Left
+    lbl.Parent               = container
+
+    local valLabel = Instance.new("TextLabel")
+    valLabel.Size                 = UDim2.new(0.65, 0, 0, 16)
+    valLabel.Position             = UDim2.new(0.35, 0, 0, 0)
+    valLabel.BackgroundTransparency = 1
+    valLabel.TextColor3           = Color3.fromRGB(200, 200, 200)
+    valLabel.TextSize             = 12
+    valLabel.Font                 = Enum.Font.Code
+    valLabel.Text                 = string.format("%.2f", default)
+    valLabel.TextXAlignment       = Enum.TextXAlignment.Right
+    valLabel.Parent               = container
+
+    local track = Instance.new("Frame")
+    track.Size             = UDim2.new(1, 0, 0, 6)
+    track.Position         = UDim2.new(0, 0, 0, 22)
+    track.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    track.BorderSizePixel  = 0
+    track.Parent           = container
+
+    local trackCorner = Instance.new("UICorner")
+    trackCorner.CornerRadius = UDim.new(1, 0)
+    trackCorner.Parent = track
+
+    local fill = Instance.new("Frame")
+    fill.Size             = UDim2.new((default - MIN) / (MAX - MIN), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+    fill.BorderSizePixel  = 0
+    fill.Parent           = track
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = fill
+
+    local thumb = Instance.new("TextButton")
+    thumb.Size             = UDim2.new(0, 14, 0, 14)
+    thumb.AnchorPoint      = Vector2.new(0.5, 0.5)
+    thumb.Position         = UDim2.new((default - MIN) / (MAX - MIN), 0, 0.5, 0)
+    thumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    thumb.BorderSizePixel  = 0
+    thumb.Text             = ""
+    thumb.Parent           = track
+
+    local thumbCorner = Instance.new("UICorner")
+    thumbCorner.CornerRadius = UDim.new(1, 0)
+    thumbCorner.Parent = thumb
+
+    local resetBtn = Instance.new("TextButton")
+    resetBtn.Size             = UDim2.new(0, 40, 0, 14)
+    resetBtn.Position         = UDim2.new(1, -40, 0, 34)
+    resetBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    resetBtn.BorderSizePixel  = 0
+    resetBtn.Text             = "Reset"
+    resetBtn.TextColor3       = Color3.fromRGB(180, 180, 180)
+    resetBtn.TextSize         = 10
+    resetBtn.Font             = Enum.Font.Gotham
+    resetBtn.Parent           = container
+
+    local resetCorner = Instance.new("UICorner")
+    resetCorner.CornerRadius = UDim.new(0, 4)
+    resetCorner.Parent = resetBtn
+
+    local currentValue = default
+    local dragging     = false
+
+    local function setFromRatio(ratio)
+        ratio        = math.clamp(ratio, 0, 1)
+        currentValue = MIN + ratio * (MAX - MIN)
+        fill.Size    = UDim2.new(ratio, 0, 1, 0)
+        thumb.Position = UDim2.new(ratio, 0, 0.5, 0)
+        valLabel.Text  = string.format("%.2f", currentValue)
+    end
+
+    thumb.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local trackPos   = track.AbsolutePosition
+            local trackWidth = track.AbsoluteSize.X
+            local ratio = (input.Position.X - trackPos.X) / trackWidth
+            setFromRatio(ratio)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or
+           input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local trackPos   = track.AbsolutePosition
+            local trackWidth = track.AbsoluteSize.X
+            local ratio = (input.Position.X - trackPos.X) / trackWidth
+            setFromRatio(ratio)
+        end
+    end)
+
+    resetBtn.MouseButton1Click:Connect(function()
+        setFromRatio((0 - MIN) / (MAX - MIN))
+    end)
+
+    return { container = container, getValue = function() return currentValue end }
+end
+
+-- Build the three sliders (range ±20 studs)
+local sliderX = makeSlider(frame, "X", 62,  { min = -20, max = 20 }, 0)
+local sliderY = makeSlider(frame, "Y", 110, { min = -20, max = 20 }, 0)
+local sliderZ = makeSlider(frame, "Z", 158, { min = -20, max = 20 }, 0)
+
+-- ─── Respawn handling ─────────────────────────────────────────────────────────
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    rootPart  = newChar:WaitForChild("HumanoidRootPart")
+    indicator.Parent = workspace
+end)
+
+-- ─── Main loop ────────────────────────────────────────────────────────────────
+RunService.Heartbeat:Connect(function()
+    if not character or not character.Parent then return end
+
+    offset = Vector3.new(
+        sliderX.getValue(),
+        sliderY.getValue(),
+        sliderZ.getValue()
+    )
+
+    local com = getCoM() + offset
+    indicator.CFrame = CFrame.new(com)
+
+    readout.Text = string.format(
+        "CoM: (%.2f, %.2f, %.2f)",
+        com.X, com.Y, com.Z
+    )
+end)
