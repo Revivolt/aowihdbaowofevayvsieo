@@ -18,7 +18,7 @@ local Camera            = workspace.CurrentCamera
 -- ============================================================
 local Settings = {
     -- Rendering
-    TargetFPS           = 60,       -- Pass to RenderFidelity hint (informational)
+    TargetFPS           = 120,       -- Pass to RenderFidelity hint (informational)
     MaxRenderDistance   = 256,      -- Camera far-plane distance (studs)
 
     -- Graphics quality
