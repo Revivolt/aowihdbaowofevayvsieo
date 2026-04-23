@@ -1,211 +1,324 @@
-local Players     = game:GetService("Players")
-local RunService  = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+-- ============================================================
+--  FPS Booster LocalScript
+--  Place inside: StarterPlayerScripts
+--  Author: Generated Script
+-- ============================================================
 
-local LocalPlayer = Players.LocalPlayer
-local Character   = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid    = Character:WaitForChild("Humanoid")
+local RunService        = game:GetService("RunService")
+local Players           = game:GetService("Players")
+local Lighting          = game:GetService("Lighting")
+local TweenService      = game:GetService("TweenService")
+local StarterGui        = game:GetService("StarterGui")
 
--- Re-grab humanoid on respawn
-LocalPlayer.CharacterAdded:Connect(function(char)
-    Character = char
-    Humanoid  = char:WaitForChild("Humanoid")
-end)
+local LocalPlayer       = Players.LocalPlayer
+local Camera            = workspace.CurrentCamera
 
--- ─── CONFIG ───────────────────────────────────────────────────────────────
-local SCALES = {
-    { name = "BodyHeightScale",     label = "Height",      min = 0.1, max = 3.0, default = 0.5  },
-    { name = "BodyWidthScale",      label = "Width",       min = 0.1, max = 3.0, default = 2.0  },
-    { name = "BodyDepthScale",      label = "Depth",       min = 0.1, max = 3.0, default = 1.0  },
-    { name = "BodyProportionScale", label = "Proportion",  min = 0.1, max = 2.0, default = 1.0  },
-    { name = "HeadScale",           label = "Head",        min = 0.1, max = 3.0, default = 1.0  },
+-- ============================================================
+--  SETTINGS  (toggle features on/off here)
+-- ============================================================
+local Settings = {
+    -- Rendering
+    TargetFPS           = 60,       -- Pass to RenderFidelity hint (informational)
+    MaxRenderDistance   = 256,      -- Camera far-plane distance (studs)
+
+    -- Graphics quality
+    QualityLevel        = 1,        -- 1–21 Roblox quality levels (1 = lowest)
+    DisableShadows      = true,     -- Kill shadow maps
+    DisablePostFX        = true,    -- Remove Bloom, Blur, ColorCorrection, SunRays
+    SimplifyLighting    = true,     -- Switch to Compatibility lighting technology
+
+    -- Particle / effect culling
+    DisableParticles    = false,    -- Disable ALL particle emitters & beams in workspace
+    DisableDecals       = false,    -- Hide all decals/textures on parts
+    DisableAnimations   = false,    -- Stop non-character animations (WARNING: may break games)
+
+    -- Misc
+    HidePlayerNames     = false,    -- Removes overhead name/health bars (reduces UI draw calls)
+    GUINotification     = true,     -- Show a small status message on screen
 }
 
-local TRACK_W   = 200
-local THUMB_W   = 14
-local ROW_H     = 38
-local PAD       = 12
-local WIN_W     = TRACK_W + 90 + PAD * 2   -- label + track + value label
-local WIN_H     = PAD * 2 + 30 + #SCALES * ROW_H + 10
-
--- ─── BUILD GUI ────────────────────────────────────────────────────────────
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name            = "ScaleGUI"
-screenGui.ResetOnSpawn    = false
-screenGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-screenGui.Parent          = LocalPlayer:WaitForChild("PlayerGui")
-
-local win = Instance.new("Frame")
-win.Size            = UDim2.fromOffset(WIN_W, WIN_H)
-win.Position        = UDim2.fromOffset(20, 120)
-win.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-win.BorderSizePixel = 0
-win.Active          = true   -- needed for dragging
-win.Parent          = screenGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent       = win
-
--- Title bar
-local titleBar = Instance.new("Frame")
-titleBar.Size              = UDim2.new(1, 0, 0, 28)
-titleBar.BackgroundColor3  = Color3.fromRGB(30, 30, 38)
-titleBar.BorderSizePixel   = 0
-titleBar.Parent            = win
-
-local titleCorner = Instance.new("UICorner")
-titleCorner.CornerRadius = UDim.new(0, 8)
-titleCorner.Parent       = titleBar
-
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size              = UDim2.new(1, -8, 1, 0)
-titleLabel.Position          = UDim2.fromOffset(8, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text              = "Scale Editor"
-titleLabel.TextColor3        = Color3.fromRGB(220, 220, 255)
-titleLabel.TextSize          = 13
-titleLabel.Font               = Enum.Font.GothamBold
-titleLabel.TextXAlignment     = Enum.TextXAlignment.Left
-titleLabel.Parent             = titleBar
-
--- Drag logic for the window
-do
-    local dragging, dragStart, startPos
-    titleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging  = true
-            dragStart = input.Position
-            startPos  = win.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            win.Position = UDim2.fromOffset(
-                startPos.X.Offset + delta.X,
-                startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
+-- ============================================================
+--  HELPERS
+-- ============================================================
+local function notify(msg)
+    if not Settings.GUINotification then return end
+    StarterGui:SetCore("SendNotification", {
+        Title   = "FPS Booster",
+        Text    = msg,
+        Duration = 4,
+    })
 end
 
--- ─── HELPER: apply scale ──────────────────────────────────────────────────
-local function applyScale(scaleName, value)
-    local obj = Humanoid and Humanoid:FindFirstChild(scaleName)
-    if not obj then return end
-    obj.Value = value
-    -- flush engine pipeline
-    local orig = Humanoid.HipHeight
-    Humanoid.HipHeight = orig + 0.001
-    task.defer(function()
-        if Humanoid then
-            Humanoid.HipHeight = orig
-        end
-    end)
+local function safeSet(obj, prop, value)
+    local ok, err = pcall(function() obj[prop] = value end)
+    if not ok then
+        -- Silently skip read-only or protected properties
+    end
 end
 
--- ─── BUILD SLIDERS ────────────────────────────────────────────────────────
-for i, entry in ipairs(SCALES) do
-    local y = 30 + PAD + (i - 1) * ROW_H
+-- ============================================================
+--  1. RENDER DISTANCE
+-- ============================================================
+local function applyRenderDistance()
+    Camera.FarPlaneDistance = Settings.MaxRenderDistance
+end
 
-    -- Label
-    local lbl = Instance.new("TextLabel")
-    lbl.Size                  = UDim2.fromOffset(80, ROW_H - 6)
-    lbl.Position              = UDim2.fromOffset(PAD, y)
-    lbl.BackgroundTransparency = 1
-    lbl.Text                  = entry.label
-    lbl.TextColor3            = Color3.fromRGB(180, 180, 210)
-    lbl.TextSize              = 12
-    lbl.Font                  = Enum.Font.Gotham
-    lbl.TextXAlignment        = Enum.TextXAlignment.Left
-    lbl.Parent                = win
+-- ============================================================
+--  2. GRAPHICS QUALITY
+-- ============================================================
+local function applyQuality()
+    -- UserGameSettings quality level (client-side override)
+    local ugs = UserSettings():GetService("UserGameSettings")
+    safeSet(ugs, "SavedQualityLevel",
+        Enum.SavedQualitySetting.QualityLevel1 -- always force level 1
+    )
+end
 
-    -- Track background
-    local track = Instance.new("Frame")
-    track.Size              = UDim2.fromOffset(TRACK_W, 6)
-    track.Position          = UDim2.fromOffset(PAD + 82, y + (ROW_H - 6) / 2 - 3)
-    track.BackgroundColor3  = Color3.fromRGB(50, 50, 65)
-    track.BorderSizePixel   = 0
-    track.Parent            = win
-    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
-    -- Fill bar
-    local fill = Instance.new("Frame")
-    fill.Size             = UDim2.new(0, 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(100, 140, 255)
-    fill.BorderSizePixel  = 0
-    fill.Parent           = track
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-
-    -- Thumb
-    local thumb = Instance.new("TextButton")
-    thumb.Size              = UDim2.fromOffset(THUMB_W, THUMB_W)
-    thumb.BackgroundColor3  = Color3.fromRGB(200, 210, 255)
-    thumb.BorderSizePixel   = 0
-    thumb.Text              = ""
-    thumb.ZIndex            = 5
-    thumb.Parent            = track
-    Instance.new("UICorner", thumb).CornerRadius = UDim.new(1, 0)
-
-    -- Value label
-    local valLbl = Instance.new("TextLabel")
-    valLbl.Size                   = UDim2.fromOffset(36, ROW_H - 6)
-    valLbl.Position               = UDim2.fromOffset(PAD + 82 + TRACK_W + 6, y)
-    valLbl.BackgroundTransparency = 1
-    valLbl.TextColor3             = Color3.fromRGB(220, 220, 255)
-    valLbl.TextSize               = 11
-    valLbl.Font                   = Enum.Font.GothamMono
-    valLbl.TextXAlignment         = Enum.TextXAlignment.Left
-    valLbl.Parent                 = win
-
-    -- ── set thumb position from a 0-1 alpha ──
-    local function setAlpha(alpha)
-        alpha = math.clamp(alpha, 0, 1)
-        local value = entry.min + (entry.max - entry.min) * alpha
-        local thumbX = alpha * (TRACK_W - THUMB_W)
-        thumb.Position  = UDim2.fromOffset(thumbX, -(THUMB_W - 6) / 2)
-        fill.Size       = UDim2.fromOffset(thumbX + THUMB_W / 2, 6)
-        valLbl.Text     = string.format("%.2f", value)
-        applyScale(entry.name, value)
+-- ============================================================
+--  3. DISABLE SHADOW MAPS
+-- ============================================================
+local function applyLighting()
+    if Settings.DisableShadows then
+        safeSet(Lighting, "GlobalShadows", false)
+        safeSet(Lighting, "ShadowSoftness", 0)
     end
 
-    -- init
-    local initAlpha = (entry.default - entry.min) / (entry.max - entry.min)
-    setAlpha(initAlpha)
+    if Settings.SimplifyLighting then
+        -- "Compatibility" is the cheapest lighting model
+        safeSet(Lighting, "EnvironmentDiffuseScale", 0)
+        safeSet(Lighting, "EnvironmentSpecularScale", 0)
+    end
+end
 
-    -- drag
-    local sliding = false
-    thumb.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            sliding = true
+-- ============================================================
+--  4. REMOVE POST-PROCESSING EFFECTS
+-- ============================================================
+local function removePostFX()
+    if not Settings.DisablePostFX then return end
+
+    local effectTypes = {
+        "BloomEffect", "BlurEffect", "ColorCorrectionEffect",
+        "SunRaysEffect", "DepthOfFieldEffect"
+    }
+
+    local function strip(parent)
+        for _, child in ipairs(parent:GetChildren()) do
+            for _, t in ipairs(effectTypes) do
+                if child:IsA(t) then
+                    child.Enabled = false
+                end
+            end
+        end
+    end
+
+    strip(Lighting)
+    strip(Camera)
+
+    -- Watch for new effects being added at runtime
+    Lighting.ChildAdded:Connect(function(child)
+        for _, t in ipairs(effectTypes) do
+            if child:IsA(t) then child.Enabled = false end
         end
     end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            sliding = false
+end
+
+-- ============================================================
+--  5. CULL PARTICLES / BEAMS
+-- ============================================================
+local function applyParticleCulling()
+    if not Settings.DisableParticles then return end
+
+    local particleTypes = { "ParticleEmitter", "Beam", "Trail", "Fire", "Smoke", "Sparkles" }
+
+    local function disableParticlesIn(parent)
+        for _, desc in ipairs(parent:GetDescendants()) do
+            for _, t in ipairs(particleTypes) do
+                if desc:IsA(t) then desc.Enabled = false end
+            end
+        end
+    end
+
+    disableParticlesIn(workspace)
+
+    workspace.DescendantAdded:Connect(function(desc)
+        for _, t in ipairs(particleTypes) do
+            if desc:IsA(t) then
+                task.defer(function() desc.Enabled = false end)
+            end
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
-        if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local trackAbs = track.AbsolutePosition
-            local mouseX   = input.Position.X
-            local alpha    = (mouseX - trackAbs.X - THUMB_W / 2) / (TRACK_W - THUMB_W)
-            setAlpha(alpha)
+end
+
+-- ============================================================
+--  6. HIDE DECALS
+-- ============================================================
+local function applyDecalCulling()
+    if not Settings.DisableDecals then return end
+
+    local function hideDecals(parent)
+        for _, desc in ipairs(parent:GetDescendants()) do
+            if desc:IsA("Decal") or desc:IsA("Texture") then
+                desc.Transparency = 1
+            end
         end
+    end
+
+    hideDecals(workspace)
+end
+
+-- ============================================================
+--  7. ANIMATION CULLING (distant characters)
+-- ============================================================
+local ANIM_CULL_DISTANCE = 80   -- studs; beyond this animations are paused
+
+local function setupAnimationCulling()
+    RunService.Heartbeat:Connect(function()
+        local camPos = Camera.CFrame.Position
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local char = player.Character
+                if char then
+                    local root = char:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        local dist = (root.Position - camPos).Magnitude
+                        local hum  = char:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            -- Use WalkSpeed proxy to detect & pause/resume
+                            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                                if dist > ANIM_CULL_DISTANCE then
+                                    track:AdjustSpeed(0)
+                                else
+                                    track:AdjustSpeed(1)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ============================================================
+--  8. OVERHEAD GUI CULLING (name tags / health bars)
+-- ============================================================
+local function applyNameTagCulling()
+    if not Settings.HidePlayerNames then return end
+
+    local function hideOverheadGUI(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then hideOverheadGUI(player.Character) end
+        player.CharacterAdded:Connect(hideOverheadGUI)
+    end
+
+    Players.PlayerAdded:Connect(function(player)
+        player.CharacterAdded:Connect(hideOverheadGUI)
+    end)
+end
+
+-- ============================================================
+--  9. REDUCE UNUSED SOUNDS (mute far-away sound sources)
+-- ============================================================
+local SOUND_CULL_DISTANCE = 120
+
+local function setupSoundCulling()
+    RunService.Heartbeat:Connect(function()
+        local camPos = Camera.CFrame.Position
+        for _, sound in ipairs(workspace:GetDescendants()) do
+            if sound:IsA("Sound") and sound.Parent ~= nil then
+                local part = sound.Parent
+                if part:IsA("BasePart") then
+                    local dist = (part.Position - camPos).Magnitude
+                    sound.Volume = dist > SOUND_CULL_DISTANCE and 0 or sound.Volume
+                end
+            end
+        end
+    end)
+end
+
+-- ============================================================
+--  10. FPS COUNTER (optional on-screen display)
+-- ============================================================
+local function createFPSDisplay()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name          = "FPSBoosterHUD"
+    screenGui.ResetOnSpawn  = false
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screenGui.Parent        = LocalPlayer.PlayerGui
+
+    local label = Instance.new("TextLabel")
+    label.Size              = UDim2.new(0, 100, 0, 26)
+    label.Position          = UDim2.new(1, -108, 0, 6)
+    label.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
+    label.BackgroundTransparency = 0.45
+    label.TextColor3        = Color3.fromRGB(0, 255, 120)
+    label.Font              = Enum.Font.Code
+    label.TextSize          = 14
+    label.Text              = "FPS: --"
+    label.Parent            = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent       = label
+
+    local frames, elapsed = 0, 0
+
+    RunService.RenderStepped:Connect(function(dt)
+        frames  = frames  + 1
+        elapsed = elapsed + dt
+        if elapsed >= 0.5 then
+            local fps = math.round(frames / elapsed)
+            label.Text = string.format("FPS: %d", fps)
+            -- Color-code the display
+            if fps >= 55 then
+                label.TextColor3 = Color3.fromRGB(0, 255, 120)
+            elseif fps >= 30 then
+                label.TextColor3 = Color3.fromRGB(255, 200, 0)
+            else
+                label.TextColor3 = Color3.fromRGB(255, 60, 60)
+            end
+            frames, elapsed = 0, 0
+        end
+    end)
+end
+
+-- ============================================================
+--  INIT — apply everything
+-- ============================================================
+local function init()
+    applyRenderDistance()
+    applyQuality()
+    applyLighting()
+    removePostFX()
+    applyParticleCulling()
+    applyDecalCulling()
+    setupAnimationCulling()
+    applyNameTagCulling()
+    -- setupSoundCulling()  -- uncomment if desired (can affect gameplay feel)
+
+    createFPSDisplay()
+
+    -- Re-apply render distance whenever the camera is refreshed
+    workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        Camera = workspace.CurrentCamera
+        applyRenderDistance()
     end)
 
-    -- click anywhere on track to jump
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local trackAbs = track.AbsolutePosition
-            local alpha    = (input.Position.X - trackAbs.X - THUMB_W / 2) / (TRACK_W - THUMB_W)
-            setAlpha(alpha)
-        end
-    end)
+    notify("FPS Booster active! Shadows=" ..
+        tostring(not Settings.DisableShadows) ..
+        " | PostFX=" .. tostring(not Settings.DisablePostFX))
+
+    print("[FPSBooster] Initialized. Good luck!")
+end
+
+-- Wait for character before starting
+if LocalPlayer.Character then
+    init()
+else
+    LocalPlayer.CharacterAdded:Wait()
+    init()
 end
