@@ -1,116 +1,180 @@
--- // FPS BOOST — by Fox
--- // Executor: Synapse X / KRNL / Fluxus / etc.
+-- FPS Booster by Fox
+-- Paste into your executor and run as a LocalScript
 
-local RunService    = game:GetService("RunService")
-local Players       = game:GetService("Players")
-local Lighting      = game:GetService("Lighting")
-local StarterGui    = game:GetService("StarterGui")
-local player        = Players.LocalPlayer
+local Config = {
+    DisableShadows      = true,
+    DisableLightingFX   = true,
+    DisableAtmosphere   = true,
+    DisableParticles    = true,
+    FlattenTextures     = true,
+    DisableTerrain      = true,
+    LowQualityGraphics  = true,
+    FPSCap              = false, -- set to a number like 60 to cap, or false to skip
+}
 
--- ─────────────────────────────────────────
---  1. UNCAP FPS
--- ─────────────────────────────────────────
-if setfpscap then
-    setfpscap(0)  -- 0 = fully uncapped
+local Lighting    = game:GetService("Lighting")
+local RunService  = game:GetService("RunService")
+local Players     = game:GetService("Players")
+local Workspace   = game:GetService("Workspace")
+local localPlayer = Players.LocalPlayer
+
+-- ──────────────────────────────────────────
+-- 1. GRAPHICS QUALITY
+-- ──────────────────────────────────────────
+if Config.LowQualityGraphics then
+    settings().Rendering.QualityLevel          = Enum.QualityLevel.Level01
+    settings().Rendering.MeshPartDetailLevel   = Enum.MeshPartDetailLevel.Disabled
+    settings().Rendering.EagerBulkExecution    = false
+    settings().Rendering.EnableFRM             = false
 end
 
--- ─────────────────────────────────────────
---  2. FFLAGS — scheduler + renderer tweaks
--- ─────────────────────────────────────────
-if setfflag then
-    setfflag("DFIntTaskSchedulerTargetFps",        "9999")
-    setfflag("FFlagDebugGraphicsDisableDirect3D11", "False")
-    setfflag("FFlagEnableQuickGameLaunch",          "True")
-    setfflag("FFlagGraphicsGLTextureReductionStep", "2")
-    setfflag("UseOptimizedNetworkCompression",      "True")
-    setfflag("FastNetworkReplication",              "True")
-end
+-- ──────────────────────────────────────────
+-- 2. SHADOWS
+-- ──────────────────────────────────────────
+if Config.DisableShadows then
+    Lighting.GlobalShadows = false
+    Lighting.Technology    = Enum.Technology.Compatibility
 
--- ─────────────────────────────────────────
---  3. GRAPHICS QUALITY → Level 1 (potato)
--- ─────────────────────────────────────────
-settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-
--- ─────────────────────────────────────────
---  4. LIGHTING — kill the heavy stuff
--- ─────────────────────────────────────────
-Lighting.GlobalShadows    = false
-Lighting.FogEnd           = 9e9   -- effectively disable fog
-Lighting.FogStart         = 9e9
-Lighting.Brightness       = 2
-Lighting.Ambient          = Color3.fromRGB(128, 128, 128)  -- neutral, not pitch black
-Lighting.ReflectionQuality = Enum.ReflectionQuality.NoReflection
-
--- kill post-processing effects
-for _, fx in ipairs(Lighting:GetChildren()) do
-    if fx:IsA("PostEffect") or fx:IsA("Sky") then
-        fx:Destroy()
+    -- Kill CastShadow on every existing part
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CastShadow = false
+        end
     end
+
+    -- Handle future parts
+    Workspace.DescendantAdded:Connect(function(v)
+        if v:IsA("BasePart") then
+            v.CastShadow = false
+        end
+    end)
 end
 
--- ─────────────────────────────────────────
---  5. WORKSPACE — strip particles / beams
--- ─────────────────────────────────────────
-local function stripEffects(root)
-    for _, v in ipairs(root:GetDescendants()) do
-        if v:IsA("ParticleEmitter")
-        or v:IsA("Trail")
-        or v:IsA("Beam")
-        or v:IsA("Fire")
-        or v:IsA("Smoke")
-        or v:IsA("Sparkles") then
-            v.Enabled = false
+-- ──────────────────────────────────────────
+-- 3. LIGHTING POST-FX
+-- ──────────────────────────────────────────
+if Config.DisableLightingFX then
+    local killClasses = {
+        "BloomEffect", "BlurEffect", "SunRaysEffect",
+        "DepthOfFieldEffect", "ColorCorrectionEffect"
+    }
+    for _, child in ipairs(Lighting:GetChildren()) do
+        for _, cls in ipairs(killClasses) do
+            if child:IsA(cls) then
+                child.Enabled = false
+            end
+        end
+    end
+    -- Catch any added mid-session
+    Lighting.ChildAdded:Connect(function(child)
+        for _, cls in ipairs(killClasses) do
+            if child:IsA(cls) then
+                child.Enabled = false
+            end
+        end
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 4. ATMOSPHERE
+-- ──────────────────────────────────────────
+if Config.DisableAtmosphere then
+    local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
+    if atmo then atmo:Destroy() end
+    Lighting.FogEnd   = 100000
+    Lighting.FogStart = 99999
+end
+
+-- ──────────────────────────────────────────
+-- 5. PARTICLES
+-- ──────────────────────────────────────────
+if Config.DisableParticles then
+    local particleClasses = {
+        "ParticleEmitter", "Smoke", "Fire", "Sparkles"
+    }
+
+    local function killParticle(v)
+        for _, cls in ipairs(particleClasses) do
+            if v:IsA(cls) then
+                if v:IsA("ParticleEmitter") then
+                    v.Enabled = false
+                    v.Rate    = 0
+                else
+                    v.Enabled = false
+                end
+            end
+        end
+    end
+
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        killParticle(v)
+    end
+
+    Workspace.DescendantAdded:Connect(killParticle)
+end
+
+-- ──────────────────────────────────────────
+-- 6. TEXTURES / MATERIALS
+-- ──────────────────────────────────────────
+if Config.FlattenTextures then
+    local localChar = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+
+    local function isPlayerDescendant(obj)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character and obj:IsDescendantOf(plr.Character) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function flattenPart(v)
+        if isPlayerDescendant(v) then return end
+        if v:IsA("BasePart") then
+            v.Material = Enum.Material.SmoothPlastic
+            -- Remove SurfaceAppearance for big texture savings
+            local sa = v:FindFirstChildOfClass("SurfaceAppearance")
+            if sa then sa:Destroy() end
+        elseif v:IsA("Texture") or v:IsA("Decal") then
+            v.Transparency = 1
         elseif v:IsA("SpecialMesh") then
-            -- leave meshes, they don't cost much
-        elseif (v:IsA("Part") or v:IsA("MeshPart") or v:IsA("UnionOperation"))
-               and v ~= workspace.Terrain then
-            v.Reflectance = 0
-            v.Material    = Enum.Material.SmoothPlastic
+            v.TextureId = ""
+        elseif v:IsA("Model") then
+            v.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
         end
+    end
+
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        flattenPart(v)
+    end
+
+    Workspace.DescendantAdded:Connect(flattenPart)
+end
+
+-- ──────────────────────────────────────────
+-- 7. TERRAIN
+-- ──────────────────────────────────────────
+if Config.DisableTerrain then
+    local terrain = Workspace:FindFirstChildOfClass("Terrain")
+    if terrain then
+        terrain.WaterWaveSize       = 0
+        terrain.WaterWaveSpeed      = 0
+        terrain.WaterReflectance    = 0
+        terrain.WaterTransparency   = 1
+        terrain.Decoration          = false
     end
 end
 
-stripEffects(workspace)
-
--- also catch newly added stuff
-workspace.DescendantAdded:Connect(function(v)
-    if v:IsA("ParticleEmitter")
-    or v:IsA("Trail")
-    or v:IsA("Beam")
-    or v:IsA("Fire")
-    or v:IsA("Smoke")
-    or v:IsA("Sparkles") then
-        v.Enabled = false
-    end
-end)
-
--- ─────────────────────────────────────────
---  6. KILL IDLE RENDERSTEPPED CONNECTIONS
---     (executor-only: getconnections)
--- ─────────────────────────────────────────
-if getconnections then
-    for _, conn in ipairs(getconnections(RunService.RenderStepped)) do
-        -- only disconnect foreign ones, not ours
-        if conn.Function and not tostring(conn.Function):find("FPS_BOOST") then
-            conn:Disable()
-        end
-    end
+-- ──────────────────────────────────────────
+-- 8. OPTIONAL FPS CAP
+-- ──────────────────────────────────────────
+if Config.FPSCap and type(Config.FPSCap) == "number" then
+    local cap = Config.FPSCap
+    RunService.RenderStepped:Connect(function()
+        local frameTime = 1 / cap
+        local start = tick()
+        while tick() - start < frameTime do end
+    end)
 end
 
--- ─────────────────────────────────────────
---  7. CAMERA — tighten clip planes
--- ─────────────────────────────────────────
-local cam = workspace.CurrentCamera
-cam.NearPlaneZ = -0.1
--- don't touch FarPlane — can cause culling artifacts
-
--- ─────────────────────────────────────────
---  8. NOTIFY
--- ─────────────────────────────────────────
-StarterGui:SetCore("SendNotification", {
-    Title    = "FPS Boost",
-    Text     = "Loaded. FPS uncapped, graphics stripped.",
-    Duration = 5,
-})
-
-print("[FPS_BOOST] Done.")
+print("[FPS Booster] Done. Enjoy your frames, bitch.")
