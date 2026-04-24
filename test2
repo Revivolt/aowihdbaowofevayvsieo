@@ -1,5 +1,5 @@
 -- // Roblox FPS Booster | LocalScript via Executor
--- // Fox & Jack — full implementation, no stubs
+-- // Fox & Jack — full implementation, texture quality edition
 
 local RunService   = game:GetService("RunService")
 local Lighting     = game:GetService("Lighting")
@@ -7,41 +7,33 @@ local Players      = game:GetService("Players")
 local lp           = Players.LocalPlayer
 
 -- ─────────────────────────────────────────
--- 1. UNLOCK FPS CAP (bypass 60fps lock)
+-- 1. UNLOCK FPS CAP
 -- ─────────────────────────────────────────
 local function unlockFPS()
-    -- Works on most executors that expose setfpscap / fps_unlock
     if setfpscap then
-        setfpscap(0)          -- 0 = unlimited
+        setfpscap(0)
     elseif syn and syn.set_fps_cap then
         syn.set_fps_cap(0)
     end
-
-    -- Fallback: scheduler identity trick
-    local ok, sched = pcall(function()
-        return game:GetService("ScriptContext")
-    end)
-    -- Most executors handle this natively; above calls are sufficient.
 end
 unlockFPS()
 
 -- ─────────────────────────────────────────
--- 2. RENDERING QUALITY — drop to minimum
+-- 2. RENDERING QUALITY — minimum
 -- ─────────────────────────────────────────
 settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
 
 -- ─────────────────────────────────────────
 -- 3. LIGHTING — kill expensive effects
 -- ─────────────────────────────────────────
-Lighting.GlobalShadows    = false
-Lighting.FogEnd           = 100000      -- push fog out so it never renders
-Lighting.FogStart         = 99999
-Lighting.Brightness       = 2
-Lighting.ClockTime        = 14          -- midday, no dynamic sky cost
-Lighting.Ambient          = Color3.fromRGB(178, 178, 178)
-Lighting.OutdoorAmbient   = Color3.fromRGB(178, 178, 178)
+Lighting.GlobalShadows  = false
+Lighting.FogEnd         = 100000
+Lighting.FogStart       = 99999
+Lighting.Brightness     = 2
+Lighting.ClockTime      = 14
+Lighting.Ambient        = Color3.fromRGB(178, 178, 178)
+Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
 
--- Kill post-processing effects
 for _, effect in ipairs(Lighting:GetChildren()) do
     if effect:IsA("PostEffect") or effect:IsA("Sky") then
         effect:Destroy()
@@ -49,38 +41,94 @@ for _, effect in ipairs(Lighting:GetChildren()) do
 end
 
 -- ─────────────────────────────────────────
--- 4. WORKSPACE — LOD & streaming tweaks
+-- 4. TEXTURE QUALITY NUKER (NEW)
+-- Strips texture IDs, SurfaceAppearances,
+-- forces SmoothPlastic + lowest RenderFidelity
 -- ─────────────────────────────────────────
-workspace.StreamingEnabled       = false   -- disable if game allows it
-workspace.SignalBehavior         = Enum.SignalBehavior.Deferred
+local function degradeTextures(instance)
+    for _, v in ipairs(instance:GetDescendants()) do
+
+        -- Kill SurfaceAppearance (PBR textures — most expensive)
+        if v:IsA("SurfaceAppearance") then
+            v:Destroy()
+
+        -- Strip Decal / Texture transparency
+        elseif v:IsA("Decal") or v:IsA("Texture") then
+            v.Transparency = 1
+
+        -- MeshPart: blank texture, lowest fidelity, smooth material
+        elseif v:IsA("MeshPart") then
+            pcall(function()
+                v.TextureID      = ""
+                v.RenderFidelity = Enum.RenderFidelity.Automatic
+                v.Material       = Enum.Material.SmoothPlastic
+                v.CastShadow     = false
+            end)
+
+        -- SpecialMesh: blank texture
+        elseif v:IsA("SpecialMesh") then
+            pcall(function()
+                v.TextureId = ""
+            end)
+
+        -- All other BaseParts: smooth material, no shadow
+        elseif v:IsA("BasePart") then
+            pcall(function()
+                v.Material       = Enum.Material.SmoothPlastic
+                v.RenderFidelity = Enum.RenderFidelity.Automatic
+                v.CastShadow     = false
+            end)
+        end
+    end
+end
+
+degradeTextures(workspace)
+
+-- Hook new instances as they stream/spawn in
+workspace.DescendantAdded:Connect(function(v)
+    if v:IsA("SurfaceAppearance") then
+        v:Destroy()
+    elseif v:IsA("Decal") or v:IsA("Texture") then
+        v.Transparency = 1
+    elseif v:IsA("MeshPart") then
+        pcall(function()
+            v.TextureID      = ""
+            v.RenderFidelity = Enum.RenderFidelity.Automatic
+            v.Material       = Enum.Material.SmoothPlastic
+            v.CastShadow     = false
+        end)
+    elseif v:IsA("SpecialMesh") then
+        pcall(function() v.TextureId = "" end)
+    elseif v:IsA("BasePart") then
+        pcall(function()
+            v.Material       = Enum.Material.SmoothPlastic
+            v.RenderFidelity = Enum.RenderFidelity.Automatic
+            v.CastShadow     = false
+        end)
+    end
+end)
 
 -- ─────────────────────────────────────────
--- 5. PARTICLES & BEAMS — nuke them all
+-- 5. PARTICLES & BEAMS
 -- ─────────────────────────────────────────
 local function killParticles(instance)
     for _, v in ipairs(instance:GetDescendants()) do
         if  v:IsA("ParticleEmitter")
-         or v:IsA("Trail")
-         or v:IsA("Beam")
          or v:IsA("Smoke")
          or v:IsA("Fire")
          or v:IsA("Sparkles")
         then
             v.Enabled = false
-            -- For Beam/Trail there's no Enabled; just zero lifetime
-            if v:IsA("Trail") then
-                v.Lifetime = NumberRange.new(0)
-            end
-            if v:IsA("Beam") then
-                v.Segments = 1
-            end
+        elseif v:IsA("Trail") then
+            v.Lifetime = NumberRange.new(0)
+        elseif v:IsA("Beam") then
+            v.Segments = 1
         end
     end
 end
 
 killParticles(workspace)
 
--- Also catch anything spawned later
 workspace.DescendantAdded:Connect(function(v)
     if  v:IsA("ParticleEmitter")
      or v:IsA("Smoke")
@@ -96,36 +144,12 @@ workspace.DescendantAdded:Connect(function(v)
 end)
 
 -- ─────────────────────────────────────────
--- 6. TEXTURES — strip all surface appearances
--- ─────────────────────────────────────────
-local function killTextures(instance)
-    for _, v in ipairs(instance:GetDescendants()) do
-        if v:IsA("Decal") or v:IsA("Texture") then
-            v.Transparency = 1
-        elseif v:IsA("SurfaceAppearance") then
-            v:Destroy()
-        end
-    end
-end
-
-killTextures(workspace)
-
-workspace.DescendantAdded:Connect(function(v)
-    if v:IsA("Decal") or v:IsA("Texture") then
-        v.Transparency = 1
-    elseif v:IsA("SurfaceAppearance") then
-        v:Destroy()
-    end
-end)
-
--- ─────────────────────────────────────────
--- 7. CHARACTER — disable unnecessary meshes
+-- 6. CHARACTER — strip accessory textures
 -- ─────────────────────────────────────────
 local function optimizeChar(char)
     if not char then return end
     for _, v in ipairs(char:GetDescendants()) do
         if v:IsA("Accessory") then
-            -- Keep the accessory but strip its mesh texture
             local handle = v:FindFirstChild("Handle")
             if handle then
                 local sa = handle:FindFirstChildOfClass("SurfaceAppearance")
@@ -133,6 +157,12 @@ local function optimizeChar(char)
                 local sp = handle:FindFirstChildOfClass("SpecialMesh")
                 if sp then sp.TextureId = "" end
             end
+        elseif v:IsA("MeshPart") then
+            pcall(function()
+                v.TextureID      = ""
+                v.RenderFidelity = Enum.RenderFidelity.Automatic
+                v.Material       = Enum.Material.SmoothPlastic
+            end)
         end
     end
 end
@@ -141,47 +171,18 @@ optimizeChar(lp.Character)
 lp.CharacterAdded:Connect(optimizeChar)
 
 -- ─────────────────────────────────────────
--- 8. SHADOW / RENDER FIDELITY per BasePart
--- ─────────────────────────────────────────
-local function setRenderFidelity(instance)
-    for _, v in ipairs(instance:GetDescendants()) do
-        if v:IsA("BasePart") then
-            v.CastShadow    = false
-            v.RenderFidelity = Enum.RenderFidelity.Automatic
-        elseif v:IsA("MeshPart") or v:IsA("SpecialMesh") then
-            if v:IsA("MeshPart") then
-                v.RenderFidelity = Enum.RenderFidelity.Automatic
-            end
-        end
-    end
-end
-
-setRenderFidelity(workspace)
-
-workspace.DescendantAdded:Connect(function(v)
-    if v:IsA("BasePart") then
-        v.CastShadow     = false
-        v.RenderFidelity = Enum.RenderFidelity.Automatic
-    end
-end)
-
--- ─────────────────────────────────────────
--- 9. MISC — disable unnecessary sounds
+-- 7. SOUNDS — mute everything
 -- ─────────────────────────────────────────
 local function muteSounds(instance)
     for _, v in ipairs(instance:GetDescendants()) do
-        if v:IsA("Sound") then
-            v.Volume = 0
-        end
+        if v:IsA("Sound") then v.Volume = 0 end
     end
 end
 
 muteSounds(workspace)
 
 workspace.DescendantAdded:Connect(function(v)
-    if v:IsA("Sound") then
-        v.Volume = 0
-    end
+    if v:IsA("Sound") then v.Volume = 0 end
 end)
 
-print("[FPS Boost] Done. All optimizations applied.")
+print("[FPS Boost] Done. Texture quality nuked + all optimizations applied.")
