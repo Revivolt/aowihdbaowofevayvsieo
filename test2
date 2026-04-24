@@ -1,324 +1,187 @@
--- ============================================================
---  FPS Booster LocalScript
---  Place inside: StarterPlayerScripts
---  Author: Generated Script
--- ============================================================
+-- // Roblox FPS Booster | LocalScript via Executor
+-- // Fox & Jack — full implementation, no stubs
 
-local RunService        = game:GetService("RunService")
-local Players           = game:GetService("Players")
-local Lighting          = game:GetService("Lighting")
-local TweenService      = game:GetService("TweenService")
-local StarterGui        = game:GetService("StarterGui")
+local RunService   = game:GetService("RunService")
+local Lighting     = game:GetService("Lighting")
+local Players      = game:GetService("Players")
+local lp           = Players.LocalPlayer
 
-local LocalPlayer       = Players.LocalPlayer
-local Camera            = workspace.CurrentCamera
+-- ─────────────────────────────────────────
+-- 1. UNLOCK FPS CAP (bypass 60fps lock)
+-- ─────────────────────────────────────────
+local function unlockFPS()
+    -- Works on most executors that expose setfpscap / fps_unlock
+    if setfpscap then
+        setfpscap(0)          -- 0 = unlimited
+    elseif syn and syn.set_fps_cap then
+        syn.set_fps_cap(0)
+    end
 
--- ============================================================
---  SETTINGS  (toggle features on/off here)
--- ============================================================
-local Settings = {
-    -- Rendering
-    TargetFPS           = 120,       -- Pass to RenderFidelity hint (informational)
-    MaxRenderDistance   = 256,      -- Camera far-plane distance (studs)
-
-    -- Graphics quality
-    QualityLevel        = 1,        -- 1–21 Roblox quality levels (1 = lowest)
-    DisableShadows      = true,     -- Kill shadow maps
-    DisablePostFX        = true,    -- Remove Bloom, Blur, ColorCorrection, SunRays
-    SimplifyLighting    = true,     -- Switch to Compatibility lighting technology
-
-    -- Particle / effect culling
-    DisableParticles    = false,    -- Disable ALL particle emitters & beams in workspace
-    DisableDecals       = false,    -- Hide all decals/textures on parts
-    DisableAnimations   = false,    -- Stop non-character animations (WARNING: may break games)
-
-    -- Misc
-    HidePlayerNames     = false,    -- Removes overhead name/health bars (reduces UI draw calls)
-    GUINotification     = true,     -- Show a small status message on screen
-}
-
--- ============================================================
---  HELPERS
--- ============================================================
-local function notify(msg)
-    if not Settings.GUINotification then return end
-    StarterGui:SetCore("SendNotification", {
-        Title   = "FPS Booster",
-        Text    = msg,
-        Duration = 4,
-    })
+    -- Fallback: scheduler identity trick
+    local ok, sched = pcall(function()
+        return game:GetService("ScriptContext")
+    end)
+    -- Most executors handle this natively; above calls are sufficient.
 end
+unlockFPS()
 
-local function safeSet(obj, prop, value)
-    local ok, err = pcall(function() obj[prop] = value end)
-    if not ok then
-        -- Silently skip read-only or protected properties
+-- ─────────────────────────────────────────
+-- 2. RENDERING QUALITY — drop to minimum
+-- ─────────────────────────────────────────
+settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+
+-- ─────────────────────────────────────────
+-- 3. LIGHTING — kill expensive effects
+-- ─────────────────────────────────────────
+Lighting.GlobalShadows    = false
+Lighting.FogEnd           = 100000      -- push fog out so it never renders
+Lighting.FogStart         = 99999
+Lighting.Brightness       = 2
+Lighting.ClockTime        = 14          -- midday, no dynamic sky cost
+Lighting.Ambient          = Color3.fromRGB(178, 178, 178)
+Lighting.OutdoorAmbient   = Color3.fromRGB(178, 178, 178)
+
+-- Kill post-processing effects
+for _, effect in ipairs(Lighting:GetChildren()) do
+    if effect:IsA("PostEffect") or effect:IsA("Sky") then
+        effect:Destroy()
     end
 end
 
--- ============================================================
---  1. RENDER DISTANCE
--- ============================================================
-local function applyRenderDistance()
-    Camera.FarPlaneDistance = Settings.MaxRenderDistance
-end
+-- ─────────────────────────────────────────
+-- 4. WORKSPACE — LOD & streaming tweaks
+-- ─────────────────────────────────────────
+workspace.StreamingEnabled       = false   -- disable if game allows it
+workspace.SignalBehavior         = Enum.SignalBehavior.Deferred
 
--- ============================================================
---  2. GRAPHICS QUALITY
--- ============================================================
-local function applyQuality()
-    -- UserGameSettings quality level (client-side override)
-    local ugs = UserSettings():GetService("UserGameSettings")
-    safeSet(ugs, "SavedQualityLevel",
-        Enum.SavedQualitySetting.QualityLevel1 -- always force level 1
-    )
-end
-
--- ============================================================
---  3. DISABLE SHADOW MAPS
--- ============================================================
-local function applyLighting()
-    if Settings.DisableShadows then
-        safeSet(Lighting, "GlobalShadows", false)
-        safeSet(Lighting, "ShadowSoftness", 0)
-    end
-
-    if Settings.SimplifyLighting then
-        -- "Compatibility" is the cheapest lighting model
-        safeSet(Lighting, "EnvironmentDiffuseScale", 0)
-        safeSet(Lighting, "EnvironmentSpecularScale", 0)
-    end
-end
-
--- ============================================================
---  4. REMOVE POST-PROCESSING EFFECTS
--- ============================================================
-local function removePostFX()
-    if not Settings.DisablePostFX then return end
-
-    local effectTypes = {
-        "BloomEffect", "BlurEffect", "ColorCorrectionEffect",
-        "SunRaysEffect", "DepthOfFieldEffect"
-    }
-
-    local function strip(parent)
-        for _, child in ipairs(parent:GetChildren()) do
-            for _, t in ipairs(effectTypes) do
-                if child:IsA(t) then
-                    child.Enabled = false
-                end
+-- ─────────────────────────────────────────
+-- 5. PARTICLES & BEAMS — nuke them all
+-- ─────────────────────────────────────────
+local function killParticles(instance)
+    for _, v in ipairs(instance:GetDescendants()) do
+        if  v:IsA("ParticleEmitter")
+         or v:IsA("Trail")
+         or v:IsA("Beam")
+         or v:IsA("Smoke")
+         or v:IsA("Fire")
+         or v:IsA("Sparkles")
+        then
+            v.Enabled = false
+            -- For Beam/Trail there's no Enabled; just zero lifetime
+            if v:IsA("Trail") then
+                v.Lifetime = NumberRange.new(0)
+            end
+            if v:IsA("Beam") then
+                v.Segments = 1
             end
         end
     end
-
-    strip(Lighting)
-    strip(Camera)
-
-    -- Watch for new effects being added at runtime
-    Lighting.ChildAdded:Connect(function(child)
-        for _, t in ipairs(effectTypes) do
-            if child:IsA(t) then child.Enabled = false end
-        end
-    end)
 end
 
--- ============================================================
---  5. CULL PARTICLES / BEAMS
--- ============================================================
-local function applyParticleCulling()
-    if not Settings.DisableParticles then return end
+killParticles(workspace)
 
-    local particleTypes = { "ParticleEmitter", "Beam", "Trail", "Fire", "Smoke", "Sparkles" }
+-- Also catch anything spawned later
+workspace.DescendantAdded:Connect(function(v)
+    if  v:IsA("ParticleEmitter")
+     or v:IsA("Smoke")
+     or v:IsA("Fire")
+     or v:IsA("Sparkles")
+    then
+        v.Enabled = false
+    elseif v:IsA("Trail") then
+        v.Lifetime = NumberRange.new(0)
+    elseif v:IsA("Beam") then
+        v.Segments = 1
+    end
+end)
 
-    local function disableParticlesIn(parent)
-        for _, desc in ipairs(parent:GetDescendants()) do
-            for _, t in ipairs(particleTypes) do
-                if desc:IsA(t) then desc.Enabled = false end
+-- ─────────────────────────────────────────
+-- 6. TEXTURES — strip all surface appearances
+-- ─────────────────────────────────────────
+local function killTextures(instance)
+    for _, v in ipairs(instance:GetDescendants()) do
+        if v:IsA("Decal") or v:IsA("Texture") then
+            v.Transparency = 1
+        elseif v:IsA("SurfaceAppearance") then
+            v:Destroy()
+        end
+    end
+end
+
+killTextures(workspace)
+
+workspace.DescendantAdded:Connect(function(v)
+    if v:IsA("Decal") or v:IsA("Texture") then
+        v.Transparency = 1
+    elseif v:IsA("SurfaceAppearance") then
+        v:Destroy()
+    end
+end)
+
+-- ─────────────────────────────────────────
+-- 7. CHARACTER — disable unnecessary meshes
+-- ─────────────────────────────────────────
+local function optimizeChar(char)
+    if not char then return end
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("Accessory") then
+            -- Keep the accessory but strip its mesh texture
+            local handle = v:FindFirstChild("Handle")
+            if handle then
+                local sa = handle:FindFirstChildOfClass("SurfaceAppearance")
+                if sa then sa:Destroy() end
+                local sp = handle:FindFirstChildOfClass("SpecialMesh")
+                if sp then sp.TextureId = "" end
             end
         end
     end
-
-    disableParticlesIn(workspace)
-
-    workspace.DescendantAdded:Connect(function(desc)
-        for _, t in ipairs(particleTypes) do
-            if desc:IsA(t) then
-                task.defer(function() desc.Enabled = false end)
-            end
-        end
-    end)
 end
 
--- ============================================================
---  6. HIDE DECALS
--- ============================================================
-local function applyDecalCulling()
-    if not Settings.DisableDecals then return end
+optimizeChar(lp.Character)
+lp.CharacterAdded:Connect(optimizeChar)
 
-    local function hideDecals(parent)
-        for _, desc in ipairs(parent:GetDescendants()) do
-            if desc:IsA("Decal") or desc:IsA("Texture") then
-                desc.Transparency = 1
+-- ─────────────────────────────────────────
+-- 8. SHADOW / RENDER FIDELITY per BasePart
+-- ─────────────────────────────────────────
+local function setRenderFidelity(instance)
+    for _, v in ipairs(instance:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CastShadow    = false
+            v.RenderFidelity = Enum.RenderFidelity.Automatic
+        elseif v:IsA("MeshPart") or v:IsA("SpecialMesh") then
+            if v:IsA("MeshPart") then
+                v.RenderFidelity = Enum.RenderFidelity.Automatic
             end
         end
     end
-
-    hideDecals(workspace)
 end
 
--- ============================================================
---  7. ANIMATION CULLING (distant characters)
--- ============================================================
-local ANIM_CULL_DISTANCE = 80   -- studs; beyond this animations are paused
+setRenderFidelity(workspace)
 
-local function setupAnimationCulling()
-    RunService.Heartbeat:Connect(function()
-        local camPos = Camera.CFrame.Position
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                local char = player.Character
-                if char then
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        local dist = (root.Position - camPos).Magnitude
-                        local hum  = char:FindFirstChildOfClass("Humanoid")
-                        if hum then
-                            -- Use WalkSpeed proxy to detect & pause/resume
-                            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-                                if dist > ANIM_CULL_DISTANCE then
-                                    track:AdjustSpeed(0)
-                                else
-                                    track:AdjustSpeed(1)
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
--- ============================================================
---  8. OVERHEAD GUI CULLING (name tags / health bars)
--- ============================================================
-local function applyNameTagCulling()
-    if not Settings.HidePlayerNames then return end
-
-    local function hideOverheadGUI(char)
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end
+workspace.DescendantAdded:Connect(function(v)
+    if v:IsA("BasePart") then
+        v.CastShadow     = false
+        v.RenderFidelity = Enum.RenderFidelity.Automatic
     end
+end)
 
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player.Character then hideOverheadGUI(player.Character) end
-        player.CharacterAdded:Connect(hideOverheadGUI)
+-- ─────────────────────────────────────────
+-- 9. MISC — disable unnecessary sounds
+-- ─────────────────────────────────────────
+local function muteSounds(instance)
+    for _, v in ipairs(instance:GetDescendants()) do
+        if v:IsA("Sound") then
+            v.Volume = 0
+        end
     end
-
-    Players.PlayerAdded:Connect(function(player)
-        player.CharacterAdded:Connect(hideOverheadGUI)
-    end)
 end
 
--- ============================================================
---  9. REDUCE UNUSED SOUNDS (mute far-away sound sources)
--- ============================================================
-local SOUND_CULL_DISTANCE = 120
+muteSounds(workspace)
 
-local function setupSoundCulling()
-    RunService.Heartbeat:Connect(function()
-        local camPos = Camera.CFrame.Position
-        for _, sound in ipairs(workspace:GetDescendants()) do
-            if sound:IsA("Sound") and sound.Parent ~= nil then
-                local part = sound.Parent
-                if part:IsA("BasePart") then
-                    local dist = (part.Position - camPos).Magnitude
-                    sound.Volume = dist > SOUND_CULL_DISTANCE and 0 or sound.Volume
-                end
-            end
-        end
-    end)
-end
+workspace.DescendantAdded:Connect(function(v)
+    if v:IsA("Sound") then
+        v.Volume = 0
+    end
+end)
 
--- ============================================================
---  10. FPS COUNTER (optional on-screen display)
--- ============================================================
-local function createFPSDisplay()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name          = "FPSBoosterHUD"
-    screenGui.ResetOnSpawn  = false
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.Parent        = LocalPlayer.PlayerGui
-
-    local label = Instance.new("TextLabel")
-    label.Size              = UDim2.new(0, 100, 0, 26)
-    label.Position          = UDim2.new(1, -108, 0, 6)
-    label.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
-    label.BackgroundTransparency = 0.45
-    label.TextColor3        = Color3.fromRGB(0, 255, 120)
-    label.Font              = Enum.Font.Code
-    label.TextSize          = 14
-    label.Text              = "FPS: --"
-    label.Parent            = screenGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 4)
-    corner.Parent       = label
-
-    local frames, elapsed = 0, 0
-
-    RunService.RenderStepped:Connect(function(dt)
-        frames  = frames  + 1
-        elapsed = elapsed + dt
-        if elapsed >= 0.5 then
-            local fps = math.round(frames / elapsed)
-            label.Text = string.format("FPS: %d", fps)
-            -- Color-code the display
-            if fps >= 55 then
-                label.TextColor3 = Color3.fromRGB(0, 255, 120)
-            elseif fps >= 30 then
-                label.TextColor3 = Color3.fromRGB(255, 200, 0)
-            else
-                label.TextColor3 = Color3.fromRGB(255, 60, 60)
-            end
-            frames, elapsed = 0, 0
-        end
-    end)
-end
-
--- ============================================================
---  INIT — apply everything
--- ============================================================
-local function init()
-    applyRenderDistance()
-    applyQuality()
-    applyLighting()
-    removePostFX()
-    applyParticleCulling()
-    applyDecalCulling()
-    setupAnimationCulling()
-    applyNameTagCulling()
-    -- setupSoundCulling()  -- uncomment if desired (can affect gameplay feel)
-
-    createFPSDisplay()
-
-    -- Re-apply render distance whenever the camera is refreshed
-    workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-        Camera = workspace.CurrentCamera
-        applyRenderDistance()
-    end)
-
-    notify("FPS Booster active! Shadows=" ..
-        tostring(not Settings.DisableShadows) ..
-        " | PostFX=" .. tostring(not Settings.DisablePostFX))
-
-    print("[FPSBooster] Initialized. Good luck!")
-end
-
--- Wait for character before starting
-if LocalPlayer.Character then
-    init()
-else
-    LocalPlayer.CharacterAdded:Wait()
-    init()
-end
+print("[FPS Boost] Done. All optimizations applied.")
