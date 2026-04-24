@@ -1,400 +1,116 @@
--- PCEmulatorInput.lua
--- LocalScript: Place inside StarterPlayerScripts
--- Purpose: Replaces mobile UI with full PC keyboard/mouse support on emulators.
--- Compatible with Roblox emulators that lack native K/M input.
+-- // FPS BOOST — by Fox
+-- // Executor: Synapse X / KRNL / Fluxus / etc.
 
-local Players           = game:GetService("Players")
-local UserInputService  = game:GetService("UserInputService")
-local RunService        = game:GetService("RunService")
-local ContextActionService = game:GetService("ContextActionService")
-local StarterGui        = game:GetService("StarterGui")
-local TweenService      = game:GetService("TweenService")
+local RunService    = game:GetService("RunService")
+local Players       = game:GetService("Players")
+local Lighting      = game:GetService("Lighting")
+local StarterGui    = game:GetService("StarterGui")
+local player        = Players.LocalPlayer
 
-local LocalPlayer  = Players.LocalPlayer
-local PlayerGui    = LocalPlayer:WaitForChild("PlayerGui")
-local Camera       = workspace.CurrentCamera
-local Character    = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-local Humanoid     = Character:WaitForChild("Humanoid")
-
--- ─────────────────────────────────────────────
--- 1.  REMOVE MOBILE CONTROLS
--- ─────────────────────────────────────────────
-StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)   -- hide all default UI
-StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, true) -- keep health bar
-
--- Kill the default TouchGui (joystick + jump button)
-local function removeMobileGui()
-    local tg = PlayerGui:FindFirstChild("TouchGui")
-    if tg then tg:Destroy() end
+-- ─────────────────────────────────────────
+--  1. UNCAP FPS
+-- ─────────────────────────────────────────
+if setfpscap then
+    setfpscap(0)  -- 0 = fully uncapped
 end
-removeMobileGui()
-PlayerGui.ChildAdded:Connect(function(child)
-    if child.Name == "TouchGui" then
-        child:Destroy()
+
+-- ─────────────────────────────────────────
+--  2. FFLAGS — scheduler + renderer tweaks
+-- ─────────────────────────────────────────
+if setfflag then
+    setfflag("DFIntTaskSchedulerTargetFps",        "9999")
+    setfflag("FFlagDebugGraphicsDisableDirect3D11", "False")
+    setfflag("FFlagEnableQuickGameLaunch",          "True")
+    setfflag("FFlagGraphicsGLTextureReductionStep", "2")
+    setfflag("UseOptimizedNetworkCompression",      "True")
+    setfflag("FastNetworkReplication",              "True")
+end
+
+-- ─────────────────────────────────────────
+--  3. GRAPHICS QUALITY → Level 1 (potato)
+-- ─────────────────────────────────────────
+settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+
+-- ─────────────────────────────────────────
+--  4. LIGHTING — kill the heavy stuff
+-- ─────────────────────────────────────────
+Lighting.GlobalShadows    = false
+Lighting.FogEnd           = 9e9   -- effectively disable fog
+Lighting.FogStart         = 9e9
+Lighting.Brightness       = 2
+Lighting.Ambient          = Color3.fromRGB(128, 128, 128)  -- neutral, not pitch black
+Lighting.ReflectionQuality = Enum.ReflectionQuality.NoReflection
+
+-- kill post-processing effects
+for _, fx in ipairs(Lighting:GetChildren()) do
+    if fx:IsA("PostEffect") or fx:IsA("Sky") then
+        fx:Destroy()
     end
-end)
+end
 
--- ─────────────────────────────────────────────
--- 2.  MOVEMENT STATE
--- ─────────────────────────────────────────────
-local moveKeys = {
-    W = Vector3.new( 0, 0,-1),
-    A = Vector3.new(-1, 0, 0),
-    S = Vector3.new( 0, 0, 1),
-    D = Vector3.new( 1, 0, 0),
-}
-local keyDown = {}
-local isSprinting = false
-local isJumping   = false
-
--- ─────────────────────────────────────────────
--- 3.  MOUSE LOOK (camera)
--- ─────────────────────────────────────────────
-local mouseSensitivity = 0.3   -- degrees per pixel
-local cameraPitch = 0
-local cameraYaw   = 0
-local PITCH_LIMIT = 80
-
--- Lock mouse to centre
-UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-UserInputService.MouseIconEnabled = false
-
-RunService.RenderStepped:Connect(function()
-    -- Camera follow
-    local delta = UserInputService:GetMouseDelta()
-    cameraYaw   = cameraYaw   - delta.X * mouseSensitivity
-    cameraPitch = math.clamp(cameraPitch - delta.Y * mouseSensitivity, -PITCH_LIMIT, PITCH_LIMIT)
-
-    local yawCF   = CFrame.Angles(0, math.rad(cameraYaw), 0)
-    local pitchCF = CFrame.Angles(math.rad(cameraPitch), 0, 0)
-    local rootCF  = HumanoidRootPart.CFrame
-
-    Camera.CFrame = (rootCF * CFrame.new(0, 1.5, 0)) * yawCF * pitchCF * CFrame.new(0, 0, -0.5)
-    Camera.CameraType = Enum.CameraType.Scriptable
-
-    -- Movement
-    local moveDir = Vector3.new(0, 0, 0)
-    for key, dir in pairs(moveKeys) do
-        if keyDown[key] then
-            moveDir = moveDir + dir
+-- ─────────────────────────────────────────
+--  5. WORKSPACE — strip particles / beams
+-- ─────────────────────────────────────────
+local function stripEffects(root)
+    for _, v in ipairs(root:GetDescendants()) do
+        if v:IsA("ParticleEmitter")
+        or v:IsA("Trail")
+        or v:IsA("Beam")
+        or v:IsA("Fire")
+        or v:IsA("Smoke")
+        or v:IsA("Sparkles") then
+            v.Enabled = false
+        elseif v:IsA("SpecialMesh") then
+            -- leave meshes, they don't cost much
+        elseif (v:IsA("Part") or v:IsA("MeshPart") or v:IsA("UnionOperation"))
+               and v ~= workspace.Terrain then
+            v.Reflectance = 0
+            v.Material    = Enum.Material.SmoothPlastic
         end
     end
-    if moveDir.Magnitude > 0 then
-        moveDir = moveDir.Unit
-        local worldDir = yawCF * moveDir
-        Humanoid:Move(worldDir, false)
-        -- Face movement direction
-        HumanoidRootPart.CFrame = CFrame.new(HumanoidRootPart.Position,
-            HumanoidRootPart.Position + Vector3.new(worldDir.X, 0, worldDir.Z))
-    else
-        Humanoid:Move(Vector3.new(0, 0, 0), false)
-    end
-
-    -- Sprint
-    Humanoid.WalkSpeed = isSprinting and 22 or 16
-end)
-
--- ─────────────────────────────────────────────
--- 4.  KEYBOARD INPUT
--- ─────────────────────────────────────────────
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    local kc = input.KeyCode
-    if kc == Enum.KeyCode.W then keyDown["W"] = true
-    elseif kc == Enum.KeyCode.A then keyDown["A"] = true
-    elseif kc == Enum.KeyCode.S then keyDown["S"] = true
-    elseif kc == Enum.KeyCode.D then keyDown["D"] = true
-    elseif kc == Enum.KeyCode.Space then
-        Humanoid.Jump = true
-        isJumping = true
-    elseif kc == Enum.KeyCode.LeftShift or kc == Enum.KeyCode.RightShift then
-        isSprinting = true
-    elseif kc == Enum.KeyCode.LeftControl then
-        -- Crouch / walk slow
-        Humanoid.WalkSpeed = 8
-    elseif kc == Enum.KeyCode.Escape then
-        -- Release mouse lock
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-        UserInputService.MouseIconEnabled = true
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input, gp)
-    if gp then return end
-    local kc = input.KeyCode
-    if kc == Enum.KeyCode.W then keyDown["W"] = false
-    elseif kc == Enum.KeyCode.A then keyDown["A"] = false
-    elseif kc == Enum.KeyCode.S then keyDown["S"] = false
-    elseif kc == Enum.KeyCode.D then keyDown["D"] = false
-    elseif kc == Enum.KeyCode.Space then isJumping = false
-    elseif kc == Enum.KeyCode.LeftShift or kc == Enum.KeyCode.RightShift then
-        isSprinting = false
-    elseif kc == Enum.KeyCode.LeftControl then
-        Humanoid.WalkSpeed = 16
-    end
-end)
-
--- Re-lock mouse on click after Escape
-UserInputService.InputBegan:Connect(function(input, gp)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-       and UserInputService.MouseBehavior == Enum.MouseBehavior.Default then
-        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-        UserInputService.MouseIconEnabled = false
-    end
-end)
-
--- ─────────────────────────────────────────────
--- 5.  HUD OVERLAY  (keyboard + mouse visualiser)
--- ─────────────────────────────────────────────
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name        = "PCEmulatorHUD"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent      = PlayerGui
-
--- Colours
-local C_BG     = Color3.fromRGB( 15,  15,  20)
-local C_KEY    = Color3.fromRGB( 35,  38,  50)
-local C_ACTIVE = Color3.fromRGB( 90, 160, 255)
-local C_TEXT   = Color3.fromRGB(200, 210, 230)
-local C_BORDER = Color3.fromRGB( 55,  65,  90)
-
--- Helper: make one key button
-local function makeKey(parent, text, size, pos)
-    local f = Instance.new("Frame")
-    f.Size            = UDim2.new(0, size.X, 0, size.Y)
-    f.Position        = UDim2.new(0, pos.X,  0, pos.Y)
-    f.BackgroundColor3 = C_KEY
-    f.BackgroundTransparency = 0.25
-    f.BorderSizePixel = 0
-    f.Parent          = parent
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 4)
-    corner.Parent = f
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color     = C_BORDER
-    stroke.Thickness = 1
-    stroke.Transparency = 0.4
-    stroke.Parent    = f
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1,0,1,0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text     = text
-    lbl.TextColor3 = C_TEXT
-    lbl.Font     = Enum.Font.GothamBold
-    lbl.TextScaled = true
-    lbl.Parent   = f
-
-    return f
 end
 
--- ── Keyboard panel ──────────────────────────
-local KBD_W, KBD_H = 220, 90
-local kbdFrame = Instance.new("Frame")
-kbdFrame.Name  = "KeyboardDisplay"
-kbdFrame.Size  = UDim2.new(0, KBD_W, 0, KBD_H)
-kbdFrame.Position = UDim2.new(0, 16, 1, -KBD_H - 16)  -- bottom-left
-kbdFrame.BackgroundColor3 = C_BG
-kbdFrame.BackgroundTransparency = 0.35
-kbdFrame.BorderSizePixel = 0
-kbdFrame.Parent = ScreenGui
+stripEffects(workspace)
 
-local kbdCorner = Instance.new("UICorner")
-kbdCorner.CornerRadius = UDim.new(0, 8)
-kbdCorner.Parent = kbdFrame
-
-local kbdStroke = Instance.new("UIStroke")
-kbdStroke.Color = C_BORDER
-kbdStroke.Thickness = 1
-kbdStroke.Parent = kbdFrame
-
--- Key layout  {label, size{x,y}, pos{x,y}}  (relative to kbdFrame, 4px padding)
-local KS = 28   -- key size
-local KG = 4    -- gap
-local keyDefs = {
-    -- Row 0: WASD + extras
-    {l="W",    sx=KS,   sy=KS,   px=KS+KG+4,      py=4},
-    {l="A",    sx=KS,   sy=KS,   px=4,             py=KS+KG+4},
-    {l="S",    sx=KS,   sy=KS,   px=KS+KG+4,       py=KS+KG+4},
-    {l="D",    sx=KS,   sy=KS,   px=(KS+KG)*2+4,   py=KS+KG+4},
-    {l="SPC",  sx=KS*3+KG*2, sy=KS, px=4,          py=(KS+KG)*2+4},
-    {l="SFT",  sx=KS+8, sy=KS,   px=(KS+KG)*3+KG+4, py=KS+KG+4},
-    {l="CTL",  sx=KS+8, sy=KS,   px=(KS+KG)*3+KG+4, py=(KS+KG)*2+4},
-}
-
--- Map label → Frame for highlight
-local keyFrameMap = {}
-
-for _, kd in ipairs(keyDefs) do
-    local f = makeKey(kbdFrame, kd.l, Vector2.new(kd.sx, kd.sy), Vector2.new(kd.px, kd.py))
-    keyFrameMap[kd.l] = f
-end
-
--- Map KeyCode → label
-local kcToLabel = {
-    [Enum.KeyCode.W]            = "W",
-    [Enum.KeyCode.A]            = "A",
-    [Enum.KeyCode.S]            = "S",
-    [Enum.KeyCode.D]            = "D",
-    [Enum.KeyCode.Space]        = "SPC",
-    [Enum.KeyCode.LeftShift]    = "SFT",
-    [Enum.KeyCode.RightShift]   = "SFT",
-    [Enum.KeyCode.LeftControl]  = "CTL",
-    [Enum.KeyCode.RightControl] = "CTL",
-}
-
-local function setKeyHighlight(label, active)
-    local f = keyFrameMap[label]
-    if not f then return end
-    TweenService:Create(f, TweenInfo.new(0.07), {
-        BackgroundColor3 = active and C_ACTIVE or C_KEY,
-        BackgroundTransparency = active and 0.0 or 0.25,
-    }):Play()
-end
-
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    local lbl = kcToLabel[input.KeyCode]
-    if lbl then setKeyHighlight(lbl, true) end
-end)
-UserInputService.InputEnded:Connect(function(input, gp)
-    if gp then return end
-    local lbl = kcToLabel[input.KeyCode]
-    if lbl then setKeyHighlight(lbl, false) end
-end)
-
--- ── Mouse panel ──────────────────────────────
-local MS_W, MS_H = 60, 90
-local mouseFrame = Instance.new("Frame")
-mouseFrame.Name  = "MouseDisplay"
-mouseFrame.Size  = UDim2.new(0, MS_W, 0, MS_H)
-mouseFrame.Position = UDim2.new(0, KBD_W + 24, 1, -MS_H - 16)
-mouseFrame.BackgroundColor3 = C_BG
-mouseFrame.BackgroundTransparency = 0.35
-mouseFrame.BorderSizePixel = 0
-mouseFrame.Parent = ScreenGui
-
-local msCorner = Instance.new("UICorner")
-msCorner.CornerRadius = UDim.new(0, 8)
-msCorner.Parent = mouseFrame
-
-local msStroke = Instance.new("UIStroke")
-msStroke.Color = C_BORDER
-msStroke.Thickness = 1
-msStroke.Parent = mouseFrame
-
--- Draw mouse body as SVG-like frames
--- Body outline
-local body = Instance.new("Frame")
-body.Size = UDim2.new(0, 38, 0, 60)
-body.Position = UDim2.new(0.5, -19, 0, 10)
-body.BackgroundColor3 = C_KEY
-body.BackgroundTransparency = 0.2
-body.BorderSizePixel = 0
-body.Parent = mouseFrame
-local bCorner = Instance.new("UICorner")
-bCorner.CornerRadius = UDim.new(0, 10)
-bCorner.Parent = body
-local bStroke = Instance.new("UIStroke")
-bStroke.Color = C_BORDER
-bStroke.Thickness = 1
-bStroke.Parent = body
-
--- Divider line (between LMB / RMB)
-local divider = Instance.new("Frame")
-divider.Size = UDim2.new(0, 1, 0, 26)
-divider.Position = UDim2.new(0.5, 0, 0, 0)
-divider.BackgroundColor3 = C_BORDER
-divider.BorderSizePixel = 0
-divider.Parent = body
-
--- LMB
-local lmb = Instance.new("Frame")
-lmb.Name = "LMB"
-lmb.Size = UDim2.new(0.5, -1, 0, 26)
-lmb.Position = UDim2.new(0, 0, 0, 0)
-lmb.BackgroundTransparency = 1
-lmb.BorderSizePixel = 0
-lmb.Parent = body
-local lmbCorner = Instance.new("UICorner")
-lmbCorner.CornerRadius = UDim.new(0, 10)
-lmbCorner.Parent = lmb
-
--- RMB
-local rmb = Instance.new("Frame")
-rmb.Name = "RMB"
-rmb.Size = UDim2.new(0.5, -1, 0, 26)
-rmb.Position = UDim2.new(0.5, 1, 0, 0)
-rmb.BackgroundTransparency = 1
-rmb.BorderSizePixel = 0
-rmb.Parent = body
-local rmbCorner = Instance.new("UICorner")
-rmbCorner.CornerRadius = UDim.new(0, 10)
-rmbCorner.Parent = rmb
-
--- Scroll wheel
-local scroll = Instance.new("Frame")
-scroll.Name = "SCROLL"
-scroll.Size = UDim2.new(0, 6, 0, 14)
-scroll.Position = UDim2.new(0.5, -3, 0, 28)
-scroll.BackgroundColor3 = C_BORDER
-scroll.BorderSizePixel = 0
-scroll.Parent = body
-local scrollCorner = Instance.new("UICorner")
-scrollCorner.CornerRadius = UDim.new(0, 3)
-scrollCorner.Parent = scroll
-
--- Map mouse button → frame
-local mousePartMap = {
-    [Enum.UserInputType.MouseButton1] = lmb,
-    [Enum.UserInputType.MouseButton2] = rmb,
-    [Enum.UserInputType.MouseButton3] = scroll,
-}
-
-local function setMouseHighlight(part, active)
-    TweenService:Create(part, TweenInfo.new(0.07), {
-        BackgroundColor3 = active and C_ACTIVE or C_KEY,
-        BackgroundTransparency = active and 0.0 or 1,
-    }):Play()
-end
-
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    local part = mousePartMap[input.UserInputType]
-    if part then setMouseHighlight(part, true) end
-end)
-UserInputService.InputEnded:Connect(function(input, gp)
-    if gp then return end
-    local part = mousePartMap[input.UserInputType]
-    if part then setMouseHighlight(part, false) end
-end)
-
--- Scroll flash
-UserInputService.InputChanged:Connect(function(input, gp)
-    if gp then return end
-    if input.UserInputType == Enum.UserInputType.MouseWheel then
-        setMouseHighlight(scroll, true)
-        task.delay(0.15, function() setMouseHighlight(scroll, false) end)
+-- also catch newly added stuff
+workspace.DescendantAdded:Connect(function(v)
+    if v:IsA("ParticleEmitter")
+    or v:IsA("Trail")
+    or v:IsA("Beam")
+    or v:IsA("Fire")
+    or v:IsA("Smoke")
+    or v:IsA("Sparkles") then
+        v.Enabled = false
     end
 end)
 
--- ─────────────────────────────────────────────
--- 6.  TOGGLE VISIBILITY  (press ` / tilde)
--- ─────────────────────────────────────────────
-local hudVisible = true
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.BackQuote then
-        hudVisible = not hudVisible
-        kbdFrame.Visible   = hudVisible
-        mouseFrame.Visible = hudVisible
+-- ─────────────────────────────────────────
+--  6. KILL IDLE RENDERSTEPPED CONNECTIONS
+--     (executor-only: getconnections)
+-- ─────────────────────────────────────────
+if getconnections then
+    for _, conn in ipairs(getconnections(RunService.RenderStepped)) do
+        -- only disconnect foreign ones, not ours
+        if conn.Function and not tostring(conn.Function):find("FPS_BOOST") then
+            conn:Disable()
+        end
     end
-end)
+end
 
-print("[PCEmulatorInput] Loaded — mobile controls removed, PC input active.")
-print("[PCEmulatorInput] Press ` (backtick) to toggle the HUD overlay.")
-print("[PCEmulatorInput] Press ESC to release mouse lock; click to re-lock.")
+-- ─────────────────────────────────────────
+--  7. CAMERA — tighten clip planes
+-- ─────────────────────────────────────────
+local cam = workspace.CurrentCamera
+cam.NearPlaneZ = -0.1
+-- don't touch FarPlane — can cause culling artifacts
+
+-- ─────────────────────────────────────────
+--  8. NOTIFY
+-- ─────────────────────────────────────────
+StarterGui:SetCore("SendNotification", {
+    Title    = "FPS Boost",
+    Text     = "Loaded. FPS uncapped, graphics stripped.",
+    Duration = 5,
+})
+
+print("[FPS_BOOST] Done.")
