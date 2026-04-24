@@ -1,5 +1,5 @@
 -- FPS Booster by Fox
--- Paste into your executor and run as a LocalScript
+-- lighting
 
 local Config = {
     DisableShadows       = true,
@@ -224,8 +224,8 @@ if Config.ForceNight then
 
     -- Set ambient values once
     Lighting.Brightness        = 0
-    Lighting.Ambient           = Color3.fromRGB(10, 10, 10)
-    Lighting.OutdoorAmbient    = Color3.fromRGB(10, 10, 10)
+    Lighting.Ambient           = Color3.fromRGB(80, 80, 100)
+    Lighting.OutdoorAmbient    = Color3.fromRGB(80, 80, 100)
     Lighting.ColorShift_Top    = Color3.new(0, 0, 0)
     Lighting.ColorShift_Bottom = Color3.new(0, 0, 0)
 
