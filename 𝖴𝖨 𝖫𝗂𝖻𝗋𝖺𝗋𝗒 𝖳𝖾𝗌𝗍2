@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -4132,6 +4132,264 @@ Tab:AddButton({
 Tab:AddButton({
         Label    = "Server Finder",
         Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/MaxproGlitcher/Server-Finder-Deluxe/refs/heads/main/Finder_Servers_Code.luau"))() end,
+    })
+
+
+
+Tab:AddButton({
+        Label    = "Boost FPS",
+        Callback = function() 
+-- FPS Booster by Fox
+-- lighting
+
+local Config = {
+    DisableShadows       = true,
+    DisableLightingFX    = true,
+    DisableAtmosphere    = true,
+    DisableParticles     = true,
+    FlattenTextures      = true,
+    DisableTerrain       = true,
+    LowQualityGraphics   = true,
+    StripAccessories     = true,
+    StripLayeredClothing = true,
+    ForceNight           = true,
+    FPSCap               = false,
+}
+
+local Lighting    = game:GetService("Lighting")
+local RunService  = game:GetService("RunService")
+local Players     = game:GetService("Players")
+local Workspace   = game:GetService("Workspace")
+local localPlayer = Players.LocalPlayer
+
+-- ──────────────────────────────────────────
+-- 1. GRAPHICS QUALITY
+-- ──────────────────────────────────────────
+if Config.LowQualityGraphics then
+    settings().Rendering.QualityLevel        = Enum.QualityLevel.Level01
+    settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
+    settings().Rendering.EagerBulkExecution  = false
+    settings().Rendering.EnableFRM           = false
+end
+
+-- ──────────────────────────────────────────
+-- 2. SHADOWS
+-- ──────────────────────────────────────────
+if Config.DisableShadows then
+    Lighting.GlobalShadows = false
+    Lighting.Technology    = Enum.Technology.Compatibility
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") then v.CastShadow = false end
+    end
+    Workspace.DescendantAdded:Connect(function(v)
+        if v:IsA("BasePart") then v.CastShadow = false end
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 3. LIGHTING POST-FX
+-- ──────────────────────────────────────────
+if Config.DisableLightingFX then
+    local killClasses = {
+        "BloomEffect", "BlurEffect", "SunRaysEffect",
+        "DepthOfFieldEffect", "ColorCorrectionEffect"
+    }
+    for _, child in ipairs(Lighting:GetChildren()) do
+        for _, cls in ipairs(killClasses) do
+            if child:IsA(cls) then child.Enabled = false end
+        end
+    end
+    Lighting.ChildAdded:Connect(function(child)
+        for _, cls in ipairs(killClasses) do
+            if child:IsA(cls) then child.Enabled = false end
+        end
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 4. ATMOSPHERE
+-- ──────────────────────────────────────────
+if Config.DisableAtmosphere then
+    local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
+    if atmo then atmo:Destroy() end
+    Lighting.FogEnd   = 100000
+    Lighting.FogStart = 99999
+end
+
+-- ──────────────────────────────────────────
+-- 5. PARTICLES
+-- ──────────────────────────────────────────
+if Config.DisableParticles then
+    local particleClasses = { "ParticleEmitter", "Smoke", "Fire", "Sparkles" }
+    local function killParticle(v)
+        for _, cls in ipairs(particleClasses) do
+            if v:IsA(cls) then
+                v.Enabled = false
+                if v:IsA("ParticleEmitter") then v.Rate = 0 end
+            end
+        end
+    end
+    for _, v in ipairs(Workspace:GetDescendants()) do killParticle(v) end
+    Workspace.DescendantAdded:Connect(killParticle)
+end
+
+-- ──────────────────────────────────────────
+-- 6. TEXTURES / MATERIALS
+-- ──────────────────────────────────────────
+if Config.FlattenTextures then
+    local function isPlayerDescendant(obj)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character and obj:IsDescendantOf(plr.Character) then return true end
+        end
+        return false
+    end
+    local function flattenPart(v)
+        if isPlayerDescendant(v) then return end
+        if v:IsA("BasePart") then
+            v.Material = Enum.Material.SmoothPlastic
+            local sa = v:FindFirstChildOfClass("SurfaceAppearance")
+            if sa then sa:Destroy() end
+        elseif v:IsA("Texture") or v:IsA("Decal") then
+            v.Transparency = 1
+        elseif v:IsA("SpecialMesh") then
+            v.TextureId = ""
+        elseif v:IsA("Model") then
+            v.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
+        end
+    end
+    for _, v in ipairs(Workspace:GetDescendants()) do flattenPart(v) end
+    Workspace.DescendantAdded:Connect(flattenPart)
+end
+
+-- ──────────────────────────────────────────
+-- 7. TERRAIN
+-- ──────────────────────────────────────────
+if Config.DisableTerrain then
+    local terrain = Workspace:FindFirstChildOfClass("Terrain")
+    if terrain then
+        terrain.WaterWaveSize     = 0
+        terrain.WaterWaveSpeed    = 0
+        terrain.WaterReflectance  = 0
+        terrain.WaterTransparency = 1
+        -- terrain.Decoration removed — no longer a valid API member
+    end
+end
+
+-- ──────────────────────────────────────────
+-- 8. STRIP ACCESSORIES + LAYERED CLOTHING
+-- ──────────────────────────────────────────
+-- Accessories are DIRECT children of the character model.
+-- WrapLayer / WrapTarget can be direct children OR nested inside
+-- HumanoidRootPart / body parts — scan both levels explicitly.
+
+local STRIP_CLASSES = {
+    Accessory  = true,
+    WrapLayer  = true,
+    WrapTarget = true,
+}
+
+local function shouldStrip(v)
+    if Config.StripAccessories     and v:IsA("Accessory")  then return true end
+    if Config.StripLayeredClothing and v:IsA("WrapLayer")  then return true end
+    if Config.StripLayeredClothing and v:IsA("WrapTarget") then return true end
+    return false
+end
+
+local function stripCharacter(char)
+    if not char then return end
+
+    -- Pass 1: direct children (catches Accessory at char level)
+    for _, v in ipairs(char:GetChildren()) do
+        if shouldStrip(v) then v:Destroy() end
+    end
+
+    -- Pass 2: full descendant scan (catches WrapLayer/WrapTarget inside parts)
+    for _, v in ipairs(char:GetDescendants()) do
+        if shouldStrip(v) then v:Destroy() end
+    end
+
+    -- Pass 3: guard against late-streamed items (avatar loading is async)
+    char.ChildAdded:Connect(function(v)
+        if shouldStrip(v) then
+            task.defer(function() if v and v.Parent then v:Destroy() end end)
+        end
+    end)
+    char.DescendantAdded:Connect(function(v)
+        if shouldStrip(v) then
+            task.defer(function() if v and v.Parent then v:Destroy() end end)
+        end
+    end)
+end
+
+if Config.StripAccessories or Config.StripLayeredClothing then
+    for _, plr in ipairs(Players:GetPlayers()) do
+        -- Character may already exist
+        if plr.Character then
+            stripCharacter(plr.Character)
+        end
+        plr.CharacterAdded:Connect(function(char)
+            -- Wait a tick — Roblox streams accessories slightly after CharacterAdded
+            task.wait()
+            stripCharacter(char)
+        end)
+    end
+    Players.PlayerAdded:Connect(function(plr)
+        plr.CharacterAdded:Connect(function(char)
+            task.wait()
+            stripCharacter(char)
+        end)
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 9. FORCE NIGHT SKY
+-- ──────────────────────────────────────────
+-- Games run a lighting controller that resets ClockTime every frame.
+-- The only reliable fix is to re-force it every Heartbeat.
+-- We also nuke Sky and Clouds objects for fillrate savings.
+
+if Config.ForceNight then
+    -- Kill Sky and Clouds immediately
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child:IsA("Sky") or child:IsA("Clouds") then
+            child:Destroy()
+        end
+    end
+
+    -- Block any re-added Sky/Clouds mid-session
+    Lighting.ChildAdded:Connect(function(child)
+        if child:IsA("Sky") or child:IsA("Clouds") then
+            task.defer(function() if child and child.Parent then child:Destroy() end end)
+        end
+    end)
+
+    -- Set ambient values once
+    Lighting.Brightness        = 0
+    Lighting.Ambient           = Color3.fromRGB(80, 80, 100)
+    Lighting.OutdoorAmbient    = Color3.fromRGB(80, 80, 100)
+    Lighting.ColorShift_Top    = Color3.new(0, 0, 0)
+    Lighting.ColorShift_Bottom = Color3.new(0, 0, 0)
+
+    -- Force ClockTime every heartbeat — overrides any game lighting script
+    RunService.Heartbeat:Connect(function()
+        Lighting.ClockTime = 0
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 10. OPTIONAL FPS CAP
+-- ──────────────────────────────────────────
+if Config.FPSCap and type(Config.FPSCap) == "number" then
+    local cap = Config.FPSCap
+    RunService.RenderStepped:Connect(function()
+        local frameTime = 1 / cap
+        local start = tick()
+        while tick() - start < frameTime do end
+    end)
+end
+
+print("[FPS Booster] Done. Enjoy your frames, bitch.")
+end,
     })
 
 
