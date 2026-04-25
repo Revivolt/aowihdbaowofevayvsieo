@@ -1,250 +1,342 @@
--- FPS Booster by Fox
--- lighting
+-- PCEmulatorInput.lua
+-- LocalScript → place in StarterPlayerScripts
+-- Fixes: proper 3rd-person camera, Roblox-native movement, full keyboard HUD
 
-local Config = {
-    DisableShadows       = true,
-    DisableLightingFX    = true,
-    DisableAtmosphere    = true,
-    DisableParticles     = true,
-    FlattenTextures      = true,
-    DisableTerrain       = true,
-    LowQualityGraphics   = true,
-    StripAccessories     = true,
-    StripLayeredClothing = true,
-    ForceNight           = true,
-    FPSCap               = false,
+local Players              = game:GetService("Players")
+local UserInputService     = game:GetService("UserInputService")
+local RunService           = game:GetService("RunService")
+local StarterGui           = game:GetService("StarterGui")
+local TweenService         = game:GetService("TweenService")
+
+local LocalPlayer          = Players.LocalPlayer
+local PlayerGui            = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ══════════════════════════════════════════════════════════════
+-- WAIT FOR CHARACTER
+-- ══════════════════════════════════════════════════════════════
+local Character, HumanoidRootPart, Humanoid, Camera
+
+local function initCharacter()
+    Character         = LocalPlayer.Character
+    HumanoidRootPart  = Character and Character:FindFirstChild("HumanoidRootPart")
+    Humanoid          = Character and Character:FindFirstChildOfClass("Humanoid")
+    Camera            = workspace.CurrentCamera
+end
+
+initCharacter()
+LocalPlayer.CharacterAdded:Connect(function(char)
+    Character         = char
+    HumanoidRootPart  = char:WaitForChild("HumanoidRootPart")
+    Humanoid          = char:WaitForChild("Humanoid")
+    Camera            = workspace.CurrentCamera
+    Camera.CameraType = Enum.CameraType.Custom
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- 1.  REMOVE MOBILE UI
+-- ══════════════════════════════════════════════════════════════
+local function killTouchGui()
+    local tg = PlayerGui:FindFirstChild("TouchGui")
+    if tg then tg:Destroy() end
+end
+killTouchGui()
+PlayerGui.ChildAdded:Connect(function(c)
+    if c.Name == "TouchGui" then task.defer(function() c:Destroy() end) end
+end)
+
+-- ══════════════════════════════════════════════════════════════
+-- 2.  FORCE ROBLOX NATIVE PC CAMERA (Custom = standard 3rd-person)
+-- ══════════════════════════════════════════════════════════════
+RunService:BindToRenderStep("ForceDesktopCamera", Enum.RenderPriority.Camera.Value + 1, function()
+    if Camera and Camera.CameraType ~= Enum.CameraType.Custom then
+        Camera.CameraType = Enum.CameraType.Custom
+    end
+end)
+
+UserInputService.MouseBehavior    = Enum.MouseBehavior.Default
+UserInputService.MouseIconEnabled = true
+
+-- ══════════════════════════════════════════════════════════════
+-- 3.  HUD SCREEN GUI
+-- ══════════════════════════════════════════════════════════════
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name             = "PCEmulatorHUD"
+ScreenGui.ResetOnSpawn     = false
+ScreenGui.DisplayOrder     = 100
+ScreenGui.IgnoreGuiInset   = true
+ScreenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent           = PlayerGui
+
+-- Palette
+local C_BG      = Color3.fromRGB(10,  12,  18)
+local C_KEY     = Color3.fromRGB(32,  36,  50)
+local C_ACTIVE  = Color3.fromRGB(80, 150, 255)
+local C_TEXT    = Color3.fromRGB(190, 205, 230)
+local C_BORDER  = Color3.fromRGB(50,  60,  85)
+local ALPHA_BG  = 0.30
+local ALPHA_KEY = 0.20
+local ALPHA_ON  = 0.00
+
+-- Key factory
+local function makeKey(parent, label, px, py, pw, ph)
+    local f = Instance.new("Frame")
+    f.Size                    = UDim2.new(0, pw, 0, ph)
+    f.Position                = UDim2.new(0, px, 0, py)
+    f.BackgroundColor3        = C_KEY
+    f.BackgroundTransparency  = ALPHA_KEY
+    f.BorderSizePixel         = 0
+    f.Parent                  = parent
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 3)
+    local st = Instance.new("UIStroke", f)
+    st.Color = C_BORDER; st.Thickness = 1; st.Transparency = 0.3
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Size                   = UDim2.new(1, -2, 1, -2)
+    lbl.Position               = UDim2.new(0, 1, 0, 1)
+    lbl.BackgroundTransparency = 1
+    lbl.Text                   = label
+    lbl.TextColor3             = C_TEXT
+    lbl.Font                   = Enum.Font.GothamBold
+    lbl.TextScaled             = true
+    lbl.TextXAlignment         = Enum.TextXAlignment.Center
+    lbl.TextYAlignment         = Enum.TextYAlignment.Center
+    return f
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- 4.  FULL KEYBOARD LAYOUT
+--     { displayLabel, widthUnits, KeyCode.Name }
+-- ══════════════════════════════════════════════════════════════
+local KU = 26   -- 1 unit width
+local KH = 22   -- key height
+local KG = 3    -- gap
+
+local ROWS = {
+    {
+        {"Esc",1,"Escape"},{"F1",1,"F1"},{"F2",1,"F2"},{"F3",1,"F3"},
+        {"F4",1,"F4"},{"F5",1,"F5"},{"F6",1,"F6"},{"F7",1,"F7"},
+        {"F8",1,"F8"},{"F9",1,"F9"},{"F10",1,"F10"},{"F11",1,"F11"},{"F12",1,"F12"},
+    },
+    {
+        {"`",1,"BackQuote"},{"1",1,"One"},{"2",1,"Two"},{"3",1,"Three"},
+        {"4",1,"Four"},{"5",1,"Five"},{"6",1,"Six"},{"7",1,"Seven"},
+        {"8",1,"Eight"},{"9",1,"Nine"},{"0",1,"Zero"},{"-",1,"Minus"},
+        {"=",1,"Equals"},{"Bksp",1.5,"Backspace"},
+    },
+    {
+        {"Tab",1.5,"Tab"},{"Q",1,"Q"},{"W",1,"W"},{"E",1,"E"},
+        {"R",1,"R"},{"T",1,"T"},{"Y",1,"Y"},{"U",1,"U"},
+        {"I",1,"I"},{"O",1,"O"},{"P",1,"P"},{"[",1,"LeftBracket"},
+        {"]",1,"RightBracket"},{"\\",1,"BackSlash"},
+    },
+    {
+        {"Caps",1.75,"CapsLock"},{"A",1,"A"},{"S",1,"S"},{"D",1,"D"},
+        {"F",1,"F"},{"G",1,"G"},{"H",1,"H"},{"J",1,"J"},
+        {"K",1,"K"},{"L",1,"L"},{";",1,"Semicolon"},{"'",1,"Quote"},
+        {"Ent",1.75,"Return"},
+    },
+    {
+        {"Shift",2.25,"LeftShift"},{"Z",1,"Z"},{"X",1,"X"},{"C",1,"C"},
+        {"V",1,"V"},{"B",1,"B"},{"N",1,"N"},{"M",1,"M"},
+        {",",1,"Comma"},{".",1,"Period"},{"/",1,"Slash"},{"Shift",2.25,"RightShift"},
+    },
+    {
+        {"Ctrl",1.5,"LeftControl"},{"Win",1,"LeftSuper"},
+        {"Alt",1,"LeftAlt"},{"Space",5.5,"Space"},
+        {"Alt",1,"RightAlt"},{"Win",1,"RightSuper"},
+        {"Ctrl",1.5,"RightControl"},
+    },
 }
 
-local Lighting    = game:GetService("Lighting")
-local RunService  = game:GetService("RunService")
-local Players     = game:GetService("Players")
-local Workspace   = game:GetService("Workspace")
-local localPlayer = Players.LocalPlayer
-
--- ──────────────────────────────────────────
--- 1. GRAPHICS QUALITY
--- ──────────────────────────────────────────
-if Config.LowQualityGraphics then
-    settings().Rendering.QualityLevel        = Enum.QualityLevel.Level01
-    settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
-    settings().Rendering.EagerBulkExecution  = false
-    settings().Rendering.EnableFRM           = false
+local function rowPxWidth(row)
+    local total = 0
+    for _, k in ipairs(row) do total = total + k[2] * (KU + KG) - KG end
+    return total + (#row - 1) * 0  -- already included KG between each key above
 end
 
--- ──────────────────────────────────────────
--- 2. SHADOWS
--- ──────────────────────────────────────────
-if Config.DisableShadows then
-    Lighting.GlobalShadows = false
-    Lighting.Technology    = Enum.Technology.Compatibility
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("BasePart") then v.CastShadow = false end
+-- Recompute properly: sum of (units*(KU+KG)) then subtract last KG
+local function rowTotalPx(row)
+    local px = 0
+    for i, k in ipairs(row) do
+        px = px + math.floor(k[2] * (KU + KG) - KG)
+        if i < #row then px = px + KG end
     end
-    Workspace.DescendantAdded:Connect(function(v)
-        if v:IsA("BasePart") then v.CastShadow = false end
-    end)
+    return px
 end
 
--- ──────────────────────────────────────────
--- 3. LIGHTING POST-FX
--- ──────────────────────────────────────────
-if Config.DisableLightingFX then
-    local killClasses = {
-        "BloomEffect", "BlurEffect", "SunRaysEffect",
-        "DepthOfFieldEffect", "ColorCorrectionEffect"
-    }
-    for _, child in ipairs(Lighting:GetChildren()) do
-        for _, cls in ipairs(killClasses) do
-            if child:IsA(cls) then child.Enabled = false end
-        end
-    end
-    Lighting.ChildAdded:Connect(function(child)
-        for _, cls in ipairs(killClasses) do
-            if child:IsA(cls) then child.Enabled = false end
-        end
-    end)
+local maxRowPx = 0
+for _, row in ipairs(ROWS) do
+    local w = rowTotalPx(row)
+    if w > maxRowPx then maxRowPx = w end
 end
 
--- ──────────────────────────────────────────
--- 4. ATMOSPHERE
--- ──────────────────────────────────────────
-if Config.DisableAtmosphere then
-    local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
-    if atmo then atmo:Destroy() end
-    Lighting.FogEnd   = 100000
-    Lighting.FogStart = 99999
-end
+local PAD   = 6
+local KBD_W = maxRowPx + PAD * 2
+local KBD_H = #ROWS * (KH + KG) - KG + PAD * 2
 
--- ──────────────────────────────────────────
--- 5. PARTICLES
--- ──────────────────────────────────────────
-if Config.DisableParticles then
-    local particleClasses = { "ParticleEmitter", "Smoke", "Fire", "Sparkles" }
-    local function killParticle(v)
-        for _, cls in ipairs(particleClasses) do
-            if v:IsA(cls) then
-                v.Enabled = false
-                if v:IsA("ParticleEmitter") then v.Rate = 0 end
-            end
-        end
-    end
-    for _, v in ipairs(Workspace:GetDescendants()) do killParticle(v) end
-    Workspace.DescendantAdded:Connect(killParticle)
-end
+local kbdFrame = Instance.new("Frame")
+kbdFrame.Name                   = "KBDPanel"
+kbdFrame.Size                   = UDim2.new(0, KBD_W, 0, KBD_H)
+kbdFrame.Position               = UDim2.new(0, 12, 1, -KBD_H - 12)
+kbdFrame.BackgroundColor3       = C_BG
+kbdFrame.BackgroundTransparency = ALPHA_BG
+kbdFrame.BorderSizePixel        = 0
+kbdFrame.Parent                 = ScreenGui
+Instance.new("UICorner", kbdFrame).CornerRadius = UDim.new(0, 6)
+local ks = Instance.new("UIStroke", kbdFrame)
+ks.Color = C_BORDER; ks.Thickness = 1; ks.Transparency = 0.4
 
--- ──────────────────────────────────────────
--- 6. TEXTURES / MATERIALS
--- ──────────────────────────────────────────
-if Config.FlattenTextures then
-    local function isPlayerDescendant(obj)
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr.Character and obj:IsDescendantOf(plr.Character) then return true end
-        end
-        return false
-    end
-    local function flattenPart(v)
-        if isPlayerDescendant(v) then return end
-        if v:IsA("BasePart") then
-            v.Material = Enum.Material.SmoothPlastic
-            local sa = v:FindFirstChildOfClass("SurfaceAppearance")
-            if sa then sa:Destroy() end
-        elseif v:IsA("Texture") or v:IsA("Decal") then
-            v.Transparency = 1
-        elseif v:IsA("SpecialMesh") then
-            v.TextureId = ""
-        elseif v:IsA("Model") then
-            v.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
-        end
-    end
-    for _, v in ipairs(Workspace:GetDescendants()) do flattenPart(v) end
-    Workspace.DescendantAdded:Connect(flattenPart)
-end
+local keyFrameByCode = {}
 
--- ──────────────────────────────────────────
--- 7. TERRAIN
--- ──────────────────────────────────────────
-if Config.DisableTerrain then
-    local terrain = Workspace:FindFirstChildOfClass("Terrain")
-    if terrain then
-        terrain.WaterWaveSize     = 0
-        terrain.WaterWaveSpeed    = 0
-        terrain.WaterReflectance  = 0
-        terrain.WaterTransparency = 1
-        -- terrain.Decoration removed — no longer a valid API member
+for rowIdx, row in ipairs(ROWS) do
+    local y       = PAD + (rowIdx - 1) * (KH + KG)
+    local rowPx   = rowTotalPx(row)
+    local xStart  = PAD + math.floor((KBD_W - PAD * 2 - rowPx) / 2)
+    local x       = xStart
+
+    for _, kdef in ipairs(row) do
+        local label, units, codeName = kdef[1], kdef[2], kdef[3]
+        local w = math.floor(units * (KU + KG) - KG)
+        local f = makeKey(kbdFrame, label, x, y, w, KH)
+        if codeName then
+            -- Some codes map to two frames (both shifts) – store last, fine for display
+            keyFrameByCode[codeName] = f
+        end
+        x = x + w + KG
     end
 end
 
--- ──────────────────────────────────────────
--- 8. STRIP ACCESSORIES + LAYERED CLOTHING
--- ──────────────────────────────────────────
--- Accessories are DIRECT children of the character model.
--- WrapLayer / WrapTarget can be direct children OR nested inside
--- HumanoidRootPart / body parts — scan both levels explicitly.
+-- ══════════════════════════════════════════════════════════════
+-- 5.  MOUSE DISPLAY
+-- ══════════════════════════════════════════════════════════════
+local MS_W, MS_H = 54, 80
 
-local STRIP_CLASSES = {
-    Accessory  = true,
-    WrapLayer  = true,
-    WrapTarget = true,
-}
+local mouseFrame = Instance.new("Frame")
+mouseFrame.Name                   = "MousePanel"
+mouseFrame.Size                   = UDim2.new(0, MS_W, 0, MS_H)
+mouseFrame.Position               = UDim2.new(0, KBD_W + 20, 1, -MS_H - 12)
+mouseFrame.BackgroundColor3       = C_BG
+mouseFrame.BackgroundTransparency = ALPHA_BG
+mouseFrame.BorderSizePixel        = 0
+mouseFrame.Parent                 = ScreenGui
+Instance.new("UICorner", mouseFrame).CornerRadius = UDim.new(0, 6)
+local mfs = Instance.new("UIStroke", mouseFrame)
+mfs.Color = C_BORDER; mfs.Thickness = 1; mfs.Transparency = 0.4
 
-local function shouldStrip(v)
-    if Config.StripAccessories     and v:IsA("Accessory")  then return true end
-    if Config.StripLayeredClothing and v:IsA("WrapLayer")  then return true end
-    if Config.StripLayeredClothing and v:IsA("WrapTarget") then return true end
-    return false
+local mBody = Instance.new("Frame")
+mBody.Size                   = UDim2.new(0, 34, 0, 56)
+mBody.Position               = UDim2.new(0.5, -17, 0, 12)
+mBody.BackgroundColor3       = C_KEY
+mBody.BackgroundTransparency = 0.1
+mBody.BorderSizePixel        = 0
+mBody.Parent                 = mouseFrame
+Instance.new("UICorner", mBody).CornerRadius = UDim.new(0, 10)
+local mbs = Instance.new("UIStroke", mBody)
+mbs.Color = C_BORDER; mbs.Thickness = 1
+
+local lmb = Instance.new("Frame")
+lmb.Name = "LMB"
+lmb.Size = UDim2.new(0,15,0,22); lmb.Position = UDim2.new(0,1,0,1)
+lmb.BackgroundColor3 = C_KEY; lmb.BackgroundTransparency = 1
+lmb.BorderSizePixel = 0; lmb.Parent = mBody
+Instance.new("UICorner", lmb).CornerRadius = UDim.new(0,9)
+
+local rmb = Instance.new("Frame")
+rmb.Name = "RMB"
+rmb.Size = UDim2.new(0,15,0,22); rmb.Position = UDim2.new(0,18,0,1)
+rmb.BackgroundColor3 = C_KEY; rmb.BackgroundTransparency = 1
+rmb.BorderSizePixel = 0; rmb.Parent = mBody
+Instance.new("UICorner", rmb).CornerRadius = UDim.new(0,9)
+
+local div = Instance.new("Frame")
+div.Size = UDim2.new(0,2,0,22); div.Position = UDim2.new(0,16,0,1)
+div.BackgroundColor3 = C_BORDER; div.BorderSizePixel = 0; div.Parent = mBody
+
+local scr = Instance.new("Frame")
+scr.Name = "SCROLL"
+scr.Size = UDim2.new(0,6,0,14); scr.Position = UDim2.new(0.5,-3,0,24)
+scr.BackgroundColor3 = C_BORDER; scr.BackgroundTransparency = 0
+scr.BorderSizePixel = 0; scr.Parent = mBody
+Instance.new("UICorner", scr).CornerRadius = UDim.new(0,3)
+
+local function addMLabel(p, t)
+    local l = Instance.new("TextLabel", p)
+    l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1
+    l.Text = t; l.TextColor3 = C_TEXT
+    l.Font = Enum.Font.GothamBold; l.TextScaled = true
+end
+addMLabel(lmb,"L"); addMLabel(rmb,"R")
+
+-- ══════════════════════════════════════════════════════════════
+-- 6.  HIGHLIGHT HELPERS
+-- ══════════════════════════════════════════════════════════════
+local function highlightKey(frame, on)
+    if not frame then return end
+    TweenService:Create(frame, TweenInfo.new(0.06, Enum.EasingStyle.Quad), {
+        BackgroundColor3       = on and C_ACTIVE or C_KEY,
+        BackgroundTransparency = on and ALPHA_ON  or ALPHA_KEY,
+    }):Play()
 end
 
-local function stripCharacter(char)
-    if not char then return end
-
-    -- Pass 1: direct children (catches Accessory at char level)
-    for _, v in ipairs(char:GetChildren()) do
-        if shouldStrip(v) then v:Destroy() end
-    end
-
-    -- Pass 2: full descendant scan (catches WrapLayer/WrapTarget inside parts)
-    for _, v in ipairs(char:GetDescendants()) do
-        if shouldStrip(v) then v:Destroy() end
-    end
-
-    -- Pass 3: guard against late-streamed items (avatar loading is async)
-    char.ChildAdded:Connect(function(v)
-        if shouldStrip(v) then
-            task.defer(function() if v and v.Parent then v:Destroy() end end)
-        end
-    end)
-    char.DescendantAdded:Connect(function(v)
-        if shouldStrip(v) then
-            task.defer(function() if v and v.Parent then v:Destroy() end end)
-        end
-    end)
+local function highlightMouse(frame, on)
+    if not frame then return end
+    TweenService:Create(frame, TweenInfo.new(0.06, Enum.EasingStyle.Quad), {
+        BackgroundColor3       = on and C_ACTIVE or C_KEY,
+        BackgroundTransparency = on and ALPHA_ON  or 1,
+    }):Play()
 end
 
-if Config.StripAccessories or Config.StripLayeredClothing then
-    for _, plr in ipairs(Players:GetPlayers()) do
-        -- Character may already exist
-        if plr.Character then
-            stripCharacter(plr.Character)
-        end
-        plr.CharacterAdded:Connect(function(char)
-            -- Wait a tick — Roblox streams accessories slightly after CharacterAdded
-            task.wait()
-            stripCharacter(char)
+-- ══════════════════════════════════════════════════════════════
+-- 7.  INPUT LISTENERS  (HUD visualisation only)
+-- ══════════════════════════════════════════════════════════════
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        highlightKey(keyFrameByCode[input.KeyCode.Name], true)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        highlightMouse(lmb, true)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        highlightMouse(rmb, true)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+        highlightMouse(scr, true)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gpe)
+    if gpe then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        highlightKey(keyFrameByCode[input.KeyCode.Name], false)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        highlightMouse(lmb, false)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        highlightMouse(rmb, false)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+        highlightMouse(scr, false)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input, gpe)
+    if gpe then return end
+    if input.UserInputType == Enum.UserInputType.MouseWheel then
+        TweenService:Create(scr, TweenInfo.new(0.05), {BackgroundColor3 = C_ACTIVE}):Play()
+        task.delay(0.18, function()
+            TweenService:Create(scr, TweenInfo.new(0.10), {BackgroundColor3 = C_BORDER}):Play()
         end)
     end
-    Players.PlayerAdded:Connect(function(plr)
-        plr.CharacterAdded:Connect(function(char)
-            task.wait()
-            stripCharacter(char)
-        end)
-    end)
-end
+end)
 
--- ──────────────────────────────────────────
--- 9. FORCE NIGHT SKY
--- ──────────────────────────────────────────
--- Games run a lighting controller that resets ClockTime every frame.
--- The only reliable fix is to re-force it every Heartbeat.
--- We also nuke Sky and Clouds objects for fillrate savings.
-
-if Config.ForceNight then
-    -- Kill Sky and Clouds immediately
-    for _, child in ipairs(Lighting:GetChildren()) do
-        if child:IsA("Sky") or child:IsA("Clouds") then
-            child:Destroy()
-        end
+-- ══════════════════════════════════════════════════════════════
+-- 8.  TOGGLE HUD  (backtick `)
+-- ══════════════════════════════════════════════════════════════
+local hudVisible = true
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.BackQuote then
+        hudVisible = not hudVisible
+        kbdFrame.Visible   = hudVisible
+        mouseFrame.Visible = hudVisible
     end
+end)
 
-    -- Block any re-added Sky/Clouds mid-session
-    Lighting.ChildAdded:Connect(function(child)
-        if child:IsA("Sky") or child:IsA("Clouds") then
-            task.defer(function() if child and child.Parent then child:Destroy() end end)
-        end
-    end)
-
-    -- Set ambient values once
-    Lighting.Brightness        = 0
-    Lighting.Ambient           = Color3.fromRGB(80, 80, 100)
-    Lighting.OutdoorAmbient    = Color3.fromRGB(80, 80, 100)
-    Lighting.ColorShift_Top    = Color3.new(0, 0, 0)
-    Lighting.ColorShift_Bottom = Color3.new(0, 0, 0)
-
-    -- Force ClockTime every heartbeat — overrides any game lighting script
-    RunService.Heartbeat:Connect(function()
-        Lighting.ClockTime = 0
-    end)
-end
-
--- ──────────────────────────────────────────
--- 10. OPTIONAL FPS CAP
--- ──────────────────────────────────────────
-if Config.FPSCap and type(Config.FPSCap) == "number" then
-    local cap = Config.FPSCap
-    RunService.RenderStepped:Connect(function()
-        local frameTime = 1 / cap
-        local start = tick()
-        while tick() - start < frameTime do end
-    end)
-end
-
-print("[FPS Booster] Done. Enjoy your frames, bitch.")
+print("[PCEmulatorInput] Loaded. Mobile joystick removed. Full PC HUD active.")
+print("[PCEmulatorInput] Roblox native WASD + mouse-look is now in control.")
+print("[PCEmulatorInput] Press backtick (`) to show/hide the HUD overlay.")
