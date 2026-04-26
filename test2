@@ -1,574 +1,399 @@
--- PCEmulatorInput.lua
--- LocalScript → StarterPlayerScripts
---
--- APPROACH: Since Android emulators don't pass keyboard/mouse events to Roblox,
--- we build a fully on-screen virtual controller using GUI buttons and Roblox's
--- own touch/VirtualUser APIs. No real keyboard input needed at all.
--- The on-screen keyboard lights up when YOU press the GUI buttons with your mouse.
-
-local Players              = game:GetService("Players")
-local UserInputService     = game:GetService("UserInputService")
-local ContextActionService = game:GetService("ContextActionService")
-local RunService           = game:GetService("RunService")
-local StarterGui           = game:GetService("StarterGui")
-local TweenService         = game:GetService("TweenService")
-
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-
--- ── Wait for character ──────────────────────────────────────
-local Character, Humanoid, HRP, Camera
-
-local function grabChar(char)
-    Character = char
-    HRP       = char:WaitForChild("HumanoidRootPart")
-    Humanoid  = char:WaitForChild("Humanoid")
-    Camera    = workspace.CurrentCamera
-    Camera.CameraType = Enum.CameraType.Custom
-end
-if LocalPlayer.Character then grabChar(LocalPlayer.Character) end
-LocalPlayer.CharacterAdded:Connect(grabChar)
-
--- ── Kill mobile touch GUI ───────────────────────────────────
-PlayerGui.ChildAdded:Connect(function(c)
-    if c.Name == "TouchGui" then task.defer(function() c:Destroy() end) end
-end)
-local tg = PlayerGui:FindFirstChild("TouchGui")
-if tg then tg:Destroy() end
-
-pcall(function()
-    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Health, true)
-    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, true)
-    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, true)
-end)
-
--- ── Keep camera in Custom mode ──────────────────────────────
-RunService:BindToRenderStep("CamLock", Enum.RenderPriority.Camera.Value+1, function()
-    Camera = workspace.CurrentCamera
-    if Camera.CameraType ~= Enum.CameraType.Custom then
-        Camera.CameraType = Enum.CameraType.Custom
-    end
-end)
-
--- ════════════════════════════════════════════════════════════
--- MOVEMENT ENGINE
--- We move the character directly via Humanoid:Move() based on
--- which virtual buttons are held. No keyboard events needed.
--- ════════════════════════════════════════════════════════════
-local held    = {W=false,A=false,S=false,D=false}
-local sprint  = false
-local BASE_SPEED = 16
-
-RunService.Heartbeat:Connect(function()
-    if not Humanoid or not HRP or not Camera then return end
-
-    local x = (held.D and 1 or 0) - (held.A and 1 or 0)
-    local z = (held.S and 1 or 0) - (held.W and 1 or 0)
-    local dir = Vector3.new(x,0,z)
-
-    if dir.Magnitude > 0 then
-        dir = dir.Unit
-        local lv  = Camera.CFrame.LookVector
-        local yaw = CFrame.Angles(0, math.atan2(-lv.X, -lv.Z), 0)
-        Humanoid:Move(yaw * dir, false)
-    else
-        Humanoid:Move(Vector3.zero, false)
-    end
-    Humanoid.WalkSpeed = sprint and 22 or BASE_SPEED
-end)
-
--- ════════════════════════════════════════════════════════════
--- GUI SETUP
--- ════════════════════════════════════════════════════════════
-local Gui = Instance.new("ScreenGui")
-Gui.Name           = "PCEmu"
-Gui.ResetOnSpawn   = false
-Gui.DisplayOrder   = 200
-Gui.IgnoreGuiInset = true
-Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-Gui.Parent         = PlayerGui
-
--- Colours
-local C_BG     = Color3.fromRGB(10,  12,  18)
-local C_KEY    = Color3.fromRGB(32,  36,  50)
-local C_ACTIVE = Color3.fromRGB(80, 150, 255)
-local C_RED    = Color3.fromRGB(220,  80,  80)
-local C_TEXT   = Color3.fromRGB(190, 205, 230)
-local C_BORDER = Color3.fromRGB(50,  60,  85)
-
-local function panel(parent, x, y, w, h, alpha)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(0,w,0,h)
-    f.Position = UDim2.new(0,x,1,y)   -- y is negative offset from bottom
-    f.BackgroundColor3 = C_BG
-    f.BackgroundTransparency = alpha or 0.30
-    f.BorderSizePixel = 0
-    f.Parent = parent
-    Instance.new("UICorner",f).CornerRadius = UDim.new(0,8)
-    local st = Instance.new("UIStroke",f)
-    st.Color = C_BORDER; st.Thickness = 1; st.Transparency = 0.4
-    return f
-end
-
--- ────────────────────────────────────────────────────────────
--- VIRTUAL BUTTON factory
--- Returns the frame; onDown/onUp are callbacks.
--- Works with both Mouse and Touch (GuiButton handles both).
--- ────────────────────────────────────────────────────────────
-local function vButton(parent, label, px, py, pw, ph, onDown, onUp, color)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0,pw,0,ph)
-    btn.Position = UDim2.new(0,px,0,py)
-    btn.BackgroundColor3 = color or C_KEY
-    btn.BackgroundTransparency = 0.15
-    btn.BorderSizePixel = 0
-    btn.Text = label
-    btn.TextColor3 = C_TEXT
-    btn.Font = Enum.Font.GothamBold
-    btn.TextScaled = true
-    btn.AutoButtonColor = false
-    btn.Parent = parent
-    Instance.new("UICorner",btn).CornerRadius = UDim.new(0,5)
-    local st = Instance.new("UIStroke",btn)
-    st.Color = C_BORDER; st.Thickness = 1
-
-    local function flash(on)
-        TweenService:Create(btn, TweenInfo.new(0.06,Enum.EasingStyle.Quad),{
-            BackgroundColor3      = on and C_ACTIVE or (color or C_KEY),
-            BackgroundTransparency= on and 0 or 0.15,
-        }):Play()
-    end
-
-    btn.MouseButton1Down:Connect(function() flash(true);  if onDown then onDown() end end)
-    btn.MouseButton1Up:Connect(  function() flash(false); if onUp   then onUp()   end end)
-    -- Also handle touch for the emulator's touch layer
-    btn.TouchLongPress:Connect(function() end) -- suppress long-press menu
-
-    return btn
-end
-
--- ════════════════════════════════════════════════════════════
--- 1. WASD MOVEMENT PANEL  (bottom-left)
--- ════════════════════════════════════════════════════════════
-local KS = 52   -- key size
-local KG = 6    -- gap
-local MOVE_W = KS*3 + KG*2 + 16
-local MOVE_H = KS*3 + KG*2 + 16
-local movePanel = panel(Gui, 12, -MOVE_H-12, MOVE_W, MOVE_H)
-
--- W
-vButton(movePanel,"W", KS+KG+8, 8, KS,KS,
-    function() held.W=true  end,
-    function() held.W=false end)
--- A
-vButton(movePanel,"A", 8, KS+KG+8, KS,KS,
-    function() held.A=true  end,
-    function() held.A=false end)
--- S
-vButton(movePanel,"S", KS+KG+8, KS+KG+8, KS,KS,
-    function() held.S=true  end,
-    function() held.S=false end)
--- D
-vButton(movePanel,"D", (KS+KG)*2+8, KS+KG+8, KS,KS,
-    function() held.D=true  end,
-    function() held.D=false end)
--- Sprint (bottom row)
-vButton(movePanel,"SPRINT", 8, (KS+KG)*2+8, KS*2+KG,KS,
-    function() sprint=true  end,
-    function() sprint=false end)
-
--- Jump (bottom right of WASD)
-vButton(movePanel,"JUMP", (KS+KG)*2+8, (KS+KG)*2+8, KS,KS,
-    function()
-        if Humanoid then Humanoid.Jump = true end
-    end, nil)
-
--- ════════════════════════════════════════════════════════════
--- 2. ACTION BUTTONS PANEL  (bottom-right)
--- ════════════════════════════════════════════════════════════
-local ACT_W = KS*2+KG+16
-local ACT_H = KS*2+KG+16
-local actPanel = panel(Gui, nil, -ACT_H-12, ACT_W, ACT_H)
-actPanel.Position = UDim2.new(1,-ACT_W-12,1,-ACT_H-12)
-
--- LMB (fire / interact)
-vButton(actPanel,"LMB", 8, 8, KS,KS,
-    function()
-        -- Simulate left click via VirtualUser
-        local vu = game:GetService("VirtualUser")
-        pcall(function()
-            vu:Button1Down(Vector2.new(
-                workspace.CurrentCamera.ViewportSize.X/2,
-                workspace.CurrentCamera.ViewportSize.Y/2), workspace.CurrentCamera.CFrame)
-        end)
-    end,
-    function()
-        pcall(function()
-            local vu = game:GetService("VirtualUser")
-            vu:Button1Up(Vector2.new(
-                workspace.CurrentCamera.ViewportSize.X/2,
-                workspace.CurrentCamera.ViewportSize.Y/2), workspace.CurrentCamera.CFrame)
-        end)
-    end)
-
--- RMB (aim / secondary)
-vButton(actPanel,"RMB", KS+KG+8, 8, KS,KS,
-    function()
-        pcall(function()
-            local vu = game:GetService("VirtualUser")
-            vu:Button2Down(Vector2.new(
-                workspace.CurrentCamera.ViewportSize.X/2,
-                workspace.CurrentCamera.ViewportSize.Y/2), workspace.CurrentCamera.CFrame)
-        end)
-    end,
-    function()
-        pcall(function()
-            local vu = game:GetService("VirtualUser")
-            vu:Button2Up(Vector2.new(
-                workspace.CurrentCamera.ViewportSize.X/2,
-                workspace.CurrentCamera.ViewportSize.Y/2), workspace.CurrentCamera.CFrame)
-        end)
-    end)
-
--- E (interact)
-vButton(actPanel,"E", 8, KS+KG+8, KS,KS,
-    function()
-        pcall(function()
-            local vu = game:GetService("VirtualUser")
-            vu:KeyDown(string.char(101))  -- 'e'
-        end)
-    end,
-    function()
-        pcall(function()
-            local vu = game:GetService("VirtualUser")
-            vu:KeyUp(string.char(101))
-        end)
-    end)
-
--- F (secondary action)
-vButton(actPanel,"F", KS+KG+8, KS+KG+8, KS,KS,
-    function()
-        pcall(function()
-            local vu = game:GetService("VirtualUser")
-            vu:KeyDown(string.char(102))
-        end)
-    end,
-    function()
-        pcall(function()
-            local vu = game:GetService("VirtualUser")
-            vu:KeyUp(string.char(102))
-        end)
-    end)
-
--- ════════════════════════════════════════════════════════════
--- 3. CAMERA LOOK JOYSTICK  (bottom-center)
--- A draggable thumb that rotates the camera by adjusting
--- Roblox's CameraScript angle via CFrame injection.
--- ════════════════════════════════════════════════════════════
-local LOOK_SIZE   = 120
-local THUMB_SIZE  = 44
-local lookPanel   = panel(Gui, nil, -LOOK_SIZE-12, LOOK_SIZE, LOOK_SIZE)
-lookPanel.Position = UDim2.new(0.5,-LOOK_SIZE/2,1,-LOOK_SIZE-12)
-lookPanel.BackgroundTransparency = 0.5
-
-local lookLabel = Instance.new("TextLabel", lookPanel)
-lookLabel.Size = UDim2.new(1,0,1,0)
-lookLabel.BackgroundTransparency = 1
-lookLabel.Text = "LOOK"
-lookLabel.TextColor3 = Color3.fromRGB(80,90,110)
-lookLabel.Font = Enum.Font.GothamBold
-lookLabel.TextScaled = true
-
-local thumb = Instance.new("Frame", lookPanel)
-thumb.Size = UDim2.new(0,THUMB_SIZE,0,THUMB_SIZE)
-thumb.Position = UDim2.new(0.5,-THUMB_SIZE/2,0.5,-THUMB_SIZE/2)
-thumb.BackgroundColor3 = C_ACTIVE
-thumb.BackgroundTransparency = 0.3
-thumb.BorderSizePixel = 0
-Instance.new("UICorner",thumb).CornerRadius = UDim.new(1,0)
-
--- Camera state
-local camYaw   = 0
-local camPitch = 0
-local SENS     = 1.8   -- degrees per pixel drag
-
--- Drag state
-local dragging     = false
-local dragStart    = Vector2.zero
-local thumbCenter  = Vector2.zero
-
-local detector = Instance.new("TextButton", lookPanel)
-detector.Size = UDim2.new(1,0,1,0)
-detector.BackgroundTransparency = 1
-detector.Text = ""
-detector.ZIndex = 5
-
-detector.MouseButton1Down:Connect(function(mx, my)
-    dragging = true
-    dragStart = Vector2.new(mx, my)
-end)
-detector.MouseButton1Up:Connect(function()
-    dragging = false
-    thumb.Position = UDim2.new(0.5,-THUMB_SIZE/2,0.5,-THUMB_SIZE/2)
-end)
-detector.MouseMoved:Connect(function(mx, my)
-    if not dragging then return end
-    local delta = Vector2.new(mx, my) - dragStart
-    -- Clamp thumb inside circle
-    local maxR = LOOK_SIZE/2 - THUMB_SIZE/2 - 4
-    if delta.Magnitude > maxR then delta = delta.Unit * maxR end
-    thumb.Position = UDim2.new(0.5,delta.X-THUMB_SIZE/2, 0.5,delta.Y-THUMB_SIZE/2)
-    -- Rotate camera
-    camYaw   = camYaw   - delta.X * SENS * 0.05
-    camPitch = math.clamp(camPitch - delta.Y * SENS * 0.05, -75, 75)
-end)
-
--- Apply camera rotation every frame using Roblox Custom camera subject offset
-RunService:BindToRenderStep("LookJoystick", Enum.RenderPriority.Camera.Value, function()
-    if not dragging then return end
-    if not HRP then return end
-    -- Roblox Custom camera reads CameraSubject + angles set via CFrame
-    -- We nudge HRP's orientation so Roblox's camera tracks it
-    -- (doesn't fight physics because we only yaw HRP, not position)
-    local newCF = CFrame.new(HRP.Position)
-                * CFrame.Angles(0, math.rad(camYaw), 0)
-    HRP.CFrame = CFrame.new(HRP.Position, newCF.LookVector + HRP.Position)
-                * CFrame.Angles(0, 0, 0)
-end)
-
--- ════════════════════════════════════════════════════════════
--- 4. KEYBOARD HUD DISPLAY  (visual only, full layout)
---    Sits above the WASD panel. Keys light up when GUI btns
---    above are pressed (mirrored via the held{} table).
--- ════════════════════════════════════════════════════════════
-local KU,KH,KG2 = 18,15,2   -- smaller since it's just a display
-
-local ROWS = {
-    {{"Esc","Escape"},{"F1","F1"},{"F2","F2"},{"F3","F3"},{"F4","F4"},
-     {"F5","F5"},{"F6","F6"},{"F7","F7"},{"F8","F8"},{"F9","F9"},
-     {"F10","F10"},{"F11","F11"},{"F12","F12"}},
-    {{"`","BackQuote"},{"1","One"},{"2","Two"},{"3","Three"},{"4","Four"},
-     {"5","Five"},{"6","Six"},{"7","Seven"},{"8","Eight"},{"9","Nine"},
-     {"0","Zero"},{"-","Minus"},{"=","Equals"},{"Bk","Backspace"}},
-    {{"Tab","Tab"},{"Q","Q"},{"W","W"},{"E","E"},{"R","R"},{"T","T"},
-     {"Y","Y"},{"U","U"},{"I","I"},{"O","O"},{"P","P"},{"[","LeftBracket"},
-     {"]","RightBracket"},{"\\","BackSlash"}},
-    {{"Cp","CapsLock"},{"A","A"},{"S","S"},{"D","D"},{"F","F"},{"G","G"},
-     {"H","H"},{"J","J"},{"K","K"},{"L","L"},{";","Semicolon"},{"'","Quote"},
-     {"Ent","Return"}},
-    {{"Sh","LeftShift"},{"Z","Z"},{"X","X"},{"C","C"},{"V","V"},{"B","B"},
-     {"N","N"},{"M","M"},{",","Comma"},{".",  "Period"},{"/","Slash"},{"Sh","RightShift"}},
-    {{"Ct","LeftControl"},{"Al","LeftAlt"},{"        Space        ","Space"},
-     {"Al","RightAlt"},{"Ct","RightControl"}},
+-- Configuration
+local CONFIG = {
+	TOGGLE_KEY = Enum.KeyCode.X,
+	DEFAULT_SPEED = 16,
+	BOOSTED_SPEED = 48,
+	SOUND_ID = "rbxassetid://942127495",
+	INVISIBILITY_POSITION = Vector3.new(-25.95, 84, 3537.55),
+	NOTIFICATION_DURATION = 3,
+	-- UI Colors
+	BACKGROUND_COLOR = Color3.fromRGB(25, 25, 25),
+	ACCENT_COLOR = Color3.fromRGB(45, 45, 45),
+	PRIMARY_COLOR = Color3.fromRGB(0, 170, 255),
+	SUCCESS_COLOR = Color3.fromRGB(46, 204, 113),
+	DANGER_COLOR = Color3.fromRGB(231, 76, 60),
+	WARNING_COLOR = Color3.fromRGB(241, 196, 15),
+	TEXT_COLOR = Color3.fromRGB(255, 255, 255),
+	SECONDARY_TEXT_COLOR = Color3.fromRGB(189, 195, 199),
 }
 
--- Widths (units) for special keys
-local WIDE = {Bk=1.5,Tab=1.5,Cp=1.75,Ent=1.75,
-              Sh=2.0,[" Space "]=5.5,["        Space        "]=5.5,
-              Ct=1.5,Al=1.25}
+-- Services
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
-local function kw(lbl)
-    return (WIDE[lbl] or 1) * (KU + KG2) - KG2
+-- Variables
+local player = Players.LocalPlayer
+local playerState = {
+	isInvisible = false,
+	isSpeedBoosted = false,
+	originalSpeed = CONFIG.DEFAULT_SPEED,
+}
+
+-- GUI Elements
+local screenGui: ScreenGui
+local mainFrame: Frame
+local toggleButton: TextButton
+local speedButton: TextButton
+local closeButton: TextButton
+local signatureLabel: TextLabel
+local sound: Sound
+
+-- Utility Functions
+local function createNotification(title, text)
+	StarterGui:SetCore("SendNotification", {
+		Title = title,
+		Text = text,
+		Duration = CONFIG.NOTIFICATION_DURATION,
+	})
 end
 
-local function rowTotalPx(row)
-    local px = 0
-    for i,k in ipairs(row) do
-        px = px + kw(k[1])
-        if i < #row then px = px + KG2 end
-    end
-    return px
+local function setCharacterTransparency(character: Model, transparency: number): ()
+	for _, descendant in character:GetDescendants() do
+		if descendant:IsA("BasePart") or descendant:IsA("Decal") then
+			descendant.Transparency = transparency
+		end
+	end
 end
 
-local maxPx = 0
-for _,row in ipairs(ROWS) do
-    local w = rowTotalPx(row)
-    if w > maxPx then maxPx = w end
+local function getHumanoid()
+	local character = player.Character
+	if not character then return nil end
+	return character:FindFirstChild("Humanoid") :: Humanoid?
 end
 
-local PAD2  = 5
-local HKBD_W = maxPx + PAD2*2
-local HKBD_H = #ROWS*(KH+KG2)-KG2 + PAD2*2
-
--- Position: just above the WASD panel
-local hkbdFrame = panel(Gui, 12, -(MOVE_H+12+HKBD_H+8), HKBD_W, HKBD_H, 0.45)
-
-local keyFrameMap = {}  -- codeName → Frame
-
-for ri,row in ipairs(ROWS) do
-    local y     = PAD2 + (ri-1)*(KH+KG2)
-    local rowPx = rowTotalPx(row)
-    local x     = PAD2 + math.floor((HKBD_W - PAD2*2 - rowPx)/2)
-    for _,kdef in ipairs(row) do
-        local lbl, code = kdef[1], kdef[2]
-        local w = kw(lbl)
-        local f = Instance.new("Frame")
-        f.Size = UDim2.new(0,w,0,KH)
-        f.Position = UDim2.new(0,x,0,y)
-        f.BackgroundColor3 = C_KEY
-        f.BackgroundTransparency = 0.25
-        f.BorderSizePixel = 0
-        f.Parent = hkbdFrame
-        Instance.new("UICorner",f).CornerRadius = UDim.new(0,2)
-        local st = Instance.new("UIStroke",f)
-        st.Color = C_BORDER; st.Thickness = 1; st.Transparency = 0.4
-        local tl = Instance.new("TextLabel",f)
-        tl.Size = UDim2.new(1,0,1,0)
-        tl.BackgroundTransparency = 1
-        tl.Text = lbl
-        tl.TextColor3 = C_TEXT
-        tl.Font = Enum.Font.GothamBold
-        tl.TextScaled = true
-        if code then keyFrameMap[code] = f end
-        x = x + w + KG2
-    end
+local function getHumanoidRootPart(): BasePart?
+	local character = player.Character
+	if not character then return nil end
+	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
--- Mirror WASD held state to keyboard HUD
-local function setHudKey(code, on)
-    local f = keyFrameMap[code]
-    if not f then return end
-    TweenService:Create(f, TweenInfo.new(0.06), {
-        BackgroundColor3       = on and C_ACTIVE or C_KEY,
-        BackgroundTransparency = on and 0 or 0.25,
-    }):Play()
+local function playSound(): ()
+	if sound then sound:Play() end
 end
 
-RunService.Heartbeat:Connect(function()
-    setHudKey("W", held.W)
-    setHudKey("A", held.A)
-    setHudKey("S", held.S)
-    setHudKey("D", held.D)
-end)
+-- Core Functions
+local function toggleInvisibility(): ()
+	if not player.Character then warn("Character not found") return end
 
--- Also listen to real keyboard for HUD (works on real PC / some emulators)
-UserInputService.InputBegan:Connect(function(inp, gpe)
-    if gpe then return end
-    if inp.UserInputType == Enum.UserInputType.Keyboard then
-        local c = inp.KeyCode.Name
-        local f = keyFrameMap[c]
-        if f then
-            TweenService:Create(f,TweenInfo.new(0.06),{
-                BackgroundColor3=C_ACTIVE, BackgroundTransparency=0}):Play()
-        end
-        -- Also drive movement from real keyboard if it works
-        if c=="W" then held.W=true
-        elseif c=="A" then held.A=true
-        elseif c=="S" then held.S=true
-        elseif c=="D" then held.D=true
-        elseif c=="LeftShift" or c=="RightShift" then sprint=true
-        elseif c=="Space" and Humanoid then Humanoid.Jump=true end
-    end
-end)
-UserInputService.InputEnded:Connect(function(inp, gpe)
-    if gpe then return end
-    if inp.UserInputType == Enum.UserInputType.Keyboard then
-        local c = inp.KeyCode.Name
-        local f = keyFrameMap[c]
-        if f then
-            TweenService:Create(f,TweenInfo.new(0.06),{
-                BackgroundColor3=C_KEY, BackgroundTransparency=0.25}):Play()
-        end
-        if c=="W" then held.W=false
-        elseif c=="A" then held.A=false
-        elseif c=="S" then held.S=false
-        elseif c=="D" then held.D=false
-        elseif c=="LeftShift" or c=="RightShift" then sprint=false end
-    end
-end)
+	playerState.isInvisible = not playerState.isInvisible
+	playSound()
 
--- ════════════════════════════════════════════════════════════
--- 5. MOUSE DISPLAY  (right of keyboard HUD)
--- ════════════════════════════════════════════════════════════
-local MS_W, MS_H = 44, 65
-local mDisp = panel(Gui, HKBD_W+20, -(MS_H+12), MS_W, MS_H, 0.35)
+	if playerState.isInvisible then
+		local humanoidRootPart = getHumanoidRootPart()
+		if not humanoidRootPart then warn("HumanoidRootPart not found") return end
 
-local mbody = Instance.new("Frame",mDisp)
-mbody.Size=UDim2.new(0,28,0,46); mbody.Position=UDim2.new(0.5,-14,0,10)
-mbody.BackgroundColor3=C_KEY; mbody.BackgroundTransparency=0.1
-mbody.BorderSizePixel=0
-Instance.new("UICorner",mbody).CornerRadius=UDim.new(0,8)
-Instance.new("UIStroke",mbody).Color=C_BORDER
+		-- Save position before moving
+		local savedCFrame = humanoidRootPart.CFrame
 
-local function mBtn(px,py,pw,ph,lbl)
-    local f=Instance.new("Frame",mbody)
-    f.Size=UDim2.new(0,pw,0,ph); f.Position=UDim2.new(0,px,0,py)
-    f.BackgroundColor3=C_KEY; f.BackgroundTransparency=1
-    f.BorderSizePixel=0
-    Instance.new("UICorner",f).CornerRadius=UDim.new(0,7)
-    local t=Instance.new("TextLabel",f)
-    t.Size=UDim2.new(1,0,1,0); t.BackgroundTransparency=1
-    t.Text=lbl; t.TextColor3=C_TEXT
-    t.Font=Enum.Font.GothamBold; t.TextScaled=true
-    return f
+		-- Move far away to avoid being seen while setting up
+		player.Character:MoveTo(CONFIG.INVISIBILITY_POSITION)
+		task.wait(0.1)
+
+		-- Create and anchor the invisible seat
+		local seat = Instance.new("Seat")
+		seat.Name = "invischair"
+		seat.Anchored = true
+		seat.CanCollide = false
+		seat.Transparency = 1
+		seat.CFrame = savedCFrame
+		seat.Parent = workspace
+
+		-- Sit the character on it
+		local humanoid = getHumanoid()
+		if humanoid then
+			seat:Sit(humanoid)
+		end
+
+		task.wait(0.1)
+
+		-- Make character fully transparent
+		setCharacterTransparency(player.Character, 1)
+
+		-- Update UI
+		toggleButton.BackgroundColor3 = CONFIG.SUCCESS_COLOR
+		toggleButton.Text = "VISIBLE"
+		if _G.statusLabel then
+			_G.statusLabel.Text = "Invisible Mode Active"
+			_G.statusLabel.TextColor3 = CONFIG.SUCCESS_COLOR
+		end
+		createNotification("Invisibility ON", "You are now invisible")
+
+	else
+		-- Remove invisible chair
+		local invisChair = workspace:FindFirstChild("invischair")
+		if invisChair then invisChair:Destroy() end
+
+		-- Restore visibility
+		if player.Character then
+			setCharacterTransparency(player.Character, 0)
+		end
+
+		-- Update UI
+		toggleButton.BackgroundColor3 = CONFIG.PRIMARY_COLOR
+		toggleButton.Text = "INVISIBLE"
+		if _G.statusLabel then
+			_G.statusLabel.Text = "Visible Mode Active"
+			_G.statusLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
+		end
+		createNotification("Invisibility OFF", "You are now visible")
+	end
 end
 
-local lmbD  = mBtn(1,1,12,18,"L")
-local rmbD  = mBtn(15,1,12,18,"R")
-local divD  = Instance.new("Frame",mbody)
-divD.Size=UDim2.new(0,1,0,18); divD.Position=UDim2.new(0,13,0,1)
-divD.BackgroundColor3=C_BORDER; divD.BorderSizePixel=0
-local scrD  = Instance.new("Frame",mbody)
-scrD.Size=UDim2.new(0,5,0,11); scrD.Position=UDim2.new(0.5,-2,0,20)
-scrD.BackgroundColor3=C_BORDER; scrD.BorderSizePixel=0
-Instance.new("UICorner",scrD).CornerRadius=UDim.new(0,2)
+local function toggleSpeedBoost(): ()
+	local humanoid = getHumanoid()
+	if not humanoid then warn("Humanoid not found") return end
 
--- Mirror action panel LMB/RMB presses to mouse display
-local function hlMD(f,on)
-    TweenService:Create(f,TweenInfo.new(0.06),{
-        BackgroundColor3=on and C_ACTIVE or C_KEY,
-        BackgroundTransparency=on and 0 or 1,
-    }):Play()
+	playerState.isSpeedBoosted = not playerState.isSpeedBoosted
+	playSound()
+
+	if playerState.isSpeedBoosted then
+		humanoid.WalkSpeed = CONFIG.BOOSTED_SPEED
+		speedButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+		speedButton.Text = "SPEED ON"
+		createNotification("Speed Boost ON", `Speed: {CONFIG.BOOSTED_SPEED}`)
+	else
+		humanoid.WalkSpeed = playerState.originalSpeed
+		speedButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+		speedButton.Text = "SPEED BOOST"
+		createNotification("Speed Boost OFF", `Speed: {playerState.originalSpeed}`)
+	end
 end
 
--- Patch the action buttons to also update the mouse display
--- We do this by wrapping with a RunService check (simple approach)
-UserInputService.InputBegan:Connect(function(i,g)
-    if g then return end
-    if i.UserInputType==Enum.UserInputType.MouseButton1 then hlMD(lmbD,true)
-    elseif i.UserInputType==Enum.UserInputType.MouseButton2 then hlMD(rmbD,true) end
-end)
-UserInputService.InputEnded:Connect(function(i,g)
-    if g then return end
-    if i.UserInputType==Enum.UserInputType.MouseButton1 then hlMD(lmbD,false)
-    elseif i.UserInputType==Enum.UserInputType.MouseButton2 then hlMD(rmbD,false) end
-end)
-UserInputService.InputChanged:Connect(function(i,g)
-    if g then return end
-    if i.UserInputType==Enum.UserInputType.MouseWheel then
-        TweenService:Create(scrD,TweenInfo.new(0.05),{BackgroundColor3=C_ACTIVE}):Play()
-        task.delay(0.2,function()
-            TweenService:Create(scrD,TweenInfo.new(0.1),{BackgroundColor3=C_BORDER}):Play()
-        end)
-    end
-end)
+local function resetPlayerState(): ()
+	playerState.isInvisible = false
+	playerState.isSpeedBoosted = false
 
--- ════════════════════════════════════════════════════════════
--- TOGGLE HUD  (on-screen button, top-right corner)
--- ════════════════════════════════════════════════════════════
-local toggleBtn = Instance.new("TextButton", Gui)
-toggleBtn.Size = UDim2.new(0,70,0,28)
-toggleBtn.Position = UDim2.new(1,-82,0,10)
-toggleBtn.BackgroundColor3 = C_BG
-toggleBtn.BackgroundTransparency = 0.2
-toggleBtn.Text = "HUD ▲"
-toggleBtn.TextColor3 = C_TEXT
-toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextScaled = true
-toggleBtn.BorderSizePixel = 0
-toggleBtn.AutoButtonColor = false
-Instance.new("UICorner",toggleBtn).CornerRadius = UDim.new(0,6)
-Instance.new("UIStroke",toggleBtn).Color = C_BORDER
+	-- Reset button appearances
+	if toggleButton then
+		toggleButton.BackgroundColor3 = CONFIG.PRIMARY_COLOR
+		toggleButton.Text = "INVISIBLE"
+	end
+	if speedButton then
+		speedButton.BackgroundColor3 = CONFIG.DANGER_COLOR
+		speedButton.Text = "SPEED BOOST"
+	end
 
-local hudOn = true
-local allPanels = {movePanel, actPanel, lookPanel, hkbdFrame, mDisp}
-toggleBtn.MouseButton1Click:Connect(function()
-    hudOn = not hudOn
-    for _,p in ipairs(allPanels) do p.Visible = hudOn end
-    toggleBtn.Text = hudOn and "HUD ▲" or "HUD ▼"
-end)
+	-- Reset status
+	if _G.statusLabel then
+		_G.statusLabel.Text = "Ready"
+		_G.statusLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
+	end
+end
 
-print("[PCEmulatorInput] ✓ Virtual on-screen controller active.")
-print("[PCEmulatorInput] Use on-screen WASD + LOOK joystick + action buttons.")
-print("[PCEmulatorInput] Real keyboard also works if emulator supports it.")
+-- GUI Creation
+local function createGUI(): ()
+	-- Main ScreenGui
+	screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "InvisibilityGUI"
+	screenGui.ResetOnSpawn = false
+	screenGui.Parent = player:WaitForChild("PlayerGui")
+
+	-- Main Frame
+	mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainFrame"
+	mainFrame.Size = UDim2.new(0, 160, 0, 180)
+	mainFrame.Position = UDim2.new(0.5, -80, 0.5, -90)
+	mainFrame.BackgroundColor3 = CONFIG.BACKGROUND_COLOR
+	mainFrame.BorderSizePixel = 0
+	mainFrame.Active = true
+	mainFrame.Draggable = true
+	mainFrame.Parent = screenGui
+
+	-- Add corner rounding
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 12)
+	corner.Parent = mainFrame
+
+	-- Add stroke for better definition
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = CONFIG.ACCENT_COLOR
+	stroke.Thickness = 2
+	stroke.Parent = mainFrame
+
+	-- Title Label
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "TitleLabel"
+	titleLabel.Size = UDim2.new(1, -20, 0, 25)
+	titleLabel.Position = UDim2.new(0, 10, 0, 10)
+	titleLabel.Text = "INVISIBILITY TOOL"
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.TextColor3 = CONFIG.TEXT_COLOR
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextSize = 12
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.Parent = mainFrame
+
+	-- Toggle Button
+	toggleButton = Instance.new("TextButton")
+	toggleButton.Name = "ToggleButton"
+	toggleButton.Size = UDim2.new(1, -20, 0, 35)
+	toggleButton.Position = UDim2.new(0, 10, 0, 45)
+	toggleButton.Text = "INVISIBLE"
+	toggleButton.BackgroundColor3 = CONFIG.PRIMARY_COLOR
+	toggleButton.TextColor3 = CONFIG.TEXT_COLOR
+	toggleButton.Font = Enum.Font.GothamBold
+	toggleButton.TextScaled = true
+	toggleButton.BorderSizePixel = 0
+	toggleButton.Parent = mainFrame
+
+	local toggleCorner = Instance.new("UICorner")
+	toggleCorner.CornerRadius = UDim.new(0, 8)
+	toggleCorner.Parent = toggleButton
+
+	local toggleStroke = Instance.new("UIStroke")
+	toggleStroke.Color = Color3.fromRGB(255, 255, 255)
+	toggleStroke.Thickness = 0
+	toggleStroke.Transparency = 0.8
+	toggleStroke.Parent = toggleButton
+
+	-- Speed Button
+	speedButton = Instance.new("TextButton")
+	speedButton.Name = "SpeedButton"
+	speedButton.Size = UDim2.new(1, -20, 0, 35)
+	speedButton.Position = UDim2.new(0, 10, 0, 90)
+	speedButton.Text = "SPEED BOOST"
+	speedButton.BackgroundColor3 = CONFIG.DANGER_COLOR
+	speedButton.TextColor3 = CONFIG.TEXT_COLOR
+	speedButton.Font = Enum.Font.GothamBold
+	speedButton.TextScaled = true
+	speedButton.BorderSizePixel = 0
+	speedButton.Parent = mainFrame
+
+	local speedCorner = Instance.new("UICorner")
+	speedCorner.CornerRadius = UDim.new(0, 8)
+	speedCorner.Parent = speedButton
+
+	local speedStroke = Instance.new("UIStroke")
+	speedStroke.Color = Color3.fromRGB(255, 255, 255)
+	speedStroke.Thickness = 0
+	speedStroke.Transparency = 0.8 speedButton
+
+	-- Close Button
+	closeButton = Instance.new("TextButton")
+	closeButton.Name = "CloseButton"
+	closeButton.Size = UDim2.new(0, 25, 0, 25)
+	closeButton.Position = UDim2.new(1, -30, 0, 5)
+	closeButton.Text = "×"
+	closeButton.BackgroundColor3 = CONFIG.DANGER_COLOR
+	closeButton.TextColor3 = CONFIG.TEXT_COLOR
+	closeButton.Font = Enum.Font.GothamBold
+	closeButton.TextSize = 16
+	closeButton.BorderSizePixel = 0
+	closeButton.Parent = mainFrame
+
+	local closeCorner = Instance.new("UICorner")
+	closeCorner.CornerRadius = UDim.new(0, 6)
+	closeCorner.Parent = closeButton
+
+	-- Status Frame
+	local statusFrame = Instance.new("Frame")
+	statusFrame.Name = "StatusFrame"
+	statusFrame.Size = UDim2.new(1, -20, 0, 20)
+	statusFrame.Position = UDim2.new(0, 10, 0, 135)
+	statusFrame.BackgroundColor3 = CONFIG.ACCENT_COLOR
+	statusFrame.BorderSizePixel = 0
+	statusFrame.Parent = mainFrame
+
+	local statusCorner = Instance.new("UICorner")
+	statusCorner.CornerRadius = UDim.new(0, 6)
+	statusCorner.Parent = statusFrame
+
+	local statusLabel = Instance.new("TextLabel")
+	statusLabel.Name = "StatusLabel"
+	statusLabel.Size = UDim2.new(1, -10, 1, 0)
+	statusLabel.Position = UDim2.new(0, 5, 0, 0)
+	statusLabel.Text = "Ready"
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
+	statusLabel.Font = Enum.Font.Gotham
+	statusLabel.TextSize = 10
+	statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+	statusLabel.Parent = statusFrame
+
+	-- Signature Label
+	signatureLabel = Instance.new("TextLabel")
+	signatureLabel.Name = "SignatureLabel"
+	signatureLabel.Size = UDim2.new(1, -20, 0, 15)
+	signatureLabel.Position = UDim2.new(0, 10, 1, -20)
+	signatureLabel.Text = "By: xXHaNdEROXx TG@MK14CFG"
+	signatureLabel.BackgroundTransparency = 1
+	signatureLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
+	signatureLabel.Font = Enum.Font.Gotham
+	signatureLabel.TextSize = 8
+	signatureLabel.TextTransparency = 0.5
+	signatureLabel.TextXAlignment = Enum.TextXAlignment.Center
+	signatureLabel.Parent = mainFrame
+
+	-- Sound
+	sound = Instance.new("Sound")
+	sound.Name = "ToggleSound"
+	sound.SoundId = CONFIG.SOUND_ID
+	sound.Volume = 0.5
+	sound.Parent = screenGui
+
+	-- Store status label for updates
+	_G.statusLabel = statusLabel
+end
+
+-- Event Connections
+local function connectEvents()
+	-- Button connections
+	toggleButton.MouseButton1Click:Connect(toggleInvisibility)
+	speedButton.MouseButton1Click:Connect(toggleSpeedBoost)
+	closeButton.MouseButton1Click:Connect(function()
+		screenGui.Enabled = false
+	end)
+
+	-- Keyboard input
+	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
+		if gameProcessed then return end
+		if input.KeyCode == CONFIG.TOGGLE_KEY then
+			toggleInvisibility()
+		end
+	end)
+
+	-- Character respawn handling
+	player.CharacterAdded:Connect(function(character: Model)
+		resetPlayerState()
+		local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+		playerState.originalSpeed = humanoid.WalkSpeed
+		humanoid.WalkSpeed = CONFIG.DEFAULT_SPEED
+
+		-- Clean up any existing invisible chairs
+		local invisChair = workspace:FindFirstChild("invischair")
+		if invisChair then invisChair:Destroy() end
+	end)
+
+	-- Handle player leaving
+	Players.PlayerRemoving:Connect(function(leavingPlayer: Player)
+		if leavingPlayer == player then
+			local invisChair = workspace:FindFirstChild("invischair")
+			if invisChair then invisChair:Destroy() end
+		end
+	end)
+end
+
+-- Initialize
+local function initialize(): ()
+	-- Wait for character to load
+	if not player.Character then
+		player.CharacterAdded:Wait()
+	end
+
+	-- Store original speed
+	local humanoid = getHumanoid()
+	if humanoid then
+		playerState.originalSpeed = humanoid.WalkSpeed
+	end
+
+	-- Create GUI and connect events
+	createGUI()
+	connectEvents()
+
+	print("Enhanced Invisibility Script loaded successfully!")
+end
+
+-- Start the script
+initialize()
