@@ -1,399 +1,573 @@
--- Configuration
-local CONFIG = {
-	TOGGLE_KEY = Enum.KeyCode.X,
-	DEFAULT_SPEED = 16,
-	BOOSTED_SPEED = 48,
-	SOUND_ID = "rbxassetid://942127495",
-	INVISIBILITY_POSITION = Vector3.new(-25.95, 84, 3537.55),
-	NOTIFICATION_DURATION = 3,
-	-- UI Colors
-	BACKGROUND_COLOR = Color3.fromRGB(25, 25, 25),
-	ACCENT_COLOR = Color3.fromRGB(45, 45, 45),
-	PRIMARY_COLOR = Color3.fromRGB(0, 170, 255),
-	SUCCESS_COLOR = Color3.fromRGB(46, 204, 113),
-	DANGER_COLOR = Color3.fromRGB(231, 76, 60),
-	WARNING_COLOR = Color3.fromRGB(241, 196, 15),
-	TEXT_COLOR = Color3.fromRGB(255, 255, 255),
-	SECONDARY_TEXT_COLOR = Color3.fromRGB(189, 195, 199),
+-- test
+
+local Players     = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ──────────────────────────────────────────
+-- GUI Construction
+-- ──────────────────────────────────────────
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name           = "RemoteSpy"
+screenGui.ResetOnSpawn   = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder   = 999
+screenGui.Parent         = PlayerGui
+
+-- Main window
+local window = Instance.new("Frame")
+window.Name             = "Window"
+window.Size             = UDim2.new(0, 420, 0, 280)
+window.Position         = UDim2.new(0.5, -210, 0.5, -140)
+window.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+window.BorderSizePixel  = 0
+window.Active           = true
+window.Draggable        = true
+window.Parent           = screenGui
+
+local windowCorner = Instance.new("UICorner")
+windowCorner.CornerRadius = UDim.new(0, 6)
+windowCorner.Parent       = window
+
+local windowStroke = Instance.new("UIStroke")
+windowStroke.Color     = Color3.fromRGB(45, 45, 45)
+windowStroke.Thickness = 1
+windowStroke.Parent    = window
+
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Name             = "TitleBar"
+titleBar.Size             = UDim2.new(1, 0, 0, 32)
+titleBar.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+titleBar.BorderSizePixel  = 0
+titleBar.Parent           = window
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 6)
+titleCorner.Parent       = titleBar
+
+local titleFix = Instance.new("Frame")
+titleFix.Size             = UDim2.new(1, 0, 0, 6)
+titleFix.Position         = UDim2.new(0, 0, 1, -6)
+titleFix.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+titleFix.BorderSizePixel  = 0
+titleFix.Parent           = titleBar
+
+local accentLine = Instance.new("Frame")
+accentLine.Size             = UDim2.new(0, 2, 0, 16)
+accentLine.Position         = UDim2.new(0, 10, 0.5, -8)
+accentLine.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
+accentLine.BorderSizePixel  = 0
+accentLine.Parent           = titleBar
+
+local accentCorner = Instance.new("UICorner")
+accentCorner.CornerRadius = UDim.new(1, 0)
+accentCorner.Parent       = accentLine
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text                   = "REMOTE SPY"
+titleLabel.Size                   = UDim2.new(0, 130, 1, 0)
+titleLabel.Position               = UDim2.new(0, 18, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3             = Color3.fromRGB(235, 235, 235)
+titleLabel.TextSize               = 11
+titleLabel.Font                   = Enum.Font.GothamBold
+titleLabel.TextXAlignment         = Enum.TextXAlignment.Left
+titleLabel.Parent                 = titleBar
+
+local counter = Instance.new("TextLabel")
+counter.Name             = "Counter"
+counter.Text             = "0 fires"
+counter.Size             = UDim2.new(0, 58, 0, 18)
+counter.Position         = UDim2.new(0, 152, 0.5, -9)
+counter.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+counter.TextColor3       = Color3.fromRGB(180, 180, 180)
+counter.TextSize         = 10
+counter.Font             = Enum.Font.GothamBold
+counter.TextXAlignment   = Enum.TextXAlignment.Center
+counter.Parent           = titleBar
+
+local counterStroke = Instance.new("UIStroke")
+counterStroke.Color     = Color3.fromRGB(60, 60, 60)
+counterStroke.Thickness = 1
+counterStroke.Parent    = counter
+
+local counterCorner = Instance.new("UICorner")
+counterCorner.CornerRadius = UDim.new(0, 3)
+counterCorner.Parent       = counter
+
+local function makeBtn(labelText, bgColor, textColor, xFromRight)
+    local btn = Instance.new("TextButton")
+    btn.Text             = labelText
+    btn.Size             = UDim2.new(0, 46, 0, 20)
+    btn.Position         = UDim2.new(1, xFromRight, 0.5, -10)
+    btn.BackgroundColor3 = bgColor
+    btn.TextColor3       = textColor or Color3.fromRGB(215, 215, 215)
+    btn.TextSize         = 10
+    btn.Font             = Enum.Font.GothamBold
+    btn.BorderSizePixel  = 0
+    btn.AutoButtonColor  = false
+    btn.Parent           = titleBar
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 3)
+    c.Parent = btn
+
+    local savedColor = bgColor
+    btn.MouseEnter:Connect(function()
+        btn.BackgroundColor3 = savedColor:Lerp(Color3.fromRGB(255, 255, 255), 0.10)
+    end)
+    btn.MouseLeave:Connect(function()
+        btn.BackgroundColor3 = savedColor
+    end)
+
+    return btn
+end
+
+local btnClose = makeBtn("Close", Color3.fromRGB(50, 18, 18), Color3.fromRGB(210,  80,  80), -52)
+local btnClear = makeBtn("Clear",   Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -104)
+local btnCopy  = makeBtn("Copy",    Color3.fromRGB(28, 28, 28), Color3.fromRGB(190, 190, 190), -156)
+
+local sep = Instance.new("Frame")
+sep.Size             = UDim2.new(1, -16, 0, 1)
+sep.Position         = UDim2.new(0, 8, 0, 32)
+sep.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+sep.BorderSizePixel  = 0
+sep.Parent           = window
+
+-- Scroll frame
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name                   = "LogScroll"
+scrollFrame.Size                   = UDim2.new(1, -8, 1, -44)
+scrollFrame.Position               = UDim2.new(0, 4, 0, 38)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel        = 0
+scrollFrame.ScrollBarThickness     = 3
+scrollFrame.ScrollBarImageColor3   = Color3.fromRGB(70, 70, 70)
+scrollFrame.CanvasSize             = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+scrollFrame.Parent                 = window
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding   = UDim.new(0, 2)
+listLayout.Parent    = scrollFrame
+
+-- ──────────────────────────────────────────
+-- Detail Popup
+-- ──────────────────────────────────────────
+
+local detailPopup = Instance.new("Frame")
+detailPopup.Name             = "DetailPopup"
+detailPopup.Size             = UDim2.new(0, 400, 0, 220)
+detailPopup.Position         = UDim2.new(0.5, -200, 0.5, -110)
+detailPopup.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+detailPopup.BorderSizePixel  = 0
+detailPopup.ZIndex           = 10
+detailPopup.Visible          = false
+detailPopup.Active           = true
+detailPopup.Draggable        = true
+detailPopup.Parent           = screenGui
+
+local detailCorner = Instance.new("UICorner")
+detailCorner.CornerRadius = UDim.new(0, 6)
+detailCorner.Parent       = detailPopup
+
+local detailStroke = Instance.new("UIStroke")
+detailStroke.Color     = Color3.fromRGB(60, 60, 60)
+detailStroke.Thickness = 1
+detailStroke.Parent    = detailPopup
+
+-- Detail title bar
+local detailBar = Instance.new("Frame")
+detailBar.Size             = UDim2.new(1, 0, 0, 28)
+detailBar.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+detailBar.BorderSizePixel  = 0
+detailBar.ZIndex           = 10
+detailBar.Parent           = detailPopup
+
+local detailBarCorner = Instance.new("UICorner")
+detailBarCorner.CornerRadius = UDim.new(0, 6)
+detailBarCorner.Parent       = detailBar
+
+local detailBarFix = Instance.new("Frame")
+detailBarFix.Size             = UDim2.new(1, 0, 0, 6)
+detailBarFix.Position         = UDim2.new(0, 0, 1, -6)
+detailBarFix.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+detailBarFix.BorderSizePixel  = 0
+detailBarFix.ZIndex           = 10
+detailBarFix.Parent           = detailBar
+
+local detailTitle = Instance.new("TextLabel")
+detailTitle.Text                   = "REMOTE DETAIL"
+detailTitle.Size                   = UDim2.new(1, -60, 1, 0)
+detailTitle.Position               = UDim2.new(0, 10, 0, 0)
+detailTitle.BackgroundTransparency = 1
+detailTitle.TextColor3             = Color3.fromRGB(200, 200, 200)
+detailTitle.TextSize               = 10
+detailTitle.Font                   = Enum.Font.GothamBold
+detailTitle.TextXAlignment         = Enum.TextXAlignment.Left
+detailTitle.ZIndex                 = 10
+detailTitle.Parent                 = detailBar
+
+local detailCloseBtn = Instance.new("TextButton")
+detailCloseBtn.Text             = "✕"
+detailCloseBtn.Size             = UDim2.new(0, 28, 0, 18)
+detailCloseBtn.Position         = UDim2.new(1, -34, 0.5, -9)
+detailCloseBtn.BackgroundColor3 = Color3.fromRGB(50, 18, 18)
+detailCloseBtn.TextColor3       = Color3.fromRGB(210, 80, 80)
+detailCloseBtn.TextSize         = 11
+detailCloseBtn.Font             = Enum.Font.GothamBold
+detailCloseBtn.BorderSizePixel  = 0
+detailCloseBtn.AutoButtonColor  = false
+detailCloseBtn.ZIndex           = 10
+detailCloseBtn.Parent           = detailBar
+
+local detailCloseBtnCorner = Instance.new("UICorner")
+detailCloseBtnCorner.CornerRadius = UDim.new(0, 3)
+detailCloseBtnCorner.Parent       = detailCloseBtn
+
+-- Detail copy button
+local detailCopyBtn = Instance.new("TextButton")
+detailCopyBtn.Text             = "Copy"
+detailCopyBtn.Size             = UDim2.new(0, 46, 0, 18)
+detailCopyBtn.Position         = UDim2.new(1, -86, 0.5, -9)
+detailCopyBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+detailCopyBtn.TextColor3       = Color3.fromRGB(190, 190, 190)
+detailCopyBtn.TextSize         = 10
+detailCopyBtn.Font             = Enum.Font.GothamBold
+detailCopyBtn.BorderSizePixel  = 0
+detailCopyBtn.AutoButtonColor  = false
+detailCopyBtn.ZIndex           = 10
+detailCopyBtn.Parent           = detailBar
+
+local detailCopyCorner = Instance.new("UICorner")
+detailCopyCorner.CornerRadius = UDim.new(0, 3)
+detailCopyCorner.Parent       = detailCopyBtn
+
+-- Separator under detail bar
+local detailSep = Instance.new("Frame")
+detailSep.Size             = UDim2.new(1, -12, 0, 1)
+detailSep.Position         = UDim2.new(0, 6, 0, 28)
+detailSep.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+detailSep.BorderSizePixel  = 0
+detailSep.ZIndex           = 10
+detailSep.Parent           = detailPopup
+
+-- Scrollable detail content
+local detailScroll = Instance.new("ScrollingFrame")
+detailScroll.Size                   = UDim2.new(1, -8, 1, -38)
+detailScroll.Position               = UDim2.new(0, 4, 0, 33)
+detailScroll.BackgroundTransparency = 1
+detailScroll.BorderSizePixel        = 0
+detailScroll.ScrollBarThickness     = 3
+detailScroll.ScrollBarImageColor3   = Color3.fromRGB(70, 70, 70)
+detailScroll.CanvasSize             = UDim2.new(0, 0, 0, 0)
+detailScroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+detailScroll.ZIndex                 = 10
+detailScroll.Parent                 = detailPopup
+
+local detailText = Instance.new("TextLabel")
+detailText.Name                   = "DetailText"
+detailText.Size                   = UDim2.new(1, -10, 0, 0)
+detailText.Position               = UDim2.new(0, 5, 0, 4)
+detailText.AutomaticSize          = Enum.AutomaticSize.Y
+detailText.BackgroundTransparency = 1
+detailText.TextColor3             = Color3.fromRGB(210, 210, 210)
+detailText.TextSize               = 11
+detailText.Font                   = Enum.Font.Code
+detailText.TextXAlignment         = Enum.TextXAlignment.Left
+detailText.TextYAlignment         = Enum.TextYAlignment.Top
+detailText.TextWrapped            = true
+detailText.Text                   = ""
+detailText.ZIndex                 = 10
+detailText.Parent                 = detailScroll
+
+-- Current detail full text (for copy)
+local currentDetailFull = ""
+
+detailCloseBtn.MouseButton1Click:Connect(function()
+    detailPopup.Visible = false
+end)
+
+detailCopyBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(currentDetailFull)
+        local orig = detailCopyBtn.Text
+        detailCopyBtn.Text = "✓ OK"
+        task.delay(1.2, function() detailCopyBtn.Text = orig end)
+    end
+end)
+
+local function openDetail(fullText, accentColor)
+    currentDetailFull    = fullText
+    detailText.Text      = fullText
+    detailText.TextColor3 = accentColor or Color3.fromRGB(210, 210, 210)
+    detailPopup.Visible  = true
+end
+
+-- ──────────────────────────────────────────
+-- Colors
+-- ──────────────────────────────────────────
+
+local COLOR_SERVER = Color3.fromRGB(120, 200, 255)  -- light blue  (server → client)
+local COLOR_CLIENT = Color3.fromRGB(255, 220,  60)  -- yellow      (client → server)
+
+-- Dimmer button background tints
+local BG_SERVER = Color3.fromRGB(14, 28, 42)
+local BG_CLIENT = Color3.fromRGB(38, 32, 8)
+
+-- ──────────────────────────────────────────
+-- Log state
+-- ──────────────────────────────────────────
+
+local logLines  = {}
+local fireCount = 0
+
+local function scrollToBottom()
+    task.defer(function()
+        scrollFrame.CanvasPosition = Vector2.new(
+            0, math.max(0, scrollFrame.AbsoluteCanvasSize.Y
+                         - scrollFrame.AbsoluteSize.Y)
+        )
+    end)
+end
+
+-- summary  = short one-line label shown on the button
+-- fullText = complete detail shown in the popup
+local function appendEntry(summary, fullText, accentColor, bgColor)
+    fireCount += 1
+    logLines[#logLines + 1] = fullText
+    counter.Text = fireCount .. " fires"
+
+    local btn = Instance.new("TextButton")
+    btn.LayoutOrder          = fireCount
+    btn.Size                 = UDim2.new(1, -10, 0, 24)
+    btn.Position             = UDim2.new(0, 5, 0, 0)
+    btn.BackgroundColor3     = bgColor or Color3.fromRGB(22, 22, 22)
+    btn.TextColor3           = accentColor or Color3.fromRGB(210, 210, 210)
+    btn.TextSize             = 11
+    btn.Font                 = Enum.Font.Code
+    btn.TextXAlignment       = Enum.TextXAlignment.Left
+    btn.TextTruncate         = Enum.TextTruncate.AtEnd
+    btn.AutoButtonColor      = false
+    btn.BorderSizePixel      = 0
+    btn.Text                 = "  " .. summary
+    btn.Parent               = scrollFrame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 3)
+    btnCorner.Parent       = btn
+
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color     = accentColor and accentColor:Lerp(Color3.fromRGB(0,0,0), 0.6) or Color3.fromRGB(40, 40, 40)
+    btnStroke.Thickness = 1
+    btnStroke.Parent    = btn
+
+    -- Hover effect
+    local normalBg = btn.BackgroundColor3
+    local hoverBg  = normalBg:Lerp(Color3.fromRGB(255, 255, 255), 0.06)
+    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = hoverBg end)
+    btn.MouseLeave:Connect(function() btn.BackgroundColor3 = normalBg end)
+
+    -- Click → open detail popup
+    btn.MouseButton1Click:Connect(function()
+        openDetail(fullText, accentColor)
+    end)
+
+    scrollToBottom()
+end
+
+-- ──────────────────────────────────────────
+-- Button logic
+-- ──────────────────────────────────────────
+
+btnClear.MouseButton1Click:Connect(function()
+    logLines  = {}
+    fireCount = 0
+    counter.Text = "0 fires"
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    detailPopup.Visible = false
+end)
+
+btnCopy.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(table.concat(logLines, "\n\n---\n\n"))
+        local orig = btnCopy.Text
+        btnCopy.Text = "✓ OK"
+        task.delay(1.2, function() btnCopy.Text = orig end)
+    end
+end)
+
+btnClose.MouseButton1Click:Connect(function()
+    window.Visible = not window.Visible
+end)
+
+-- ──────────────────────────────────────────
+-- Helpers
+-- ──────────────────────────────────────────
+
+local function timestamp()
+    return string.format("[%.3f]", tick())
+end
+
+local function serialize(v)
+    local t = typeof(v)
+    if t == "Instance" then
+        return v:GetFullName()
+    elseif t == "table" then
+        local parts = {}
+        for k, val in pairs(v) do
+            parts[#parts+1] = tostring(k).."="..serialize(val)
+        end
+        return "{"..table.concat(parts, ", ").."}"
+    else
+        return tostring(v)
+    end
+end
+
+local function fmtArgs(...)
+    local args = {...}
+    local out  = {}
+    for i, v in ipairs(args) do
+        out[i] = string.format("[%d](%s) %s", i, typeof(v), serialize(v))
+    end
+    return #out > 0 and table.concat(out, " | ") or "<no args>"
+end
+
+-- Build a short one-liner for the button label
+local function makeSummary(direction, kind, path)
+    local arrow = direction == "SERVER" and "← SERVER" or "→ SERVER"
+    -- show only the last two path segments to keep it short
+    local short = path:match("([^%.]+%.[^%.]+)$") or path
+    return string.format("%s  [%s]  %s", arrow, kind, short)
+end
+
+-- ──────────────────────────────────────────
+-- Hook logic
+-- ──────────────────────────────────────────
+
+local hooked = {}
+
+local REMOTE_CLASSES = {
+    RemoteEvent           = true,
+    RemoteFunction        = true,
+    UnreliableRemoteEvent = true,
 }
 
--- Services
-local Players = game:GetService("Players")
-local StarterGui = game:GetService("StarterGui")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local function hookRemote(remote)
+    if hooked[remote] then return end
+    hooked[remote] = true
 
--- Variables
-local player = Players.LocalPlayer
-local playerState = {
-	isInvisible = false,
-	isSpeedBoosted = false,
-	originalSpeed = CONFIG.DEFAULT_SPEED,
-}
+    local path = remote:GetFullName()
+    local kind = remote.ClassName
 
--- GUI Elements
-local screenGui: ScreenGui
-local mainFrame: Frame
-local toggleButton: TextButton
-local speedButton: TextButton
-local closeButton: TextButton
-local signatureLabel: TextLabel
-local sound: Sound
+    -- ── Server → Client ──────────────────────────────────
+    if kind == "RemoteEvent" or kind == "UnreliableRemoteEvent" then
+        remote.OnClientEvent:Connect(function(...)
+            local ts      = timestamp()
+            local argsStr = fmtArgs(...)
+            local summary = makeSummary("SERVER", kind, path)
+            local full    = string.format(
+                "%s [%s] ← SERVER\n  Path: %s\n  Args: %s",
+                ts, kind, path, argsStr
+            )
+            appendEntry(ts .. " " .. summary, full, COLOR_SERVER, BG_SERVER)
+        end)
 
--- Utility Functions
-local function createNotification(title, text)
-	StarterGui:SetCore("SendNotification", {
-		Title = title,
-		Text = text,
-		Duration = CONFIG.NOTIFICATION_DURATION,
-	})
+    elseif kind == "RemoteFunction" then
+        remote.OnClientInvoke = function(...)
+            local ts      = timestamp()
+            local argsStr = fmtArgs(...)
+            local summary = makeSummary("SERVER", "RemoteFunction", path)
+            local full    = string.format(
+                "%s [RemoteFunction INVOKE] ← SERVER\n  Path: %s\n  Args: %s",
+                ts, path, argsStr
+            )
+            appendEntry(ts .. " " .. summary, full, COLOR_SERVER, BG_SERVER)
+        end
+    end
+
+    -- ── Client → Server ──────────────────────────────────
+    local mt = getrawmetatable and getrawmetatable(remote)
+    if mt then
+        local oldIndex  = mt.__index
+        local wasReadonly = isreadonly and isreadonly(mt)
+        if wasReadonly then setreadonly(mt, false) end
+
+        if kind == "RemoteEvent" or kind == "UnreliableRemoteEvent" then
+            local origFire = (type(oldIndex) == "function" and oldIndex(remote, "FireServer"))
+                          or (type(oldIndex) == "table"    and oldIndex["FireServer"])
+                          or remote.FireServer
+
+            mt.__index = newproxy and (function(self, key)
+                if key == "FireServer" and self == remote then
+                    return function(_, ...)
+                        local ts      = timestamp()
+                        local argsStr = fmtArgs(...)
+                        local summary = makeSummary("CLIENT", kind, path)
+                        local full    = string.format(
+                            "%s [%s] → SERVER\n  Path: %s\n  Args: %s",
+                            ts, kind, path, argsStr
+                        )
+                        appendEntry(ts .. " " .. summary, full, COLOR_CLIENT, BG_CLIENT)
+                        return origFire(self, ...)
+                    end
+                end
+                return type(oldIndex) == "function" and oldIndex(self, key)
+                    or type(oldIndex) == "table"    and oldIndex[key]
+            end) or oldIndex
+
+        elseif kind == "RemoteFunction" then
+            local origInvoke = (type(oldIndex) == "function" and oldIndex(remote, "InvokeServer"))
+                            or (type(oldIndex) == "table"    and oldIndex["InvokeServer"])
+                            or remote.InvokeServer
+
+            mt.__index = (function(self, key)
+                if key == "InvokeServer" and self == remote then
+                    return function(_, ...)
+                        local ts      = timestamp()
+                        local argsStr = fmtArgs(...)
+                        local summary = makeSummary("CLIENT", "RemoteFunction", path)
+                        local full    = string.format(
+                            "%s [RemoteFunction] → SERVER\n  Path: %s\n  Args: %s",
+                            ts, path, argsStr
+                        )
+                        appendEntry(ts .. " " .. summary, full, COLOR_CLIENT, BG_CLIENT)
+                        return origInvoke(self, ...)
+                    end
+                end
+                return type(oldIndex) == "function" and oldIndex(self, key)
+                    or type(oldIndex) == "table"    and oldIndex[key]
+            end) or oldIndex
+        end
+
+        if wasReadonly then setreadonly(mt, true) end
+    end
 end
 
-local function setCharacterTransparency(character: Model, transparency: number): ()
-	for _, descendant in character:GetDescendants() do
-		if descendant:IsA("BasePart") or descendant:IsA("Decal") then
-			descendant.Transparency = transparency
-		end
-	end
+local function scanContainer(container)
+    for _, obj in ipairs(container:GetDescendants()) do
+        if REMOTE_CLASSES[obj.ClassName] then
+            hookRemote(obj)
+        end
+    end
+    container.DescendantAdded:Connect(function(obj)
+        if REMOTE_CLASSES[obj.ClassName] then
+            hookRemote(obj)
+        end
+    end)
 end
 
-local function getHumanoid()
-	local character = player.Character
-	if not character then return nil end
-	return character:FindFirstChild("Humanoid") :: Humanoid?
-end
-
-local function getHumanoidRootPart(): BasePart?
-	local character = player.Character
-	if not character then return nil end
-	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
-end
-
-local function playSound(): ()
-	if sound then sound:Play() end
-end
-
--- Core Functions
-local function toggleInvisibility(): ()
-	if not player.Character then warn("Character not found") return end
-
-	playerState.isInvisible = not playerState.isInvisible
-	playSound()
-
-	if playerState.isInvisible then
-		local humanoidRootPart = getHumanoidRootPart()
-		if not humanoidRootPart then warn("HumanoidRootPart not found") return end
-
-		-- Save position before moving
-		local savedCFrame = humanoidRootPart.CFrame
-
-		-- Move far away to avoid being seen while setting up
-		player.Character:MoveTo(CONFIG.INVISIBILITY_POSITION)
-		task.wait(0.1)
-
-		-- Create and anchor the invisible seat
-		local seat = Instance.new("Seat")
-		seat.Name = "invischair"
-		seat.Anchored = true
-		seat.CanCollide = false
-		seat.Transparency = 1
-		seat.CFrame = savedCFrame
-		seat.Parent = workspace
-
-		-- Sit the character on it
-		local humanoid = getHumanoid()
-		if humanoid then
-			seat:Sit(humanoid)
-		end
-
-		task.wait(0.1)
-
-		-- Make character fully transparent
-		setCharacterTransparency(player.Character, 1)
-
-		-- Update UI
-		toggleButton.BackgroundColor3 = CONFIG.SUCCESS_COLOR
-		toggleButton.Text = "VISIBLE"
-		if _G.statusLabel then
-			_G.statusLabel.Text = "Invisible Mode Active"
-			_G.statusLabel.TextColor3 = CONFIG.SUCCESS_COLOR
-		end
-		createNotification("Invisibility ON", "You are now invisible")
-
-	else
-		-- Remove invisible chair
-		local invisChair = workspace:FindFirstChild("invischair")
-		if invisChair then invisChair:Destroy() end
-
-		-- Restore visibility
-		if player.Character then
-			setCharacterTransparency(player.Character, 0)
-		end
-
-		-- Update UI
-		toggleButton.BackgroundColor3 = CONFIG.PRIMARY_COLOR
-		toggleButton.Text = "INVISIBLE"
-		if _G.statusLabel then
-			_G.statusLabel.Text = "Visible Mode Active"
-			_G.statusLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
-		end
-		createNotification("Invisibility OFF", "You are now visible")
-	end
-end
-
-local function toggleSpeedBoost(): ()
-	local humanoid = getHumanoid()
-	if not humanoid then warn("Humanoid not found") return end
-
-	playerState.isSpeedBoosted = not playerState.isSpeedBoosted
-	playSound()
-
-	if playerState.isSpeedBoosted then
-		humanoid.WalkSpeed = CONFIG.BOOSTED_SPEED
-		speedButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-		speedButton.Text = "SPEED ON"
-		createNotification("Speed Boost ON", `Speed: {CONFIG.BOOSTED_SPEED}`)
-	else
-		humanoid.WalkSpeed = playerState.originalSpeed
-		speedButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-		speedButton.Text = "SPEED BOOST"
-		createNotification("Speed Boost OFF", `Speed: {playerState.originalSpeed}`)
-	end
-end
-
-local function resetPlayerState(): ()
-	playerState.isInvisible = false
-	playerState.isSpeedBoosted = false
-
-	-- Reset button appearances
-	if toggleButton then
-		toggleButton.BackgroundColor3 = CONFIG.PRIMARY_COLOR
-		toggleButton.Text = "INVISIBLE"
-	end
-	if speedButton then
-		speedButton.BackgroundColor3 = CONFIG.DANGER_COLOR
-		speedButton.Text = "SPEED BOOST"
-	end
-
-	-- Reset status
-	if _G.statusLabel then
-		_G.statusLabel.Text = "Ready"
-		_G.statusLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
-	end
-end
-
--- GUI Creation
-local function createGUI(): ()
-	-- Main ScreenGui
-	screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "InvisibilityGUI"
-	screenGui.ResetOnSpawn = false
-	screenGui.Parent = player:WaitForChild("PlayerGui")
-
-	-- Main Frame
-	mainFrame = Instance.new("Frame")
-	mainFrame.Name = "MainFrame"
-	mainFrame.Size = UDim2.new(0, 160, 0, 180)
-	mainFrame.Position = UDim2.new(0.5, -80, 0.5, -90)
-	mainFrame.BackgroundColor3 = CONFIG.BACKGROUND_COLOR
-	mainFrame.BorderSizePixel = 0
-	mainFrame.Active = true
-	mainFrame.Draggable = true
-	mainFrame.Parent = screenGui
-
-	-- Add corner rounding
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 12)
-	corner.Parent = mainFrame
-
-	-- Add stroke for better definition
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = CONFIG.ACCENT_COLOR
-	stroke.Thickness = 2
-	stroke.Parent = mainFrame
-
-	-- Title Label
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "TitleLabel"
-	titleLabel.Size = UDim2.new(1, -20, 0, 25)
-	titleLabel.Position = UDim2.new(0, 10, 0, 10)
-	titleLabel.Text = "INVISIBILITY TOOL"
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.TextColor3 = CONFIG.TEXT_COLOR
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 12
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.Parent = mainFrame
-
-	-- Toggle Button
-	toggleButton = Instance.new("TextButton")
-	toggleButton.Name = "ToggleButton"
-	toggleButton.Size = UDim2.new(1, -20, 0, 35)
-	toggleButton.Position = UDim2.new(0, 10, 0, 45)
-	toggleButton.Text = "INVISIBLE"
-	toggleButton.BackgroundColor3 = CONFIG.PRIMARY_COLOR
-	toggleButton.TextColor3 = CONFIG.TEXT_COLOR
-	toggleButton.Font = Enum.Font.GothamBold
-	toggleButton.TextScaled = true
-	toggleButton.BorderSizePixel = 0
-	toggleButton.Parent = mainFrame
-
-	local toggleCorner = Instance.new("UICorner")
-	toggleCorner.CornerRadius = UDim.new(0, 8)
-	toggleCorner.Parent = toggleButton
-
-	local toggleStroke = Instance.new("UIStroke")
-	toggleStroke.Color = Color3.fromRGB(255, 255, 255)
-	toggleStroke.Thickness = 0
-	toggleStroke.Transparency = 0.8
-	toggleStroke.Parent = toggleButton
-
-	-- Speed Button
-	speedButton = Instance.new("TextButton")
-	speedButton.Name = "SpeedButton"
-	speedButton.Size = UDim2.new(1, -20, 0, 35)
-	speedButton.Position = UDim2.new(0, 10, 0, 90)
-	speedButton.Text = "SPEED BOOST"
-	speedButton.BackgroundColor3 = CONFIG.DANGER_COLOR
-	speedButton.TextColor3 = CONFIG.TEXT_COLOR
-	speedButton.Font = Enum.Font.GothamBold
-	speedButton.TextScaled = true
-	speedButton.BorderSizePixel = 0
-	speedButton.Parent = mainFrame
-
-	local speedCorner = Instance.new("UICorner")
-	speedCorner.CornerRadius = UDim.new(0, 8)
-	speedCorner.Parent = speedButton
-
-	local speedStroke = Instance.new("UIStroke")
-	speedStroke.Color = Color3.fromRGB(255, 255, 255)
-	speedStroke.Thickness = 0
-	speedStroke.Transparency = 0.8 speedButton
-
-	-- Close Button
-	closeButton = Instance.new("TextButton")
-	closeButton.Name = "CloseButton"
-	closeButton.Size = UDim2.new(0, 25, 0, 25)
-	closeButton.Position = UDim2.new(1, -30, 0, 5)
-	closeButton.Text = "×"
-	closeButton.BackgroundColor3 = CONFIG.DANGER_COLOR
-	closeButton.TextColor3 = CONFIG.TEXT_COLOR
-	closeButton.Font = Enum.Font.GothamBold
-	closeButton.TextSize = 16
-	closeButton.BorderSizePixel = 0
-	closeButton.Parent = mainFrame
-
-	local closeCorner = Instance.new("UICorner")
-	closeCorner.CornerRadius = UDim.new(0, 6)
-	closeCorner.Parent = closeButton
-
-	-- Status Frame
-	local statusFrame = Instance.new("Frame")
-	statusFrame.Name = "StatusFrame"
-	statusFrame.Size = UDim2.new(1, -20, 0, 20)
-	statusFrame.Position = UDim2.new(0, 10, 0, 135)
-	statusFrame.BackgroundColor3 = CONFIG.ACCENT_COLOR
-	statusFrame.BorderSizePixel = 0
-	statusFrame.Parent = mainFrame
-
-	local statusCorner = Instance.new("UICorner")
-	statusCorner.CornerRadius = UDim.new(0, 6)
-	statusCorner.Parent = statusFrame
-
-	local statusLabel = Instance.new("TextLabel")
-	statusLabel.Name = "StatusLabel"
-	statusLabel.Size = UDim2.new(1, -10, 1, 0)
-	statusLabel.Position = UDim2.new(0, 5, 0, 0)
-	statusLabel.Text = "Ready"
-	statusLabel.BackgroundTransparency = 1
-	statusLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
-	statusLabel.Font = Enum.Font.Gotham
-	statusLabel.TextSize = 10
-	statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-	statusLabel.Parent = statusFrame
-
-	-- Signature Label
-	signatureLabel = Instance.new("TextLabel")
-	signatureLabel.Name = "SignatureLabel"
-	signatureLabel.Size = UDim2.new(1, -20, 0, 15)
-	signatureLabel.Position = UDim2.new(0, 10, 1, -20)
-	signatureLabel.Text = "By: xXHaNdEROXx TG@MK14CFG"
-	signatureLabel.BackgroundTransparency = 1
-	signatureLabel.TextColor3 = CONFIG.SECONDARY_TEXT_COLOR
-	signatureLabel.Font = Enum.Font.Gotham
-	signatureLabel.TextSize = 8
-	signatureLabel.TextTransparency = 0.5
-	signatureLabel.TextXAlignment = Enum.TextXAlignment.Center
-	signatureLabel.Parent = mainFrame
-
-	-- Sound
-	sound = Instance.new("Sound")
-	sound.Name = "ToggleSound"
-	sound.SoundId = CONFIG.SOUND_ID
-	sound.Volume = 0.5
-	sound.Parent = screenGui
-
-	-- Store status label for updates
-	_G.statusLabel = statusLabel
-end
-
--- Event Connections
-local function connectEvents()
-	-- Button connections
-	toggleButton.MouseButton1Click:Connect(toggleInvisibility)
-	speedButton.MouseButton1Click:Connect(toggleSpeedBoost)
-	closeButton.MouseButton1Click:Connect(function()
-		screenGui.Enabled = false
-	end)
-
-	-- Keyboard input
-	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
-		if gameProcessed then return end
-		if input.KeyCode == CONFIG.TOGGLE_KEY then
-			toggleInvisibility()
-		end
-	end)
-
-	-- Character respawn handling
-	player.CharacterAdded:Connect(function(character: Model)
-		resetPlayerState()
-		local humanoid = character:WaitForChild("Humanoid") :: Humanoid
-		playerState.originalSpeed = humanoid.WalkSpeed
-		humanoid.WalkSpeed = CONFIG.DEFAULT_SPEED
-
-		-- Clean up any existing invisible chairs
-		local invisChair = workspace:FindFirstChild("invischair")
-		if invisChair then invisChair:Destroy() end
-	end)
-
-	-- Handle player leaving
-	Players.PlayerRemoving:Connect(function(leavingPlayer: Player)
-		if leavingPlayer == player then
-			local invisChair = workspace:FindFirstChild("invischair")
-			if invisChair then invisChair:Destroy() end
-		end
-	end)
-end
-
--- Initialize
-local function initialize(): ()
-	-- Wait for character to load
-	if not player.Character then
-		player.CharacterAdded:Wait()
-	end
-
-	-- Store original speed
-	local humanoid = getHumanoid()
-	if humanoid then
-		playerState.originalSpeed = humanoid.WalkSpeed
-	end
-
-	-- Create GUI and connect events
-	createGUI()
-	connectEvents()
-
-	print("Enhanced Invisibility Script loaded successfully!")
-end
-
--- Start the script
-initialize()
+scanContainer(game)
+appendEntry(
+    "[RemoteSpy] Hooked — click any entry to inspect",
+    "[RemoteSpy] Hooked — listening for remote fires...\nClick any log entry to see full details.",
+    Color3.fromRGB(140, 140, 140),
+    Color3.fromRGB(20, 20, 20)
+)
