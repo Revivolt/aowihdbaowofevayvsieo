@@ -165,7 +165,8 @@ local function CreateToggleButton(mainGui, mainFrame, visible)
         AutoButtonColor        = false,
         Parent                 = ToggleGui,
     })
-    Corner(8, Btn)
+    -- CHANGED: Use radius 50 to make the toggle button a perfect circle
+    Corner(50, Btn)
     Stroke(Theme.Border, 1, Btn)
 
     Btn.MouseEnter:Connect(function()
@@ -315,13 +316,17 @@ function NovaUI:CreateWindow(cfg)
         Parent                 = TitleBar,
     })
 
-    New("Frame", {
-        Name                   = "Stripe",
-        Size                   = UDim2.new(0, 3, 0, 22),
-        Position               = UDim2.new(0, 14, 0.5, -11),
-        BackgroundColor3       = Theme.Accent,
-        BackgroundTransparency = T,
+    -- CHANGED: Replaced the grey stripe Frame with an ImageLabel using the
+    -- same icon and color as the toggle button (TOGGLE_ICON / Theme.Accent)
+    New("ImageLabel", {
+        Name                   = "TitleIcon",
+        Size                   = UDim2.new(0, 18, 0, 18),
+        Position               = UDim2.new(0, 12, 0.5, -9),
+        BackgroundTransparency = 1,
         BorderSizePixel        = 0,
+        Image                  = TOGGLE_ICON,
+        ScaleType              = Enum.ScaleType.Fit,
+        ImageColor3            = Theme.Accent,
         Parent                 = TitleBar,
     })
 
@@ -333,7 +338,7 @@ function NovaUI:CreateWindow(cfg)
         TextXAlignment         = Enum.TextXAlignment.Left,
         BackgroundTransparency = 1,
         Size                   = UDim2.new(1, -60, 1, 0),
-        Position               = UDim2.new(0, 26, 0, 0),
+        Position               = UDim2.new(0, 36, 0, 0),
         Parent                 = TitleBar,
     })
 
