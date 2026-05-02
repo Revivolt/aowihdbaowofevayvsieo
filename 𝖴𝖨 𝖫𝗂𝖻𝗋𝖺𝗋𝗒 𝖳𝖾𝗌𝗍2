@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2159,16 +2159,20 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-
 local activeConnection = nil
-local charConnection   = nil  -- CharacterAdded listener
+local charConnection   = nil 
 local isEnabled        = false
 
-local function startPhysicsLoop(root)
+-- Helper to apply the specific physics manipulation
+local function startPhysicsLoop(char)
+    -- Clean up any existing loop before starting a new one
     if activeConnection then
         activeConnection:Disconnect()
         activeConnection = nil
     end
+
+    local root = char:WaitForChild("HumanoidRootPart", 5)
+    if not root then return end
 
     activeConnection = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then
@@ -2194,8 +2198,8 @@ local function stopPhysicsLoop()
 end
 
 local function applyStateOverrides(char)
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local root     = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:WaitForChild("Humanoid", 5)
+    local root     = char:WaitForChild("HumanoidRootPart", 5)
     if not humanoid or not root then return end
 
     humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead,        false)
@@ -2215,15 +2219,15 @@ local function removeStateOverrides(char)
     if root then root.CanCollide = true end
 end
 
--- called every time a fresh character spawns while toggle is ON
-local function onCharacterAdded(char)
-    -- wait for HumanoidRootPart to exist (it may not be parented yet)
-    local root = char:WaitForChild("HumanoidRootPart", 5)
-    if not root then return end
-
-    stopPhysicsLoop()          -- kill any stale loop from the old body
+-- This function handles the logic for both initial execution and respawns
+local function setupPermaDeath(char)
+    if not isEnabled then return end
+    
+    -- Ensure character is fully loaded
+    char:WaitForChild("HumanoidRootPart", 5)
+    
     applyStateOverrides(char)
-    startPhysicsLoop(root)
+    startPhysicsLoop(char)
 end
 
 Tab:AddToggle({
@@ -2233,20 +2237,15 @@ Tab:AddToggle({
         isEnabled = value
 
         if value then
-            -- apply to current character immediately
-            local char = player.Character
-            if char then
-                local root = char:FindFirstChild("HumanoidRootPart")
-                if root then
-                    applyStateOverrides(char)
-                    startPhysicsLoop(root)
-                end
+            -- Initial application
+            if player.Character then
+                setupPermaDeath(player.Character)
             end
 
-            -- re-apply automatically on every respawn
-            charConnection = player.CharacterAdded:Connect(onCharacterAdded)
+            -- Listen for respawns
+            charConnection = player.CharacterAdded:Connect(setupPermaDeath)
         else
-            -- tear everything down
+            -- Cleanup
             stopPhysicsLoop()
 
             if charConnection then
@@ -2254,11 +2253,13 @@ Tab:AddToggle({
                 charConnection = nil
             end
 
-            local char = player.Character
-            if char then removeStateOverrides(char) end
+            if player.Character then
+                removeStateOverrides(player.Character)
+            end
         end
     end,
 })
+
 
 
 
