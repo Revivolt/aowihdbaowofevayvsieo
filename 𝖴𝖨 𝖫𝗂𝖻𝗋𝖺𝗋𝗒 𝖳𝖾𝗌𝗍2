@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2102,21 +2102,23 @@ Tab:AddToggle({
 
 
 
-Tab:AddButton({
-        Label    = "Perma Death",
-        Callback = function()
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 
+-- This variable will hold the connection so we can kill it later
 local activeConnection = nil
-local initialCharacter = player.Character  -- snapshot at load time
 
-local function startPermanentPhysics(character)
-    local root = character:WaitForChild("HumanoidRootPart")
-    local humanoid = character:WaitForChild("Humanoid")
+-- This function contains the exact logic from your original "Perma Death" button
+local function executePermaDeathLogic(character)
+    if not character then return end
+    
+    local root = character:WaitForChild("HumanoidRootPart", 5)
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    
+    if not root or not humanoid then return end
 
+    -- Clean up any previous loop before starting a new one
     if activeConnection then
         activeConnection:Disconnect()
         activeConnection = nil
@@ -2135,53 +2137,6 @@ local function startPermanentPhysics(character)
         end
 
         local oldV = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = oldV * 0 + Vector3.new(0, 0, 0)
-        RunService.RenderStepped:Wait()
-        root.AssemblyLinearVelocity = oldV
-        RunService.Stepped:Wait()
-        root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
-    end)
-end
-
--- CharacterAdded fires on respawn/refresh — we ignore it entirely
--- State overrides and physics only run on the character present at script load
-if initialCharacter then
-    task.spawn(function()
-        startPermanentPhysics(initialCharacter)
-    end)
-end
-
-end,
-    })
-
-
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
-local player = Players.LocalPlayer
-local activeConnection = nil
-local charConnection   = nil 
-local isEnabled        = false
-
--- Helper to apply the specific physics manipulation
-local function startPhysicsLoop(char)
-    -- Clean up any existing loop before starting a new one
-    if activeConnection then
-        activeConnection:Disconnect()
-        activeConnection = nil
-    end
-
-    local root = char:WaitForChild("HumanoidRootPart", 5)
-    if not root then return end
-
-    activeConnection = RunService.Heartbeat:Connect(function()
-        if not root or not root.Parent then
-            if activeConnection then activeConnection:Disconnect() end
-            activeConnection = nil
-            return
-        end
-
-        local oldV = root.AssemblyLinearVelocity
         root.AssemblyLinearVelocity = Vector3.zero
         RunService.RenderStepped:Wait()
         root.AssemblyLinearVelocity = oldV
@@ -2190,75 +2145,50 @@ local function startPhysicsLoop(char)
     end)
 end
 
-local function stopPhysicsLoop()
-    if activeConnection then
-        activeConnection:Disconnect()
-        activeConnection = nil
-    end
-end
+-- 1. The Manual Button
+Tab:AddButton({
+    Label    = "Perma Death",
+    Callback = function()
+        executePermaDeathLogic(player.Character)
+    end,
+})
 
-local function applyStateOverrides(char)
-    local humanoid = char:WaitForChild("Humanoid", 5)
-    local root     = char:WaitForChild("HumanoidRootPart", 5)
-    if not humanoid or not root then return end
-
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead,        false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,     false)
-    root.CanCollide = false
-end
-
-local function removeStateOverrides(char)
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local root     = char:FindFirstChild("HumanoidRootPart")
-    if humanoid then
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead,        true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,     true)
-    end
-    if root then root.CanCollide = true end
-end
-
--- This function handles the logic for both initial execution and respawns
-local function setupPermaDeath(char)
-    if not isEnabled then return end
-    
-    -- Ensure character is fully loaded
-    char:WaitForChild("HumanoidRootPart", 5)
-    
-    applyStateOverrides(char)
-    startPhysicsLoop(char)
-end
+-- 2. The Auto-Reapply Toggle
+-- This simply listens for respawns and triggers the exact same function
+local autoApplyConnection = nil
 
 Tab:AddToggle({
     Label   = "Loop Perma Death",
     Default = false,
     Callback = function(value)
-        isEnabled = value
-
         if value then
-            -- Initial application
+            -- Connect to character respawns
+            autoApplyConnection = player.CharacterAdded:Connect(function(char)
+                -- Wait a moment to ensure the character is fully setup by the server
+                task.wait(0.5) 
+                executePermaDeathLogic(char)
+            end)
+            
+            -- Apply immediately if already spawned
             if player.Character then
-                setupPermaDeath(player.Character)
+                executePermaDeathLogic(player.Character)
             end
-
-            -- Listen for respawns
-            charConnection = player.CharacterAdded:Connect(setupPermaDeath)
         else
-            -- Cleanup
-            stopPhysicsLoop()
-
-            if charConnection then
-                charConnection:Disconnect()
-                charConnection = nil
+            -- Disconnect the listener
+            if autoApplyConnection then
+                autoApplyConnection:Disconnect()
+                autoApplyConnection = nil
             end
-
-            if player.Character then
-                removeStateOverrides(player.Character)
+            
+            -- Stop the active loop if they turn off the toggle
+            if activeConnection then
+                activeConnection:Disconnect()
+                activeConnection = nil
             end
         end
     end,
 })
+
 
 
 
