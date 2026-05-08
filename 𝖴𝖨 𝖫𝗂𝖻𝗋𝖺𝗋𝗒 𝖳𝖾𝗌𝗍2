@@ -3777,6 +3777,12 @@ local Tab = Window:AddTab("Admin")
 
 
 Tab:AddButton({
+        Label    = "Novoline Admin",
+        Callback = function() loadstring(game:HttpGet("https://novoline.pro"))() end,
+    })
+
+
+Tab:AddButton({
         Label    = "Nameless Admin",
         Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/FD2Team/Nameless-Admin-No-Byfron-Kick/main/Source"))() end,
     })
