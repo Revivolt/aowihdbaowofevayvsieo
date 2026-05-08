@@ -3636,7 +3636,7 @@ do
 
         local animator = myHum:FindFirstChildOfClass("Animator") or myHum:WaitForChild("Animator")
         local anim = Instance.new("Animation")
-        anim.AnimationId = "rbxassetid://102940155040466"
+        anim.AnimationId = "rbxassetid://0"
         local animTrack = animator:LoadAnimation(anim)
         animTrack:Play()
         animTrack.TimePosition = 0
@@ -3737,7 +3737,7 @@ do
     end
 
     Tab:AddToggle({
-        Label    = "Teleport Lock Player",
+        Label    = "Reverse Fling",
         Default  = false,
         Callback = function(value)
             if value then
