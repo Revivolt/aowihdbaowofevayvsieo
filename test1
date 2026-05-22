@@ -1,285 +1,423 @@
--- MM2 ESP — LocalScript in StarterPlayerScripts
--- Reads roles from Gameplay.Fade remote, draws BillboardGui name tags
+--// test
 
-local Players       = game:GetService("Players")
-local RunService    = game:GetService("RunService")
-local LocalPlayer   = Players.LocalPlayer
-local PlayerGui     = LocalPlayer:WaitForChild("PlayerGui")
+-----------------------------
+-- CONFIG
+-----------------------------
 
--- ──────────────────────────────────────────
--- Config
--- ──────────────────────────────────────────
+-- DEFAULT ANIMS
+local TRANSFORMATION_ID = 0
+local IDLE_ID = 125256276760371
+local WALK_ID = 125256276760371
+local SPRINT_ID = 125256276760371
+local JUMP_ID = 125256276760371
+local FALL_ID = 125256276760371
+local M1_ID = 0
+local M1_LOOP = false
 
-local ROLE_COLORS = {
-    Innocent = Color3.fromRGB(80,  220, 100),   -- green
-    Sheriff  = Color3.fromRGB(80,  160, 255),   -- blue
-    Murderer = Color3.fromRGB(255, 70,  70),    -- red
-    Hero     = Color3.fromRGB(255, 220, 50),    -- yellow
-}
-local DEFAULT_COLOR = Color3.fromRGB(200, 200, 200)
+-- ALT ANIMS (TOGGLES)
+local ALT_IDLE_ID = 0 -- X
+local ALT_WALK_ID = 0 -- C
+local ALT_SPRINT_ID = 0 -- V
+local ALT_JUMP_ID = 0 -- B
+local ALT_FALL_ID = 0 -- N
+local ALT_M1_ID = 0 -- M
 
-local ESP_SIZE   = UDim2.new(0, 120, 0, 28)
-local ESP_OFFSET = Vector3.new(0, 3.2, 0)  -- studs above head
+-- EMOTES (movement cancels)
+local EMOTE_T_ID = 0
+local EMOTE_Y_ID = 0
+local EMOTE_U_ID = 0
 
--- ──────────────────────────────────────────
--- State
--- ──────────────────────────────────────────
+-- TIMING
+local TRANSFORMATION_DURATION = 0
 
-local espEnabled  = true
-local roleMap     = {}   -- [username] = roleString
-local billboards  = {}   -- [Player]   = BillboardGui
+-- MOVEMENT SPEEDS
+local BASE_WALK_SPEED = 16
+local SPRINT_SPEED = 28
 
--- ──────────────────────────────────────────
--- Toggle GUI
--- ──────────────────────────────────────────
+-- Animation Playback Speeds
+local TRANSFORM_ANIM_SPEED = 1
+local IDLE_ANIM_SPEED = 1
+local WALK_ANIM_SPEED = 1
+local SPRINT_ANIM_SPEED = 1
+local JUMP_ANIM_SPEED = 1
+local FALL_ANIM_SPEED = 1
+local M1_ANIM_SPEED = 1
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name           = "MM2_ESP"
-screenGui.ResetOnSpawn   = false
-screenGui.DisplayOrder   = 999
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent         = PlayerGui
+-----------------------------
+-- SERVICES
+-----------------------------
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size             = UDim2.new(0, 110, 0, 36)
-toggleBtn.Position         = UDim2.new(0, 16, 0, 16)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 160, 90)
-toggleBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
-toggleBtn.Text             = "ESP  ON"
-toggleBtn.Font             = Enum.Font.GothamBold
-toggleBtn.TextSize         = 14
-toggleBtn.BorderSizePixel  = 0
-toggleBtn.Active           = true
-toggleBtn.Draggable        = true
-toggleBtn.Parent           = screenGui
+-----------------------------
+-- CHARACTER
+-----------------------------
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local animator = humanoid:WaitForChild("Animator")
+humanoid.AutoRotate = true
 
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent       = toggleBtn
+-- STIFF BODY: Disable the default Animate script and kill all its tracks
+local animateScript = character:FindFirstChild("Animate")
+if animateScript then
+    animateScript.Enabled = false
+end
+for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+    track:Stop(0)
+end
 
-local btnStroke = Instance.new("UIStroke")
-btnStroke.Color     = Color3.fromRGB(255, 255, 255)
-btnStroke.Thickness = 1
-btnStroke.Transparency = 0.7
-btnStroke.Parent    = toggleBtn
+-----------------------------
+-- STATE
+-----------------------------
+local transformed = false
+local sprinting = false
+local m1Held = false
+local currentState = "None"
 
-local dot = Instance.new("Frame")
-dot.Size             = UDim2.new(0, 10, 0, 10)
-dot.Position         = UDim2.new(0, 10, 0.5, -5)
-dot.BackgroundColor3 = Color3.fromRGB(120, 255, 160)
-dot.BorderSizePixel  = 0
-dot.Parent           = toggleBtn
-local dotCorner = Instance.new("UICorner")
-dotCorner.CornerRadius = UDim.new(1, 0)
-dotCorner.Parent = dot
+local useAltIdle = false
+local useAltWalk = false
+local useAltSprint = false
+local useAltJump = false
+local useAltFall = false
+local useAltM1 = false
 
--- ──────────────────────────────────────────
--- Billboard helpers
--- ──────────────────────────────────────────
+-- Track reload detection
+local lastUseAltIdle = false
+local lastUseAltWalk = false
+local lastUseAltSprint = false
 
-local function getColor(username)
-    local role = roleMap[username]
-    if role then
-        return ROLE_COLORS[role] or DEFAULT_COLOR, role or "?"
+local idleTrack, walkTrack, sprintTrack, jumpTrack, fallTrack
+local transformationTrack
+local actionTrack
+local emoteTrack
+
+-----------------------------
+-- HELPERS
+-----------------------------
+local function isValidId(id)
+	return typeof(id) == "number" and id > 0
+end
+
+local function loadAnimation(assetId, looped, priority)
+	if not isValidId(assetId) then return nil end
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. assetId
+	local track = animator:LoadAnimation(anim)
+	track.Looped = looped
+	track.Priority = priority
+	return track
+end
+
+local function destroyTrack(track)
+	if track then
+		track:Stop()
+		track:Destroy()
+	end
+end
+
+-----------------------------
+-- ACTION STOP
+-----------------------------
+local function stopAction()
+	if actionTrack then
+		destroyTrack(actionTrack)
+		actionTrack = nil
+	end
+end
+
+local function stopEmote()
+	if emoteTrack then
+		destroyTrack(emoteTrack)
+		emoteTrack = nil
+	end
+end
+
+-----------------------------
+-- MOVEMENT STATES
+-----------------------------
+local function playIdle()
+	if not transformed or currentState == "Idle" or emoteTrack then return end
+
+	currentState = "Idle"
+
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+
+	local animId = (useAltIdle and isValidId(ALT_IDLE_ID)) and ALT_IDLE_ID or IDLE_ID
+
+	destroyTrack(idleTrack)
+	idleTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
+
+	if idleTrack then
+		idleTrack:Play()
+		idleTrack:AdjustSpeed(IDLE_ANIM_SPEED)
+	end
+end
+
+local function playWalk()
+	if not transformed or currentState == "Walk" or sprinting or emoteTrack then return end
+
+	currentState = "Walk"
+
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+
+	local animId = (useAltWalk and isValidId(ALT_WALK_ID)) and ALT_WALK_ID or WALK_ID
+
+	destroyTrack(walkTrack)
+	walkTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
+
+	if walkTrack then
+		walkTrack:Play()
+		walkTrack:AdjustSpeed(WALK_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
+	end
+end
+
+local function playSprint()
+	if not transformed or currentState == "Sprint" or emoteTrack then return end
+
+	currentState = "Sprint"
+
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+
+	local animId = (useAltSprint and isValidId(ALT_SPRINT_ID)) and ALT_SPRINT_ID or SPRINT_ID
+
+	destroyTrack(sprintTrack)
+	sprintTrack = loadAnimation(animId, true, Enum.AnimationPriority.Movement)
+
+	if sprintTrack then
+		sprintTrack:Play()
+		sprintTrack:AdjustSpeed(SPRINT_ANIM_SPEED * humanoid.WalkSpeed / BASE_WALK_SPEED)
+	end
+end
+
+local function playJump()
+	if not transformed then return end
+
+	local animId = (useAltJump and isValidId(ALT_JUMP_ID)) and ALT_JUMP_ID or JUMP_ID
+	if not isValidId(animId) then return end
+
+	-- Stop movement animations while jumping
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+
+	currentState = "Jump"
+
+	destroyTrack(jumpTrack)
+	jumpTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
+
+	if jumpTrack then
+		jumpTrack:Play()
+		jumpTrack:AdjustSpeed(JUMP_ANIM_SPEED)
+	end
+end
+
+local function playFall()
+	if not transformed then return end
+
+	local animId = (useAltFall and isValidId(ALT_FALL_ID)) and ALT_FALL_ID or FALL_ID
+	if not isValidId(animId) then return end
+
+	-- Stop movement animations while falling
+	destroyTrack(idleTrack); idleTrack = nil
+	destroyTrack(walkTrack); walkTrack = nil
+	destroyTrack(sprintTrack); sprintTrack = nil
+	destroyTrack(jumpTrack); jumpTrack = nil
+
+	currentState = "Fall"
+
+	destroyTrack(fallTrack)
+	fallTrack = loadAnimation(animId, true, Enum.AnimationPriority.Action)
+
+	if fallTrack then
+		fallTrack:Play()
+		fallTrack:AdjustSpeed(FALL_ANIM_SPEED)
+	end
+end
+
+-----------------------------
+-- M1
+-----------------------------
+local function playM1()
+	stopAction()
+
+	local animId = (useAltM1 and isValidId(ALT_M1_ID)) and ALT_M1_ID or M1_ID
+	if not isValidId(animId) then return end
+
+	if M1_LOOP then
+		-- Loop mode: play looped, keep going while held
+		actionTrack = loadAnimation(animId, true, Enum.AnimationPriority.Action)
+		if actionTrack then
+			actionTrack:Play()
+			actionTrack:AdjustSpeed(M1_ANIM_SPEED)
+		end
+	else
+		-- Single-shot mode: plays once per click, does not repeat while held
+		actionTrack = loadAnimation(animId, false, Enum.AnimationPriority.Action)
+		if actionTrack then
+			actionTrack:Play()
+			actionTrack:AdjustSpeed(M1_ANIM_SPEED)
+			actionTrack.Stopped:Connect(function()
+				destroyTrack(actionTrack)
+				actionTrack = nil
+			end)
+		end
+	end
+end
+
+-----------------------------
+-- LOOP EMOTE
+-----------------------------
+local function playLoopEmote(assetId)
+	if not isValidId(assetId) then return end
+	stopEmote()
+	emoteTrack = loadAnimation(assetId, true, Enum.AnimationPriority.Action)
+	if emoteTrack then emoteTrack:Play() end
+end
+
+-----------------------------
+-- REFRESH
+-----------------------------
+local function refreshState()
+	if not transformed then return end
+	if emoteTrack then return end
+
+	-- Reload if toggle changed
+	if lastUseAltIdle ~= useAltIdle or
+	   lastUseAltWalk ~= useAltWalk or
+	   lastUseAltSprint ~= useAltSprint then
+		currentState = "None"
+	end
+
+	lastUseAltIdle = useAltIdle
+	lastUseAltWalk = useAltWalk
+	lastUseAltSprint = useAltSprint
+
+	local speed = humanoid.MoveDirection.Magnitude
+
+	if speed > 0.1 then
+		if sprinting then playSprint() else playWalk() end
+	else
+		playIdle()
+	end
+end
+
+-----------------------------
+-- TRANSFORMATION
+-----------------------------
+local function playTransformation()
+    -- Flush any default tracks that snuck back in
+    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+        track:Stop(0)
     end
-    return DEFAULT_COLOR, "?"
-end
 
-local function makeLabel(text, color)
-    local lbl = Instance.new("TextLabel")
-    lbl.Size                 = UDim2.new(1, 0, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text                 = text
-    lbl.TextColor3           = color
-    lbl.TextStrokeColor3     = Color3.fromRGB(0, 0, 0)
-    lbl.TextStrokeTransparency = 0.4
-    lbl.Font                 = Enum.Font.GothamBold
-    lbl.TextSize             = 14
-    lbl.TextScaled           = false
-    return lbl
-end
-
-local function createBillboard(player)
-    local char = player.Character
-    if not char then return end
-    local head = char:FindFirstChild("Head")
-    if not head then return end
-
-    -- remove old one if exists
-    if billboards[player] then
-        billboards[player]:Destroy()
-        billboards[player] = nil
-    end
-
-    local color, role = getColor(player.Name)
-
-    local bb = Instance.new("BillboardGui")
-    bb.Name            = "ESP_Tag"
-    bb.Size            = ESP_SIZE
-    bb.StudsOffset     = ESP_OFFSET
-    bb.AlwaysOnTop     = true
-    bb.LightInfluence  = 0
-    bb.MaxDistance     = 200
-    bb.Adornee         = head
-    bb.Parent          = head
-
-    -- background pill
-    local bg = Instance.new("Frame")
-    bg.Size             = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    bg.BackgroundTransparency = 0.45
-    bg.BorderSizePixel  = 0
-    bg.Parent           = bb
-    local bgCorner = Instance.new("UICorner")
-    bgCorner.CornerRadius = UDim.new(0, 6)
-    bgCorner.Parent = bg
-
-    -- colored left accent bar
-    local accent = Instance.new("Frame")
-    accent.Size             = UDim2.new(0, 4, 1, 0)
-    accent.BackgroundColor3 = color
-    accent.BorderSizePixel  = 0
-    accent.Parent           = bg
-    local accentCorner = Instance.new("UICorner")
-    accentCorner.CornerRadius = UDim.new(0, 3)
-    accentCorner.Parent = accent
-
-    -- name label
-    local nameLabel = makeLabel(player.Name, color)
-    nameLabel.Position       = UDim2.new(0, 10, 0, 0)
-    nameLabel.Size           = UDim2.new(1, -10, 0.6, 0)
-    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.Parent         = bg
-
-    -- role label
-    local roleLabel = makeLabel(role, Color3.fromRGB(210, 210, 210))
-    roleLabel.Position       = UDim2.new(0, 10, 0.55, 0)
-    roleLabel.Size           = UDim2.new(1, -10, 0.45, 0)
-    roleLabel.TextSize       = 11
-    roleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    roleLabel.Parent         = bg
-
-    bb.Enabled = espEnabled
-    billboards[player] = bb
-end
-
-local function removeBillboard(player)
-    if billboards[player] then
-        billboards[player]:Destroy()
-        billboards[player] = nil
-    end
-end
-
-local function refreshAllBillboards()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            createBillboard(player)
+    if isValidId(TRANSFORMATION_ID) then
+        transformationTrack = loadAnimation(TRANSFORMATION_ID, false, Enum.AnimationPriority.Movement)
+        if transformationTrack then
+            transformationTrack:Play()
+            transformationTrack:AdjustSpeed(TRANSFORM_ANIM_SPEED)
         end
     end
+
+    transformed = true
+    humanoid.WalkSpeed = BASE_WALK_SPEED
+
+    task.delay(TRANSFORMATION_DURATION, refreshState)
 end
 
--- ──────────────────────────────────────────
--- Toggle logic
--- ──────────────────────────────────────────
+-----------------------------
+-- INPUT
+-----------------------------
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp or not transformed then return end
 
-local function setESP(enabled)
-    espEnabled = enabled
-    for _, bb in pairs(billboards) do
-        bb.Enabled = enabled
-    end
-    if enabled then
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 160, 90)
-        toggleBtn.Text             = "ESP  ON"
-        dot.BackgroundColor3       = Color3.fromRGB(120, 255, 160)
-    else
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
-        toggleBtn.Text             = "ESP  OFF"
-        dot.BackgroundColor3       = Color3.fromRGB(255, 100, 100)
-    end
-end
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = true
+		humanoid.WalkSpeed = SPRINT_SPEED
+	end
 
-toggleBtn.MouseButton1Click:Connect(function()
-    setESP(not espEnabled)
+	if input.KeyCode == Enum.KeyCode.T then
+		playLoopEmote(EMOTE_T_ID)
+	elseif input.KeyCode == Enum.KeyCode.Y then
+		playLoopEmote(EMOTE_Y_ID)
+	elseif input.KeyCode == Enum.KeyCode.U then
+		playLoopEmote(EMOTE_U_ID)
+	end
+
+	-- Toggle keys
+	if input.KeyCode == Enum.KeyCode.C then
+		useAltWalk = not useAltWalk
+		refreshState()
+	elseif input.KeyCode == Enum.KeyCode.V then
+		useAltSprint = not useAltSprint
+		refreshState()
+	elseif input.KeyCode == Enum.KeyCode.X then
+		useAltIdle = not useAltIdle
+		refreshState()
+	elseif input.KeyCode == Enum.KeyCode.B then
+		useAltJump = not useAltJump
+	elseif input.KeyCode == Enum.KeyCode.N then
+		useAltFall = not useAltFall
+	elseif input.KeyCode == Enum.KeyCode.M then
+		useAltM1 = not useAltM1
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		m1Held = true
+		playM1()
+	end
 end)
 
--- ──────────────────────────────────────────
--- Remote hook — read Gameplay.Fade payload
--- ──────────────────────────────────────────
-
-local hooked = {}
-
-local function hookFadeRemote(remote)
-    if hooked[remote] then return end
-    hooked[remote] = true
-
-    remote.OnClientEvent:Connect(function(data)
-        if type(data) ~= "table" then return end
-        -- data = { [username] = { Role=..., ... }, ... }
-        for username, info in pairs(data) do
-            if type(info) == "table" and info.Role then
-                roleMap[username] = info.Role
-            end
-        end
-        -- rebuild all tags with fresh role colors
-        refreshAllBillboards()
-    end)
-end
-
-local function scanForFade(container)
-    for _, obj in ipairs(container:GetDescendants()) do
-        if obj.ClassName == "RemoteEvent" and obj.Name == "Fade" then
-            hookFadeRemote(obj)
-        end
-    end
-    container.DescendantAdded:Connect(function(obj)
-        if obj.ClassName == "RemoteEvent" and obj.Name == "Fade" then
-            hookFadeRemote(obj)
-        end
-    end)
-end
-
-scanForFade(game)
-
--- ──────────────────────────────────────────
--- Player lifecycle
--- ──────────────────────────────────────────
-
-local function onCharacterAdded(player, char)
-    char:WaitForChild("Head", 10)
-    createBillboard(player)
-end
-
-local function onPlayerAdded(player)
-    if player == LocalPlayer then return end
-    if player.Character then
-        onCharacterAdded(player, player.Character)
-    end
-    player.CharacterAdded:Connect(function(char)
-        onCharacterAdded(player, char)
-    end)
-    player.CharacterRemoving:Connect(function()
-        removeBillboard(player)
-    end)
-end
-
-for _, player in ipairs(Players:GetPlayers()) do
-    onPlayerAdded(player)
-end
-Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerRemoving:Connect(removeBillboard)
-
--- ──────────────────────────────────────────
--- Heartbeat: keep tags on respawned chars
--- ──────────────────────────────────────────
-
-RunService.Heartbeat:Connect(function()
-    if not espEnabled then return end
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local head = player.Character:FindFirstChild("Head")
-            if head and not billboards[player] then
-                createBillboard(player)
-            end
-        end
-    end
+UserInputService.InputEnded:Connect(function(input)
+	if not transformed then return end
+	if input.KeyCode == Enum.KeyCode.LeftShift then
+		sprinting = false
+		humanoid.WalkSpeed = BASE_WALK_SPEED
+	end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		m1Held = false
+		if M1_LOOP then
+			stopAction()
+		end
+	end
 end)
+
+-----------------------------
+-- MOVEMENT
+-----------------------------
+humanoid.Running:Connect(function(speed)
+	if not transformed then return end
+
+	if speed > 0 and emoteTrack then
+		stopEmote()
+	end
+
+	refreshState()
+end)
+
+humanoid.StateChanged:Connect(function(_, new)
+	if not transformed then return end
+
+	if new == Enum.HumanoidStateType.Jumping then
+		playJump()
+
+	elseif new == Enum.HumanoidStateType.Freefall then
+		playFall()
+
+	elseif new == Enum.HumanoidStateType.Landed then
+		destroyTrack(jumpTrack)
+		jumpTrack = nil
+		destroyTrack(fallTrack)
+		fallTrack = nil
+		currentState = "None"
+		refreshState()
+	end
+end)
+
+-----------------------------
+-- START
+-----------------------------
+playTransformation()
