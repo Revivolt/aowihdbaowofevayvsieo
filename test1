@@ -5,8 +5,8 @@ local ANIMATION_ID = 70883871260184          -- Your animation asset ID
 local FREEZE_AFTER_SECONDS = 1  -- Seconds before the animation freezes
 
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 1
-local SPRINT_SPEED = 3
+local BASE_WALK_SPEED = 16
+local SPRINT_SPEED = 30
 
 -----------------------------
 -- SERVICES
