@@ -3,7 +3,7 @@
 -----------------------------
 local ANIMATION_ID = 70883871260184
 local FREEZE_AFTER_SECONDS = 0.04
-local REFRESH_INTERVAL = 1.5  -- How often (seconds) to re-trigger for other clients
+local NUDGE_INTERVAL = 2  -- How often to ping other clients (seconds)
 
 -- MOVEMENT SPEEDS
 local BASE_WALK_SPEED = 16
@@ -26,40 +26,34 @@ local animator = humanoid:WaitForChild("Animator")
 -----------------------------
 -- PLAY & FREEZE
 -----------------------------
-local track  -- kept in outer scope so the refresh loop can control it
-
 local function playAndFreeze()
 	if ANIMATION_ID == 0 then return end
-
-	-- Stop & destroy old track if one exists
-	if track then
-		track:Stop()
-		track:Destroy()
-	end
 
 	local anim = Instance.new("Animation")
 	anim.AnimationId = "rbxassetid://" .. ANIMATION_ID
 
-	track = animator:LoadAnimation(anim)
+	local track = animator:LoadAnimation(anim)
 	track.Looped = true
 	track.Priority = Enum.AnimationPriority.Action
 	track:Play()
 
 	task.delay(FREEZE_AFTER_SECONDS, function()
-		if track and track.IsPlaying then
-			track:AdjustSpeed(0)  -- Freeze at desired pose
-		end
+		if not (track and track.IsPlaying) then return end
+
+		track:AdjustSpeed(0) -- Freeze at the pose
+
+		-- Nudge loop: toggles speed by a value so small it's invisible,
+		-- but enough to force replication to other clients without any snap
+		task.spawn(function()
+			while track and track.IsPlaying do
+				task.wait(NUDGE_INTERVAL)
+				track:AdjustSpeed(0.00001) -- sub-pixel movement, invisible
+				task.wait(0.1)
+				track:AdjustSpeed(0)       -- freeze again
+			end
+		end)
 	end)
 end
-
--- Refresh loop: re-plays every REFRESH_INTERVAL seconds so
--- other clients keep receiving the replication signal
-task.spawn(function()
-	while true do
-		playAndFreeze()
-		task.wait(REFRESH_INTERVAL)
-	end
-end)
 
 -----------------------------
 -- SPRINT INPUT
@@ -78,3 +72,8 @@ UserInputService.InputEnded:Connect(function(input)
 		humanoid.WalkSpeed = BASE_WALK_SPEED
 	end
 end)
+
+-----------------------------
+-- START
+-----------------------------
+playAndFreeze()
