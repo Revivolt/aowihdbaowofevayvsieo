@@ -1,13 +1,12 @@
 -----------------------------
 -- CONFIG
 -----------------------------
-local ANIMATION_ID = 70883871260184
-local FREEZE_AFTER_SECONDS = 0.04
-local NUDGE_INTERVAL = 2  -- How often to ping other clients (seconds)
+local ANIMATION_ID = 70883871260184          -- Your animation asset ID
+local FREEZE_AFTER_SECONDS = 1  -- Seconds before the animation freezes
 
 -- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 16
-local SPRINT_SPEED = 30
+local BASE_WALK_SPEED = 1
+local SPRINT_SPEED = 3
 
 -----------------------------
 -- SERVICES
@@ -35,23 +34,13 @@ local function playAndFreeze()
 	local track = animator:LoadAnimation(anim)
 	track.Looped = true
 	track.Priority = Enum.AnimationPriority.Action
+
 	track:Play()
 
 	task.delay(FREEZE_AFTER_SECONDS, function()
-		if not (track and track.IsPlaying) then return end
-
-		track:AdjustSpeed(0) -- Freeze at the pose
-
-		-- Nudge loop: toggles speed by a value so small it's invisible,
-		-- but enough to force replication to other clients without any snap
-		task.spawn(function()
-			while track and track.IsPlaying do
-				task.wait(NUDGE_INTERVAL)
-				track:AdjustSpeed(0.00001) -- sub-pixel movement, invisible
-				task.wait(0.1)
-				track:AdjustSpeed(0)       -- freeze again
-			end
-		end)
+		if track and track.IsPlaying then
+			track:AdjustSpeed(0) -- Freezes the animation in place permanently
+		end
 	end)
 end
 
