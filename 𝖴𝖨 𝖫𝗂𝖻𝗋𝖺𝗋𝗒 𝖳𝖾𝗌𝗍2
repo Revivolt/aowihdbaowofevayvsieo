@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2070,7 +2070,7 @@ local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
 local emote1Track = nil
-local savedTracks = {}  -- stores tracks to restore on toggle off
+local savedTracks = {}
 local toggleEnabled = false
 
 local function updateCharacter()
@@ -2124,8 +2124,17 @@ local function saveTracks()
 end
 
 local function restoreTracks()
+    -- Re-enable the Animate script so walk/run/jump/fall/climb all resume
+    local char = player.Character
+    if char then
+        local animateScript = char:FindFirstChild("Animate")
+        if animateScript then
+            animateScript.Disabled = false
+        end
+    end
+    -- Restore any other saved tracks (e.g. idle)
     for _, saved in pairs(savedTracks) do
-        if saved.track and saved.track.IsPlaying == false then
+        if saved.track and not saved.track.IsPlaying then
             saved.track:Play()
             saved.track:AdjustSpeed(saved.speed)
             saved.track.TimePosition = saved.timePosition
@@ -2165,9 +2174,10 @@ Tab:AddToggle({
                 t:Stop()
             end
 
+            -- Disable instead of destroy so we can restore it later
             local animateScript = char:FindFirstChild("Animate")
             if animateScript then
-                animateScript:Destroy()
+                animateScript.Disabled = true
             end
 
             local emote1Anim = Instance.new("Animation")
@@ -2177,14 +2187,14 @@ Tab:AddToggle({
             emote1Track:AdjustSpeed(0)
             emote1Track.TimePosition = size * 0.00000323
 
-            -- Step 2: After 0.1s, play the main invisibility anim
+            -- Step 2: Immediately play the main invisibility anim
             task.delay(0, function()
                 if toggleEnabled then
                     playAnim()
                 end
             end)
         else
-            -- Stop both tracks then restore previous animations
+            -- Stop both tracks then restore everything
             destroyTrack(emote1Track)
             emote1Track = nil
             destroyTrack(animTrack)
