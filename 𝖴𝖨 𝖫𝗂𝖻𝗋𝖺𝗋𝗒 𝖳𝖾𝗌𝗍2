@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1364,13 +1364,12 @@ local cpAnimId    = 70883871260184
 -- ── Decoy state ───────────────────────────────────────────────────────────────
 local UIS              = game:GetService("UserInputService")
 local DECOY_SPEED      = 16
-local DECOY_HRP_HEIGHT = 3  -- kept for potential future use
 
 local cpDecoyModel     = nil
 local cpDecoyConn      = nil
 local cpDecoyInputConn = nil
 local cpDecoyInputEnd  = nil
-local cpDecoyBG        = nil   -- BodyGyro for yaw control; BV removed (Humanoid drives movement)
+local cpDecoyBG        = nil
 local cpDecoyRoot      = nil
 local cpDecoyHum       = nil
 local cpDecoyControl   = {F=0, B=0, R=0, L=0}
@@ -1380,7 +1379,6 @@ local function destroyDecoy()
     if cpDecoyInputConn then cpDecoyInputConn:Disconnect() cpDecoyInputConn = nil end
     if cpDecoyInputEnd  then cpDecoyInputEnd:Disconnect()  cpDecoyInputEnd  = nil end
 
-    -- Restore camera to real character before destroying
     pcall(function()
         local myChar = weldLocal and weldLocal.Character
         local hum    = myChar and myChar:FindFirstChildOfClass("Humanoid")
@@ -1404,15 +1402,16 @@ local function spawnDecoy(myChar)
     local myHRP = myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
 
-    -- ── Clone the full character so Motor6D joints and the Animate
-    --    LocalScript are preserved. This lets Roblox's animation system
-    --    drive idle/walk on the decoy completely independently.
+    -- Clone full character so Motor6D joints and appearance are preserved
     cpDecoyModel      = myChar:Clone()
     cpDecoyModel.Name = "CPDecoy"
 
-    -- Remove server-side Scripts only; keep LocalScripts (Animate, etc.)
+    -- Strip ALL scripts — the cloned Animate LocalScript calls
+    -- Players:GetPlayerFromCharacter() → gets nil → crashes on .Name
     for _, v in ipairs(cpDecoyModel:GetDescendants()) do
-        if v:IsA("Script") then v:Destroy() end
+        if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("ModuleScript") then
+            v:Destroy()
+        end
     end
 
     cpDecoyRoot = cpDecoyModel:FindFirstChild("HumanoidRootPart")
@@ -1424,7 +1423,6 @@ local function spawnDecoy(myChar)
         return
     end
 
-    -- Disable collision on everything except HRP (Humanoid needs it for ground)
     for _, part in ipairs(cpDecoyModel:GetDescendants()) do
         if part:IsA("BasePart") and part ~= cpDecoyRoot then
             part.CanCollide = false
@@ -1433,13 +1431,15 @@ local function spawnDecoy(myChar)
     end
 
     cpDecoyRoot.CFrame    = myHRP.CFrame
-    cpDecoyHum.MaxHealth  = math.huge
-    cpDecoyHum.Health     = math.huge
+    cpDecoyHum.MaxHealth  = 1e6
+    cpDecoyHum.Health     = 1e6
     cpDecoyHum.WalkSpeed  = DECOY_SPEED
-    cpDecoyHum.AutoRotate = false  -- We control yaw via BodyGyro
+    cpDecoyHum.AutoRotate = false
 
-    -- BodyGyro for camera-relative rotation (BodyVelocity removed;
-    -- Humanoid:Move handles movement + gravity naturally)
+    -- Fresh Animator so we can mirror real character tracks manually
+    local decoyAnimator = Instance.new("Animator")
+    decoyAnimator.Parent = cpDecoyHum
+
     cpDecoyBG           = Instance.new("BodyGyro")
     cpDecoyBG.MaxTorque = Vector3.new(0, 9e4, 0)
     cpDecoyBG.P         = 9e4
@@ -1447,17 +1447,28 @@ local function spawnDecoy(myChar)
     cpDecoyBG.Parent    = cpDecoyRoot
 
     cpDecoyModel.Parent = workspace
-
-    -- Point the camera at the decoy
     workspace.CurrentCamera.CameraSubject = cpDecoyHum
 
-    -- WASD drives the decoy
+    -- Cache of animationId → decoy AnimationTrack
+    local decoyTrackCache = {}
+
+    local function getOrLoadDecoyTrack(animId)
+        if decoyTrackCache[animId] then return decoyTrackCache[animId] end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        local track = decoyAnimator:LoadAnimation(anim)
+        anim:Destroy()
+        decoyTrackCache[animId] = track
+        return track
+    end
+
     cpDecoyInputConn = UIS.InputBegan:Connect(function(inp, gp)
         if gp then return end
         local k   = inp.KeyCode.Name:lower()
         local map = { w="F", s="B", d="R", a="L" }
         if map[k] then cpDecoyControl[map[k]] = 1 end
     end)
+
     cpDecoyInputEnd = UIS.InputEnded:Connect(function(inp, gp)
         if gp then return end
         local k   = inp.KeyCode.Name:lower()
@@ -1468,8 +1479,10 @@ local function spawnDecoy(myChar)
     cpDecoyConn = weldRun.Heartbeat:Connect(function(dt)
         if not cpDecoyHum or not cpDecoyHum.Parent then return end
 
+        local cam = workspace.CurrentCamera
+        if not cam then return end
+
         -- ── Camera-relative movement direction ────────────────────────────────
-        local cam       = workspace.CurrentCamera
         local look      = cam.CoordinateFrame.LookVector
         local right     = cam.CoordinateFrame.RightVector
         local flatLook  = Vector3.new(look.X,  0, look.Z)
@@ -1481,26 +1494,49 @@ local function spawnDecoy(myChar)
             flatLook  * (cpDecoyControl.F - cpDecoyControl.B)
           + flatRight * (cpDecoyControl.R - cpDecoyControl.L)
 
-        -- Humanoid:Move sets MoveDirection so the cloned Animate script
-        -- automatically switches between idle and walk animations.
-        -- Gravity and ground detection are handled by the Humanoid itself.
         cpDecoyHum:Move(
             moveDir.Magnitude > 0.1 and moveDir.Unit or Vector3.zero,
-            false  -- world-space direction
+            false
         )
 
-        -- Rotate the decoy to face the camera's yaw when moving
-        if moveDir.Magnitude > 0.1 then
+        if moveDir.Magnitude > 0.1 and cpDecoyBG then
             local _, yaw, _ = cam.CoordinateFrame:ToEulerAnglesYXZ()
             cpDecoyBG.CFrame = CFrame.Angles(0, yaw, 0)
         end
 
-        -- ── No CFrame part-mirroring needed — Motor6D joints + the cloned
-        --    Animate LocalScript handle the decoy's pose independently. ────────
+        -- ── Mirror real character's animation tracks onto the decoy ───────────
+        -- cpTrack (the wall emote) is explicitly excluded — only the real
+        -- character plays it; the decoy shows normal idle/walk/etc.
+        local realHum      = myChar:FindFirstChildOfClass("Humanoid")
+        local realAnimator = realHum and realHum:FindFirstChildOfClass("Animator")
+        if realAnimator then
+            local activeIds = {}
+
+            for _, realTrack in ipairs(realAnimator:GetPlayingAnimationTracks()) do
+                if realTrack ~= cpTrack and realTrack.Animation then
+                    local animId = realTrack.Animation.AnimationId
+                    activeIds[animId] = realTrack
+
+                    local decoyTrack = getOrLoadDecoyTrack(animId)
+                    if not decoyTrack.IsPlaying then
+                        decoyTrack:Play(0)
+                    end
+                    -- Sync playback position so pose matches exactly
+                    decoyTrack.TimePosition = realTrack.TimePosition
+                end
+            end
+
+            -- Stop decoy tracks whose real counterpart is no longer playing
+            for animId, decoyTrack in pairs(decoyTrackCache) do
+                if decoyTrack.IsPlaying and not activeIds[animId] then
+                    decoyTrack:Stop(0)
+                end
+            end
+        end
     end)
 end
 
--- ── Toggle (unchanged) ────────────────────────────────────────────────────────
+-- ── Toggle ────────────────────────────────────────────────────────────────────
 Tab:AddToggle({
     Label   = "Wall (Layered Clothing)",
     Default = false,
@@ -1513,7 +1549,6 @@ Tab:AddToggle({
 
             if cpConn then cpConn:Disconnect() cpConn = nil end
 
-            -- Snap real character to decoy's position on toggle-off
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myRoot and cpDecoyRoot and cpDecoyRoot.Parent then
@@ -1534,7 +1569,6 @@ Tab:AddToggle({
 
         local myChar = weldLocal.Character
 
-        -- Spawn decoy and redirect camera BEFORE anything moves
         spawnDecoy(myChar)
         lastChar = myChar
 
@@ -1544,7 +1578,10 @@ Tab:AddToggle({
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
 
-            if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+            -- Guard .Parent before .Name — selectedTarget can be a destroyed
+            -- Instance (non-nil Lua ref) which crashes on .Name access
+            if not selectedTarget or not selectedTarget.Parent
+            or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
 
@@ -1573,7 +1610,7 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Re-spawn decoy on genuine character respawn
+            -- Re-spawn decoy on genuine character respawn only
             if curChar ~= lastChar then
                 lastChar = curChar
                 spawnDecoy(curChar)
@@ -1591,9 +1628,8 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Stop all tracks on the REAL character except the emote.
-                -- The decoy's cloned Animate script runs independently and
-                -- is unaffected by what we do to the real character here.
+                -- Stop all tracks on the real character except the wall emote.
+                -- The decoy's Animator runs independently and is unaffected.
                 local hum      = curChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
