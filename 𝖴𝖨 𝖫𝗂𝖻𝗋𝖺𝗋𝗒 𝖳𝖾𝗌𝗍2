@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1362,95 +1362,76 @@ local cpNoCollide = true
 local cpFreezeAt  = 0
 local cpAnimId    = 70883871260184
 
--- Fake position config
+-- Fake position / camera config
 local UIS         = game:GetService("UserInputService")
 local Camera      = workspace.CurrentCamera
 local cpMoveSpeed = 16
+local cpCamDist   = 12
+local cpCamHeight = 2   -- look target height offset
 
 local cpFakeCFrame  = nil
 local cpPrevCamType = nil
-local cpFakeClone   = nil
-local cpCloneTracks = {}  -- tracked separately so we never re-load each frame
+local cpFakeChar    = nil
+local cpCamYaw      = 0
+local cpCamPitch    = -0.2
 
--- Builds a fully anchored, static visual clone (no physics, no scripts)
-local function makeFakeClone(char)
-    local clone = char:Clone()
+-- Destroy the fake character clone
+local function cpDestroyFakeChar()
+    if cpFakeChar then
+        cpFakeChar:Destroy()
+        cpFakeChar = nil
+    end
+end
 
-    -- Strip all scripts
-    for _, v in ipairs(clone:GetDescendants()) do
-        if v:IsA("BaseScript") or v:IsA("ModuleScript") then
-            v:Destroy()
+-- Hide or show the real character locally only
+local function cpSetRealCharVis(char, hidden)
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            sethiddenproperty(part, "LocalTransparencyModifier", hidden and 1 or 0)
         end
     end
+end
 
-    -- Freeze humanoid
-    local hum = clone:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.PlatformStand = true
-        hum.AutoRotate    = false
+-- Clone character into workspace, strip scripts so it's purely visual
+local function cpBuildFakeChar(char)
+    cpDestroyFakeChar()
+    local clone = char:Clone()
+    for _, obj in ipairs(clone:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript")
+        or obj:IsA("Animator") then
+            obj:Destroy()
+        end
     end
-
-    -- Anchor every part so the physics engine never touches this clone
+    -- Unanchor everything so CFrame assignments work freely
     for _, part in ipairs(clone:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Anchored   = true
             part.CanCollide = false
         end
     end
-
     clone.Parent = workspace
-    return clone
+    cpFakeChar = clone
 end
 
--- Loads one animation on the clone only if not already loaded
-local function getOrLoadCloneTrack(cloneAnim, animObj)
-    local id = animObj.AnimationId
-    if cpCloneTracks[id] then return cpCloneTracks[id] end
-    local t = cloneAnim:LoadAnimation(animObj)
-    t:Play(0)
-    cpCloneTracks[id] = t
-    return t
-end
+-- Each frame: copy the real char's part poses onto the fake clone,
+-- then shift the whole fake clone so it sits at cpFakeCFrame
+local function cpSyncFakeChar(fakeCF)
+    if not cpFakeChar or not weldLocal.Character then return end
+    local realChar = weldLocal.Character
+    local realRoot = realChar:FindFirstChild("HumanoidRootPart")
+    if not realRoot then return end
 
--- Syncs clone position and animation state from real character
-local function syncClone(clone, realChar, fakeCF)
-    -- PivotTo moves the entire anchored model at once, no per-part CFrame needed
-    clone:PivotTo(fakeCF)
+    -- Delta = "where fake HRP should be" relative to real HRP
+    local delta = fakeCF * realRoot.CFrame:Inverse()
 
-    local realHum   = realChar:FindFirstChildOfClass("Humanoid")
-    local cloneHum  = clone:FindFirstChildOfClass("Humanoid")
-    local realAnim  = realHum  and realHum:FindFirstChildOfClass("Animator")
-    local cloneAnim = cloneHum and cloneHum:FindFirstChildOfClass("Animator")
-
-    if not realAnim or not cloneAnim then return end
-
-    local playing = {}
-    for _, realTrack in ipairs(realAnim:GetPlayingAnimationTracks()) do
-        local id = realTrack.Animation.AnimationId
-        playing[id] = realTrack
-
-        local ct = getOrLoadCloneTrack(cloneAnim, realTrack.Animation)
-        ct.TimePosition = realTrack.TimePosition
-    end
-
-    -- Stop clone tracks whose real counterpart stopped
-    for id, ct in pairs(cpCloneTracks) do
-        if not playing[id] then
-            ct:Stop(0)
-            ct:Destroy()
-            cpCloneTracks[id] = nil
+    for _, realPart in ipairs(realChar:GetDescendants()) do
+        if realPart:IsA("BasePart") then
+            local fakePart = cpFakeChar:FindFirstChild(realPart.Name)
+            if fakePart then
+                fakePart.CFrame = delta * realPart.CFrame
+            end
         end
-    end
-end
-
-local function destroyClone()
-    if cpFakeClone then
-        cpFakeClone:Destroy()
-        cpFakeClone = nil
-    end
-    for id, t in pairs(cpCloneTracks) do
-        pcall(function() t:Destroy() end)
-        cpCloneTracks[id] = nil
     end
 end
 
@@ -1466,7 +1447,7 @@ Tab:AddToggle({
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
 
-            -- Snap real character to where the fake clone was standing
+            -- Snap real character to where the fake was
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myRoot and cpFakeCFrame then
@@ -1475,14 +1456,17 @@ Tab:AddToggle({
                 myRoot.AssemblyAngularVelocity = Vector3.zero
             end
 
-            -- Restore camera before destroying clone
+            -- Restore real char visibility
+            cpSetRealCharVis(myChar, false)
+            cpDestroyFakeChar()
+
+            -- Restore camera
             if cpPrevCamType then
                 Camera.CameraType = cpPrevCamType
-                cpPrevCamType = nil
+                cpPrevCamType     = nil
             end
-
-            cpFakeCFrame = nil
-            destroyClone()
+            UIS.MouseBehavior = Enum.MouseBehavior.Default
+            cpFakeCFrame      = nil
 
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
             cpConn   = nil
@@ -1495,17 +1479,24 @@ Tab:AddToggle({
 
         local myChar = weldLocal.Character
         local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myRoot then return end
+        if not myChar or not myRoot then return end
 
-        -- Fake position starts exactly at real character
+        -- Seed fake position at real position
         cpFakeCFrame = myRoot.CFrame
 
-        -- Spawn anchored clone at same spot
-        cpFakeClone = makeFakeClone(myChar)
+        -- Seed camera angles from current camera so there's no jump
+        local look    = Camera.CFrame.LookVector
+        cpCamYaw      = math.atan2(-look.X, -look.Z)
+        cpCamPitch    = math.clamp(math.asin(look.Y), -1.4, 0.5)
 
-        -- Take camera control
+        -- Build fake clone and hide real char
+        cpBuildFakeChar(myChar)
+        cpSetRealCharVis(myChar, true)
+
+        -- Take over camera and lock mouse
         cpPrevCamType     = Camera.CameraType
         Camera.CameraType = Enum.CameraType.Scriptable
+        UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
 
         activeFlingCount = activeFlingCount + 1
 
@@ -1525,13 +1516,15 @@ Tab:AddToggle({
                     mr.AssemblyAngularVelocity = Vector3.zero
                 end
 
+                cpSetRealCharVis(mc, false)
+                cpDestroyFakeChar()
+
                 if cpPrevCamType then
                     Camera.CameraType = cpPrevCamType
-                    cpPrevCamType = nil
+                    cpPrevCamType     = nil
                 end
-
-                cpFakeCFrame = nil
-                destroyClone()
+                UIS.MouseBehavior = Enum.MouseBehavior.Default
+                cpFakeCFrame      = nil
 
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
                 cpConn   = nil
@@ -1549,12 +1542,11 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Rebuild clone on respawn
+            -- Rebuild fake clone if character respawned
             if myChar ~= lastChar then
                 lastChar = myChar
-                destroyClone()
-                cpFakeClone = makeFakeClone(myChar)
-
+                cpBuildFakeChar(myChar)
+                cpSetRealCharVis(myChar, true)
                 if cpTrack then
                     cpTrack:Stop()
                     cpTrack:Destroy()
@@ -1562,7 +1554,12 @@ Tab:AddToggle({
                 cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
             end
 
-            -- Move fake position with WASD (camera-relative, horizontal only)
+            -- Mouse delta → camera yaw/pitch
+            local mouseDelta = UIS:GetMouseDelta()
+            cpCamYaw   = cpCamYaw   - mouseDelta.X * 0.005
+            cpCamPitch = math.clamp(cpCamPitch - mouseDelta.Y * 0.005, -1.4, 0.5)
+
+            -- WASD moves fake position relative to camera yaw
             local moveDir = Vector3.zero
             if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir += Vector3.new( 0, 0, -1) end
             if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir += Vector3.new( 0, 0,  1) end
@@ -1570,31 +1567,31 @@ Tab:AddToggle({
             if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir += Vector3.new( 1, 0,  0) end
 
             if moveDir.Magnitude > 0 then
-                local camYaw  = math.atan2(-Camera.CFrame.LookVector.X, -Camera.CFrame.LookVector.Z)
-                local rotated = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
-                cpFakeCFrame  = cpFakeCFrame * CFrame.new(Vector3.new(rotated.X, 0, rotated.Z) * cpMoveSpeed * dt)
+                local flat    = CFrame.Angles(0, cpCamYaw, 0):VectorToWorldSpace(moveDir.Unit)
+                cpFakeCFrame  = cpFakeCFrame * CFrame.new(Vector3.new(flat.X, 0, flat.Z) * cpMoveSpeed * dt)
             end
 
-            -- Sync clone to fake position
-            if cpFakeClone and cpFakeClone.Parent then
-                syncClone(cpFakeClone, myChar, cpFakeCFrame)
-            end
+            -- Update camera: orbit around fake position
+            local camRot    = CFrame.Angles(0, cpCamYaw, 0) * CFrame.Angles(cpCamPitch, 0, 0)
+            local camBack   = camRot:VectorToWorldSpace(Vector3.new(0, 0, cpCamDist))
+            local lookAt    = cpFakeCFrame.Position + Vector3.new(0, cpCamHeight, 0)
+            Camera.CFrame   = CFrame.new(lookAt + camBack, lookAt)
 
-            -- Camera follows fake position, yaw-only back offset so height never drifts
-            local camYaw     = math.atan2(-Camera.CFrame.LookVector.X, -Camera.CFrame.LookVector.Z)
-            local backDir    = Vector3.new(math.sin(camYaw), 0, math.cos(camYaw))
-            local camPos     = cpFakeCFrame.Position + backDir * 14 + Vector3.new(0, 6, 0)
-            Camera.CFrame    = CFrame.new(camPos, cpFakeCFrame.Position + Vector3.new(0, 2, 0))
+            -- Sync fake clone pose to mirror real char at fake position
+            cpSyncFakeChar(cpFakeCFrame)
 
             pcall(function()
-                -- Disable collisions on real character
+                -- Disable collisions on real char
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and cpNoCollide then
                         part.CanCollide = false
                     end
                 end
 
-                -- Stop all animations on real character except the active emote
+                -- Keep real char hidden (respawn can reset transparency)
+                cpSetRealCharVis(myChar, true)
+
+                -- Stop all animations except the active emote
                 local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
@@ -1605,7 +1602,7 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Position real character under target
+                -- Position real character under target (server/physics side)
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
 
