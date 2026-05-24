@@ -2066,11 +2066,8 @@ Tab:AddTextInput({
 
 local ANIMATION_ID = 102940155040466
 local ANIM_SPEED = 1
-
 local Players = game:GetService("Players")
-
 local player = Players.LocalPlayer
-
 local humanoid, animator
 local animTrack = nil
 local toggleEnabled = false
@@ -2080,7 +2077,6 @@ local function updateCharacter()
     humanoid = character:WaitForChild("Humanoid")
     animator = humanoid:WaitForChild("Animator")
 end
-
 updateCharacter()
 
 local function isValidId(id)
@@ -2107,7 +2103,6 @@ end
 local function playAnim()
     destroyTrack(animTrack)
     animTrack = nil
-
     animTrack = loadAnimation(ANIMATION_ID, true, Enum.AnimationPriority.Action)
     if animTrack then
         animTrack:Play()
@@ -2119,10 +2114,9 @@ end
 player.CharacterAdded:Connect(function(character)
     humanoid = character:WaitForChild("Humanoid")
     animator = humanoid:WaitForChild("Animator")
-    animTrack = nil -- old track is gone after reset
-
+    animTrack = nil
     if toggleEnabled then
-        task.wait(0.1) -- small wait for character to fully load
+        task.wait(0.1)
         playAnim()
     end
 end)
@@ -2133,7 +2127,34 @@ Tab:AddToggle({
     Callback = function(value)
         toggleEnabled = value
         if value then
-            playAnim()
+            -- Step 1: Play Emote 1
+            local char = player.Character or player.CharacterAdded:Wait()
+            local hum = char:WaitForChild("Humanoid")
+            local size = 1678
+            local hi = (4096^3 * 1024) + (999^2 * 516158) + (37^4 * 43) - (123^3 * 7) + (8888 * 9) - 314159 - 66^4 - 47471589
+
+            for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+                t:Stop()
+            end
+
+            local animateScript = char:FindFirstChild("Animate")
+            if animateScript then
+                animateScript:Destroy()
+            end
+
+            local emote1Anim = Instance.new("Animation")
+            emote1Anim.AnimationId = "rbxassetid://" .. hi
+            local emote1Track = hum:LoadAnimation(emote1Anim)
+            emote1Track:Play()
+            emote1Track:AdjustSpeed(0)
+            emote1Track.TimePosition = size * 0.00000323
+
+            -- Step 2: After 0.1s, play the main invisibility anim
+            task.delay(0.1, function()
+                if toggleEnabled then
+                    playAnim()
+                end
+            end)
         else
             destroyTrack(animTrack)
             animTrack = nil
