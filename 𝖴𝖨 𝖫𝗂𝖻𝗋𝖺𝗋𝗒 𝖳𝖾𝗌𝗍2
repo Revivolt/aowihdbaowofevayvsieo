@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2065,12 +2065,12 @@ Tab:AddTextInput({
 
 
 local ANIMATION_ID = 102940155040466
-local ANIM_SPEED = 1
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
-local emote1Track = nil  -- moved to outer scope
+local emote1Track = nil
+local savedTracks = {}  -- stores tracks to restore on toggle off
 local toggleEnabled = false
 
 local function updateCharacter()
@@ -2112,11 +2112,34 @@ local function playAnim()
     end
 end
 
+local function saveTracks()
+    savedTracks = {}
+    for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do
+        table.insert(savedTracks, {
+            track = track,
+            speed = track.Speed,
+            timePosition = track.TimePosition,
+        })
+    end
+end
+
+local function restoreTracks()
+    for _, saved in pairs(savedTracks) do
+        if saved.track and saved.track.IsPlaying == false then
+            saved.track:Play()
+            saved.track:AdjustSpeed(saved.speed)
+            saved.track.TimePosition = saved.timePosition
+        end
+    end
+    savedTracks = {}
+end
+
 player.CharacterAdded:Connect(function(character)
     humanoid = character:WaitForChild("Humanoid")
     animator = humanoid:WaitForChild("Animator")
     animTrack = nil
     emote1Track = nil
+    savedTracks = {}
     if toggleEnabled then
         task.wait(0.1)
         playAnim()
@@ -2129,6 +2152,9 @@ Tab:AddToggle({
     Callback = function(value)
         toggleEnabled = value
         if value then
+            -- Save currently playing tracks before we touch anything
+            saveTracks()
+
             -- Step 1: Play Emote 1
             local char = player.Character or player.CharacterAdded:Wait()
             local hum = char:WaitForChild("Humanoid")
@@ -2146,23 +2172,24 @@ Tab:AddToggle({
 
             local emote1Anim = Instance.new("Animation")
             emote1Anim.AnimationId = "rbxassetid://" .. hi
-            emote1Track = hum:LoadAnimation(emote1Anim)  -- stored in outer variable
+            emote1Track = hum:LoadAnimation(emote1Anim)
             emote1Track:Play()
             emote1Track:AdjustSpeed(0)
             emote1Track.TimePosition = size * 0.00000323
 
             -- Step 2: After 0.1s, play the main invisibility anim
-            task.delay(0.1, function()
+            task.delay(0, function()
                 if toggleEnabled then
                     playAnim()
                 end
             end)
         else
-            -- Stop both tracks on toggle off
+            -- Stop both tracks then restore previous animations
             destroyTrack(emote1Track)
             emote1Track = nil
             destroyTrack(animTrack)
             animTrack = nil
+            restoreTracks()
         end
     end,
 })
