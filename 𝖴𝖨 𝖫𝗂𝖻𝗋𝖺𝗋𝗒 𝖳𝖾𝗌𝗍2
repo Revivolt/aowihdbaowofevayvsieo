@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1365,10 +1365,89 @@ local cpAnimId    = 70883871260184
 -- Fake position config
 local UIS         = game:GetService("UserInputService")
 local Camera      = workspace.CurrentCamera
-local cpMoveSpeed = 16  -- matches default walk speed
+local cpMoveSpeed = 16
 
 local cpFakeCFrame  = nil
 local cpPrevCamType = nil
+local cpFakeClone   = nil  -- visual copy of your character
+
+-- Builds a local-only clone of your character for the fake visual
+local function makeFakeClone(char)
+    local clone = char:Clone()
+
+    -- Strip all scripts so nothing interferes
+    for _, v in ipairs(clone:GetDescendants()) do
+        if v:IsA("LocalScript") or v:IsA("Script") or v:IsA("ModuleScript") then
+            v:Destroy()
+        end
+    end
+
+    -- Freeze humanoid so it doesn't fall or move on its own
+    local hum = clone:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.PlatformStand = true
+        hum.AutoRotate    = false
+    end
+
+    -- Unanchor all parts so CFrame can be set freely
+    for _, part in ipairs(clone:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored     = false
+            part.CanCollide   = false
+        end
+    end
+
+    clone.Parent = workspace
+    return clone
+end
+
+-- Syncs the clone's root + mirrored animation to match the real character
+local function syncClone(clone, realChar, fakeCF)
+    local cloneRoot = clone:FindFirstChild("HumanoidRootPart")
+    if not cloneRoot then return end
+
+    cloneRoot.CFrame                = fakeCF
+    cloneRoot.AssemblyLinearVelocity  = Vector3.zero
+    cloneRoot.AssemblyAngularVelocity = Vector3.zero
+
+    -- Mirror currently playing animation tracks from real → clone
+    local realHum   = realChar:FindFirstChildOfClass("Humanoid")
+    local cloneHum  = clone:FindFirstChildOfClass("Humanoid")
+    local realAnim  = realHum  and realHum:FindFirstChildOfClass("Animator")
+    local cloneAnim = cloneHum and cloneHum:FindFirstChildOfClass("Animator")
+
+    if realAnim and cloneAnim then
+        local cloneTracks = {}
+        for _, t in ipairs(cloneAnim:GetPlayingAnimationTracks()) do
+            cloneTracks[t.Animation.AnimationId] = t
+        end
+
+        for _, realTrack in ipairs(realAnim:GetPlayingAnimationTracks()) do
+            local id = realTrack.Animation.AnimationId
+            if not cloneTracks[id] then
+                local newTrack = cloneAnim:LoadAnimation(realTrack.Animation)
+                newTrack:Play(0)
+            else
+                -- Keep time position in sync
+                cloneTracks[id].TimePosition = realTrack.TimePosition
+                cloneTracks[id] = nil  -- mark as still needed
+            end
+        end
+
+        -- Stop any clone tracks that the real char stopped playing
+        for _, leftover in pairs(cloneTracks) do
+            leftover:Stop(0)
+        end
+    end
+end
+
+-- Destroys the fake clone cleanly
+local function destroyClone()
+    if cpFakeClone then
+        cpFakeClone:Destroy()
+        cpFakeClone = nil
+    end
+end
 
 -- Toggle
 Tab:AddToggle({
@@ -1382,11 +1461,11 @@ Tab:AddToggle({
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
 
-            -- Snap real character to fake position before cleanup
+            -- Snap real character to where the fake clone was
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myRoot and cpFakeCFrame then
-                myRoot.CFrame = cpFakeCFrame
+                myRoot.CFrame                = cpFakeCFrame
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
             end
@@ -1398,6 +1477,7 @@ Tab:AddToggle({
             end
 
             cpFakeCFrame = nil
+            destroyClone()
 
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
             cpConn   = nil
@@ -1411,11 +1491,12 @@ Tab:AddToggle({
         -- Initialize fake position at current character location
         local myChar = weldLocal.Character
         local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if myRoot then
-            cpFakeCFrame = myRoot.CFrame
-        else
-            return
-        end
+        if not myRoot then return end
+
+        cpFakeCFrame = myRoot.CFrame
+
+        -- Spawn fake clone at the same spot
+        cpFakeClone = makeFakeClone(myChar)
 
         -- Take over camera
         cpPrevCamType     = Camera.CameraType
@@ -1434,7 +1515,7 @@ Tab:AddToggle({
                 local mc = weldLocal.Character
                 local mr = mc and mc:FindFirstChild("HumanoidRootPart")
                 if mr and cpFakeCFrame then
-                    mr.CFrame = cpFakeCFrame
+                    mr.CFrame                = cpFakeCFrame
                     mr.AssemblyLinearVelocity  = Vector3.zero
                     mr.AssemblyAngularVelocity = Vector3.zero
                 end
@@ -1445,6 +1526,7 @@ Tab:AddToggle({
                 end
 
                 cpFakeCFrame = nil
+                destroyClone()
 
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
                 cpConn   = nil
@@ -1462,28 +1544,13 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Move fake position with WASD relative to camera yaw
-            local moveDir = Vector3.zero
-            if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir += Vector3.new( 0, 0, -1) end
-            if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir += Vector3.new( 0, 0,  1) end
-            if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir += Vector3.new(-1, 0,  0) end
-            if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir += Vector3.new( 1, 0,  0) end
-
-            if moveDir.Magnitude > 0 then
-                local camYaw   = math.atan2(-Camera.CFrame.LookVector.X, -Camera.CFrame.LookVector.Z)
-                local rotated  = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
-                cpFakeCFrame   = cpFakeCFrame * CFrame.new(Vector3.new(rotated.X, 0, rotated.Z) * cpMoveSpeed * dt)
-            end
-
-            -- Point camera at fake position (standard third-person offset)
-            local camOffset  = Vector3.new(0, 6, 14)
-            local fakeLook   = Camera.CFrame.LookVector  -- preserve mouse look direction
-            local camPos     = cpFakeCFrame.Position - (fakeLook * camOffset.Z) + Vector3.new(0, camOffset.Y, 0)
-            Camera.CFrame    = CFrame.new(camPos, cpFakeCFrame.Position + Vector3.new(0, 2, 0))
-
-            -- Reload animation on character change
+            -- Rebuild clone if character changed (respawn etc.)
             if myChar ~= lastChar then
                 lastChar = myChar
+
+                destroyClone()
+                cpFakeClone = makeFakeClone(myChar)
+
                 if cpTrack then
                     cpTrack:Stop()
                     cpTrack:Destroy()
@@ -1491,15 +1558,40 @@ Tab:AddToggle({
                 cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
             end
 
+            -- Move fake position with WASD relative to camera yaw only (no pitch)
+            local moveDir = Vector3.zero
+            if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir += Vector3.new( 0, 0, -1) end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir += Vector3.new( 0, 0,  1) end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir += Vector3.new(-1, 0,  0) end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir += Vector3.new( 1, 0,  0) end
+
+            if moveDir.Magnitude > 0 then
+                local camYaw  = math.atan2(-Camera.CFrame.LookVector.X, -Camera.CFrame.LookVector.Z)
+                local rotated = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
+                cpFakeCFrame  = cpFakeCFrame * CFrame.new(Vector3.new(rotated.X, 0, rotated.Z) * cpMoveSpeed * dt)
+            end
+
+            -- Update fake clone visual to follow fake position
+            if cpFakeClone and cpFakeClone.Parent then
+                syncClone(cpFakeClone, myChar, cpFakeCFrame)
+            end
+
+            -- Fixed camera: horizontal-only back offset so height never drifts
+            local camYaw     = math.atan2(-Camera.CFrame.LookVector.X, -Camera.CFrame.LookVector.Z)
+            local backDir    = Vector3.new(math.sin(camYaw), 0, math.cos(camYaw))
+            local camPos     = cpFakeCFrame.Position + backDir * 14 + Vector3.new(0, 6, 0)
+            local lookTarget = cpFakeCFrame.Position + Vector3.new(0, 2, 0)
+            Camera.CFrame    = CFrame.new(camPos, lookTarget)
+
             pcall(function()
-                -- Disable collisions
+                -- Disable collisions on real character
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and cpNoCollide then
                         part.CanCollide = false
                     end
                 end
 
-                -- Stop all animations except the active emote
+                -- Stop all animations on real character except the active emote
                 local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
@@ -1510,7 +1602,7 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Position real character under target (server/physics side)
+                -- Position real character under target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
 
