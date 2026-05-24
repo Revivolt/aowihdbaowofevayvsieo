@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2070,6 +2070,7 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
+local emote1Track = nil  -- moved to outer scope
 local toggleEnabled = false
 
 local function updateCharacter()
@@ -2115,6 +2116,7 @@ player.CharacterAdded:Connect(function(character)
     humanoid = character:WaitForChild("Humanoid")
     animator = humanoid:WaitForChild("Animator")
     animTrack = nil
+    emote1Track = nil
     if toggleEnabled then
         task.wait(0.1)
         playAnim()
@@ -2144,7 +2146,7 @@ Tab:AddToggle({
 
             local emote1Anim = Instance.new("Animation")
             emote1Anim.AnimationId = "rbxassetid://" .. hi
-            local emote1Track = hum:LoadAnimation(emote1Anim)
+            emote1Track = hum:LoadAnimation(emote1Anim)  -- stored in outer variable
             emote1Track:Play()
             emote1Track:AdjustSpeed(0)
             emote1Track.TimePosition = size * 0.00000323
@@ -2156,6 +2158,9 @@ Tab:AddToggle({
                 end
             end)
         else
+            -- Stop both tracks on toggle off
+            destroyTrack(emote1Track)
+            emote1Track = nil
             destroyTrack(animTrack)
             animTrack = nil
         end
