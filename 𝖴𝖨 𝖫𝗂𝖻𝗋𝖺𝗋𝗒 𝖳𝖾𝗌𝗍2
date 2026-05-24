@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1364,6 +1364,8 @@ local cpAnimId    = 70883871260184
 -- ── Decoy state ───────────────────────────────────────────────────────────────
 local UIS              = game:GetService("UserInputService")
 local DECOY_SPEED      = 16
+local DECOY_GRAVITY    = 120
+local DECOY_HRP_HEIGHT = 3
 
 local cpDecoyModel     = nil
 local cpDecoyConn      = nil
@@ -1375,13 +1377,16 @@ local cpDecoyRoot      = nil
 local cpDecoyHum       = nil
 local cpDecoyPartMap   = {}
 local cpDecoyControl   = {F=0, B=0, R=0, L=0}
+local cpDecoyVelY      = 0
+local cpDecoyOnGround  = false
+local cpDecoyRayParams = nil
 
 local function destroyDecoy()
     if cpDecoyConn      then cpDecoyConn:Disconnect()      cpDecoyConn      = nil end
     if cpDecoyInputConn then cpDecoyInputConn:Disconnect() cpDecoyInputConn = nil end
     if cpDecoyInputEnd  then cpDecoyInputEnd:Disconnect()  cpDecoyInputEnd  = nil end
 
-    -- Restore camera back to the real character before destroying
+    -- Restore camera to real character before destroying
     pcall(function()
         local myChar = weldLocal and weldLocal.Character
         local hum    = myChar and myChar:FindFirstChildOfClass("Humanoid")
@@ -1391,13 +1396,16 @@ local function destroyDecoy()
     end)
 
     if cpDecoyModel and cpDecoyModel.Parent then cpDecoyModel:Destroy() end
-    cpDecoyModel   = nil
-    cpDecoyBV      = nil
-    cpDecoyBG      = nil
-    cpDecoyRoot    = nil
-    cpDecoyHum     = nil
-    cpDecoyPartMap = {}
-    cpDecoyControl = {F=0, B=0, R=0, L=0}
+    cpDecoyModel     = nil
+    cpDecoyBV        = nil
+    cpDecoyBG        = nil
+    cpDecoyRoot      = nil
+    cpDecoyHum       = nil
+    cpDecoyPartMap   = {}
+    cpDecoyControl   = {F=0, B=0, R=0, L=0}
+    cpDecoyVelY      = 0
+    cpDecoyOnGround  = false
+    cpDecoyRayParams = nil
 end
 
 local function spawnDecoy(myChar)
@@ -1417,18 +1425,19 @@ local function spawnDecoy(myChar)
     root.Transparency = 1
     root.CanCollide   = false
     root.Anchored     = false
-    root.CFrame       = myHRP.CFrame    -- exact position at toggle time
+    root.CFrame       = myHRP.CFrame
     root.Parent       = cpDecoyModel
     cpDecoyRoot       = root
 
-    -- Humanoid so the camera can lock onto it
-    cpDecoyHum              = Instance.new("Humanoid")
-    cpDecoyHum.MaxHealth    = 0
-    cpDecoyHum.Health       = 0
-    cpDecoyHum.Parent       = cpDecoyModel
+    -- Humanoid so camera can lock onto it
+    cpDecoyHum           = Instance.new("Humanoid")
+    cpDecoyHum.MaxHealth = 0
+    cpDecoyHum.Health    = 0
+    cpDecoyHum.Parent    = cpDecoyModel
 
+    -- Full MaxForce on all axes — we control Y manually via velY
     cpDecoyBV           = Instance.new("BodyVelocity")
-    cpDecoyBV.MaxForce  = Vector3.new(9e4, 0, 9e4)   -- XZ only; gravity handles Y
+    cpDecoyBV.MaxForce  = Vector3.new(9e4, 9e4, 9e4)
     cpDecoyBV.Velocity  = Vector3.zero
     cpDecoyBV.Parent    = root
 
@@ -1437,6 +1446,11 @@ local function spawnDecoy(myChar)
     cpDecoyBG.P         = 9e4
     cpDecoyBG.CFrame    = myHRP.CFrame
     cpDecoyBG.Parent    = root
+
+    -- Raycast params: exclude the decoy model and the real character
+    cpDecoyRayParams = RaycastParams.new()
+    cpDecoyRayParams.FilterType = Enum.RaycastFilterType.Exclude
+    cpDecoyRayParams.FilterDescendantsInstances = {cpDecoyModel, myChar}
 
     -- Clone every visible BasePart with exact appearance
     for _, orig in ipairs(myChar:GetDescendants()) do
@@ -1448,7 +1462,7 @@ local function spawnDecoy(myChar)
                     v:Destroy()
                 end
             end
-            copy.Anchored     = true        -- posed manually each frame
+            copy.Anchored     = true
             copy.CanCollide   = false
             copy.CanTouch     = false
             copy.CastShadow   = true
@@ -1465,7 +1479,7 @@ local function spawnDecoy(myChar)
 
     cpDecoyModel.Parent = workspace
 
-    -- *** Point the camera at the decoy so the player sees it ***
+    -- Point the camera at the decoy
     workspace.CurrentCamera.CameraSubject = cpDecoyHum
 
     -- WASD drives the decoy
@@ -1483,12 +1497,38 @@ local function spawnDecoy(myChar)
         if map[k] then cpDecoyControl[map[k]] = 0 end
     end)
 
-    -- Per-frame: move root + mirror real character's pose onto the decoy
-    -- NOTE: myChar here is the parameter captured at spawn time — always the
-    -- real character object regardless of where it has been teleported to.
-    cpDecoyConn = weldRun.Heartbeat:Connect(function()
+    cpDecoyConn = weldRun.Heartbeat:Connect(function(dt)
         if not cpDecoyRoot or not cpDecoyRoot.Parent then return end
 
+        -- ── Ground detection ─────────────────────────────────────────────────
+        local result = workspace:Raycast(
+            cpDecoyRoot.Position,
+            Vector3.new(0, -(DECOY_HRP_HEIGHT + 2.5), 0),
+            cpDecoyRayParams
+        )
+
+        if result then
+            local targetY = result.Position.Y + DECOY_HRP_HEIGHT
+            if cpDecoyVelY <= 0 then
+                cpDecoyOnGround = true
+                cpDecoyVelY     = 0
+                -- Snap Y so it never sinks into the floor
+                cpDecoyRoot.CFrame = CFrame.new(
+                    cpDecoyRoot.Position.X,
+                    targetY,
+                    cpDecoyRoot.Position.Z
+                )
+            end
+        else
+            cpDecoyOnGround = false
+        end
+
+        -- Apply gravity when airborne
+        if not cpDecoyOnGround then
+            cpDecoyVelY = cpDecoyVelY - DECOY_GRAVITY * dt
+        end
+
+        -- ── Horizontal movement ───────────────────────────────────────────────
         local cam       = workspace.CurrentCamera
         local look      = cam.CoordinateFrame.LookVector
         local right     = cam.CoordinateFrame.RightVector
@@ -1501,14 +1541,15 @@ local function spawnDecoy(myChar)
             (flatLook  * ((cpDecoyControl.F - cpDecoyControl.B) * DECOY_SPEED))
           + (flatRight * ((cpDecoyControl.R - cpDecoyControl.L) * DECOY_SPEED))
 
-        cpDecoyBV.Velocity = horizVel
+        -- Combine horizontal movement with vertical
+        cpDecoyBV.Velocity = Vector3.new(horizVel.X, cpDecoyVelY, horizVel.Z)
 
         if horizVel.Magnitude > 0.1 then
             local _, yaw, _ = cam.CoordinateFrame:ToEulerAnglesYXZ()
             cpDecoyBG.CFrame = CFrame.Angles(0, yaw, 0)
         end
 
-        -- Mirror the real character's current limb pose onto the decoy in-place
+        -- ── Mirror real character's pose onto decoy ───────────────────────────
         local realHRP = myChar:FindFirstChild("HumanoidRootPart")
         if realHRP then
             for _, entry in ipairs(cpDecoyPartMap) do
@@ -1533,7 +1574,10 @@ Tab:AddToggle({
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
 
-            -- Snap real character to wherever the decoy ended up
+            -- *** Disconnect cpConn FIRST so the Heartbeat can't overwrite the snap ***
+            if cpConn then cpConn:Disconnect() cpConn = nil end
+
+            -- Now snap real character to wherever the decoy ended up
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myRoot and cpDecoyRoot and cpDecoyRoot.Parent then
@@ -1544,8 +1588,7 @@ Tab:AddToggle({
 
             -- destroyDecoy restores CameraSubject back to real character
             destroyDecoy()
-            cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-            cpConn   = nil
+            cleanupToggle(nil, cpTrack, cpNoCollide, nil)   -- cpConn already nil
             cpTrack  = nil
             lastChar = nil
             return
@@ -1562,7 +1605,7 @@ Tab:AddToggle({
         -- Set lastChar now so the first Heartbeat tick never re-spawns the decoy
         lastChar = myChar
 
-        -- Load wall emote on real character
+        -- Load wall emote on the real character
         cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
 
         cpConn = weldRun.Heartbeat:Connect(function()
@@ -1571,6 +1614,8 @@ Tab:AddToggle({
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
+
+                if cpConn then cpConn:Disconnect() cpConn = nil end
 
                 local c = weldLocal.Character
                 local r = c and c:FindFirstChild("HumanoidRootPart")
@@ -1581,14 +1626,12 @@ Tab:AddToggle({
                 end
 
                 destroyDecoy()
-                cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
-                cpConn   = nil
+                cleanupToggle(nil, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
                 cpTrack  = nil
                 lastChar = nil
                 return
             end
 
-            -- Use a separate local so it doesn't shadow the outer myChar
             local curChar = weldLocal.Character
             local myRoot  = curChar and curChar:FindFirstChild("HumanoidRootPart")
             if not curChar or not myRoot then return end
