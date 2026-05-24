@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1372,6 +1372,7 @@ local cpDecoyInputEnd  = nil
 local cpDecoyBG        = nil
 local cpDecoyRoot      = nil
 local cpDecoyHum       = nil
+local cpDecoyAnimator  = nil
 local cpDecoyControl   = {F=0, B=0, R=0, L=0}
 
 local function destroyDecoy()
@@ -1388,11 +1389,12 @@ local function destroyDecoy()
     end)
 
     if cpDecoyModel and cpDecoyModel.Parent then cpDecoyModel:Destroy() end
-    cpDecoyModel   = nil
-    cpDecoyBG      = nil
-    cpDecoyRoot    = nil
-    cpDecoyHum     = nil
-    cpDecoyControl = {F=0, B=0, R=0, L=0}
+    cpDecoyModel    = nil
+    cpDecoyBG       = nil
+    cpDecoyRoot     = nil
+    cpDecoyHum      = nil
+    cpDecoyAnimator = nil
+    cpDecoyControl  = {F=0, B=0, R=0, L=0}
 end
 
 local function spawnDecoy(myChar)
@@ -1407,9 +1409,9 @@ local function spawnDecoy(myChar)
     cpDecoyModel.Name = "CPDecoy"
 
     -- Strip ALL scripts — the cloned Animate LocalScript calls
-    -- Players:GetPlayerFromCharacter() → gets nil → crashes on .Name
+    -- Players:GetPlayerFromCharacter() → nil → crashes on .Name
     for _, v in ipairs(cpDecoyModel:GetDescendants()) do
-        if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("ModuleScript") then
+        if v:IsA("LuaSourceContainer") then
             v:Destroy()
         end
     end
@@ -1436,17 +1438,26 @@ local function spawnDecoy(myChar)
     cpDecoyHum.WalkSpeed  = DECOY_SPEED
     cpDecoyHum.AutoRotate = false
 
-    -- Fresh Animator so we can mirror real character tracks manually
-    local decoyAnimator = Instance.new("Animator")
-    decoyAnimator.Parent = cpDecoyHum
-
     cpDecoyBG           = Instance.new("BodyGyro")
     cpDecoyBG.MaxTorque = Vector3.new(0, 9e4, 0)
     cpDecoyBG.P         = 9e4
     cpDecoyBG.CFrame    = myHRP.CFrame
     cpDecoyBG.Parent    = cpDecoyRoot
 
+    -- !! Parent the model to workspace FIRST before any LoadAnimation calls.
+    -- Animator:LoadAnimation internally indexes the Humanoid's Name to resolve
+    -- the rig hierarchy — if the model isn't in the DataModel yet it gets nil
+    -- and throws "attempt to index nil with 'Name'".
     cpDecoyModel.Parent = workspace
+
+    -- Only create the Animator AFTER the model is parented
+    -- Remove any existing Animator the clone brought in
+    local oldAnim = cpDecoyHum:FindFirstChildOfClass("Animator")
+    if oldAnim then oldAnim:Destroy() end
+
+    cpDecoyAnimator        = Instance.new("Animator")
+    cpDecoyAnimator.Parent = cpDecoyHum
+
     workspace.CurrentCamera.CameraSubject = cpDecoyHum
 
     -- Cache of animationId → decoy AnimationTrack
@@ -1454,24 +1465,38 @@ local function spawnDecoy(myChar)
 
     local function getOrLoadDecoyTrack(animId)
         if decoyTrackCache[animId] then return decoyTrackCache[animId] end
+        -- Guard: animator must still be valid in the hierarchy
+        if not cpDecoyAnimator or not cpDecoyAnimator.Parent then return nil end
+
         local anim = Instance.new("Animation")
         anim.AnimationId = animId
-        local track = decoyAnimator:LoadAnimation(anim)
+
+        -- Wrap in pcall — Roblox internals can throw 'attempt to index nil
+        -- with Name' if the rig state is momentarily inconsistent
+        local ok, track = pcall(function()
+            return cpDecoyAnimator:LoadAnimation(anim)
+        end)
         anim:Destroy()
+
+        if not ok or not track then return nil end
         decoyTrackCache[animId] = track
         return track
     end
 
     cpDecoyInputConn = UIS.InputBegan:Connect(function(inp, gp)
         if gp then return end
-        local k   = inp.KeyCode.Name:lower()
+        local kc = inp.KeyCode
+        if not kc then return end
+        local k   = kc.Name:lower()
         local map = { w="F", s="B", d="R", a="L" }
         if map[k] then cpDecoyControl[map[k]] = 1 end
     end)
 
     cpDecoyInputEnd = UIS.InputEnded:Connect(function(inp, gp)
         if gp then return end
-        local k   = inp.KeyCode.Name:lower()
+        local kc = inp.KeyCode
+        if not kc then return end
+        local k   = kc.Name:lower()
         local map = { w="F", s="B", d="R", a="L" }
         if map[k] then cpDecoyControl[map[k]] = 0 end
     end)
@@ -1482,7 +1507,7 @@ local function spawnDecoy(myChar)
         local cam = workspace.CurrentCamera
         if not cam then return end
 
-        -- ── Camera-relative movement direction ────────────────────────────────
+        -- ── Camera-relative movement ──────────────────────────────────────────
         local look      = cam.CoordinateFrame.LookVector
         local right     = cam.CoordinateFrame.RightVector
         local flatLook  = Vector3.new(look.X,  0, look.Z)
@@ -1504,35 +1529,44 @@ local function spawnDecoy(myChar)
             cpDecoyBG.CFrame = CFrame.Angles(0, yaw, 0)
         end
 
-        -- ── Mirror real character's animation tracks onto the decoy ───────────
-        -- cpTrack (the wall emote) is explicitly excluded — only the real
-        -- character plays it; the decoy shows normal idle/walk/etc.
-        local realHum      = myChar:FindFirstChildOfClass("Humanoid")
-        local realAnimator = realHum and realHum:FindFirstChildOfClass("Animator")
-        if realAnimator then
+        -- ── Mirror real character animation tracks onto the decoy ─────────────
+        -- cpTrack (wall emote) is excluded — only the real character plays it
+        pcall(function()
+            local realHum      = myChar:FindFirstChildOfClass("Humanoid")
+            local realAnimator = realHum and realHum:FindFirstChildOfClass("Animator")
+            if not realAnimator then return end
+
             local activeIds = {}
 
             for _, realTrack in ipairs(realAnimator:GetPlayingAnimationTracks()) do
-                if realTrack ~= cpTrack and realTrack.Animation then
+                -- Skip the wall emote track entirely
+                if realTrack ~= cpTrack
+                and realTrack.Animation
+                and realTrack.Animation.AnimationId ~= "" then
+
                     local animId = realTrack.Animation.AnimationId
-                    activeIds[animId] = realTrack
+                    activeIds[animId] = true
 
                     local decoyTrack = getOrLoadDecoyTrack(animId)
-                    if not decoyTrack.IsPlaying then
-                        decoyTrack:Play(0)
+                    if decoyTrack then
+                        if not decoyTrack.IsPlaying then
+                            decoyTrack:Play(0)
+                        end
+                        -- Sync playback position so pose matches exactly
+                        pcall(function()
+                            decoyTrack.TimePosition = realTrack.TimePosition
+                        end)
                     end
-                    -- Sync playback position so pose matches exactly
-                    decoyTrack.TimePosition = realTrack.TimePosition
                 end
             end
 
-            -- Stop decoy tracks whose real counterpart is no longer playing
+            -- Stop decoy tracks whose real counterpart stopped
             for animId, decoyTrack in pairs(decoyTrackCache) do
-                if decoyTrack.IsPlaying and not activeIds[animId] then
+                if decoyTrack and decoyTrack.IsPlaying and not activeIds[animId] then
                     decoyTrack:Stop(0)
                 end
             end
-        end
+        end)
     end)
 end
 
@@ -1578,10 +1612,12 @@ Tab:AddToggle({
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
 
-            -- Guard .Parent before .Name — selectedTarget can be a destroyed
-            -- Instance (non-nil Lua ref) which crashes on .Name access
-            if not selectedTarget or not selectedTarget.Parent
-            or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+            -- Capture selectedTarget once at the top of this tick.
+            -- selectedTarget can be set to nil by another connection earlier
+            -- in the same frame — a local copy makes all checks consistent.
+            local target = selectedTarget
+            if not target or not target.Parent
+            or not weldPlayers:FindFirstChild(target.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
 
@@ -1606,11 +1642,10 @@ Tab:AddToggle({
             local myRoot  = curChar and curChar:FindFirstChild("HumanoidRootPart")
             if not curChar or not myRoot then return end
 
-            local tgtChar = selectedTarget.Character
+            local tgtChar = target.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Re-spawn decoy on genuine character respawn only
             if curChar ~= lastChar then
                 lastChar = curChar
                 spawnDecoy(curChar)
@@ -1628,8 +1663,8 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Stop all tracks on the real character except the wall emote.
-                -- The decoy's Animator runs independently and is unaffected.
+                -- Stop all tracks on real character except the wall emote.
+                -- Decoy's Animator is independent and unaffected by this.
                 local hum      = curChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
