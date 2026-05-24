@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1344,16 +1344,48 @@ Tab:AddToggle({
 end
 
 -- 13
--- ─── Decoy state ──────────────────────────────────────────────────────────────
-local cpDecoyModel = nil
-local cpDecoyConn  = nil
-local cpDecoyRoot  = nil   -- the anchored "HumanoidRootPart" of the decoy
+local cpConn      = nil
+local cpEnabled   = false
+local cpTrack     = nil
+local lastChar    = nil
+
+local cpUp        = -80
+local cpForward   = 0
+local cpSide      = 0
+local cpTiltX     = 225
+local cpTiltY     = 0
+local cpTiltZ     = 0
+
+local cpFaceBack  = false
+local cpNoCollide = true
+local cpFreezeAt  = 0
+local cpAnimId    = 70883871260184
+
+-- ── Decoy state ───────────────────────────────────────────────────────────────
+local UIS               = game:GetService("UserInputService")
+local DECOY_SPEED       = 16
+
+local cpDecoyModel      = nil
+local cpDecoyConn       = nil
+local cpDecoyInputConn  = nil
+local cpDecoyInputEnd   = nil
+local cpDecoyBV         = nil
+local cpDecoyBG         = nil
+local cpDecoyRoot       = nil   -- the free-moving HumanoidRootPart of the decoy
+local cpDecoyPartMap    = {}
+local cpDecoyControl    = {F=0, B=0, R=0, L=0}
 
 local function destroyDecoy()
-    if cpDecoyConn  then cpDecoyConn:Disconnect() cpDecoyConn  = nil end
+    if cpDecoyConn     then cpDecoyConn:Disconnect()     cpDecoyConn     = nil end
+    if cpDecoyInputConn then cpDecoyInputConn:Disconnect() cpDecoyInputConn = nil end
+    if cpDecoyInputEnd  then cpDecoyInputEnd:Disconnect()  cpDecoyInputEnd  = nil end
     if cpDecoyModel and cpDecoyModel.Parent then cpDecoyModel:Destroy() end
-    cpDecoyModel = nil
-    cpDecoyRoot  = nil
+    cpDecoyModel   = nil
+    cpDecoyBV      = nil
+    cpDecoyBG      = nil
+    cpDecoyRoot    = nil
+    cpDecoyPartMap = {}
+    cpDecoyControl = {F=0, B=0, R=0, L=0}
 end
 
 local function spawnDecoy(myChar)
@@ -1363,101 +1395,113 @@ local function spawnDecoy(myChar)
     local myHRP = myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
 
-    -- Snapshot the position where you were standing when the toggle fired
-    local originCF = myHRP.CFrame
-
-    cpDecoyModel = Instance.new("Model")
+    cpDecoyModel      = Instance.new("Model")
     cpDecoyModel.Name = "CPDecoy"
 
-    -- Part map: ghost part → original part name (for pose mirroring)
-    local partMap = {}
+    -- ── Free-moving root ──────────────────────────────────────────────────────
+    local root          = Instance.new("Part")
+    root.Name           = "HumanoidRootPart"
+    root.Size           = Vector3.new(2, 2, 1)
+    root.Transparency   = 1
+    root.CanCollide     = false
+    root.Anchored       = false          -- NOT anchored; physics movers control it
+    root.CFrame         = myHRP.CFrame
+    root.Parent         = cpDecoyModel
+    cpDecoyRoot         = root
 
-    -- Anchored invisible root so the model has a pivot; never seen by anyone
-    local fakeHRP       = Instance.new("Part")
-    fakeHRP.Name        = "HumanoidRootPart"
-    fakeHRP.Size        = Vector3.new(2, 2, 1)
-    fakeHRP.Transparency = 1
-    fakeHRP.CanCollide  = false
-    fakeHRP.Anchored    = true
-    fakeHRP.CFrame      = originCF
-    fakeHRP.Parent      = cpDecoyModel
-    cpDecoyRoot         = fakeHRP
+    cpDecoyBV           = Instance.new("BodyVelocity")
+    cpDecoyBV.MaxForce  = Vector3.new(9e4, 0, 9e4)   -- horizontal only; gravity handles Y
+    cpDecoyBV.Velocity  = Vector3.zero
+    cpDecoyBV.Parent    = root
 
-    -- Clone every visible BasePart (exact colours, textures, accessories)
+    cpDecoyBG           = Instance.new("BodyGyro")
+    cpDecoyBG.MaxTorque = Vector3.new(0, 9e4, 0)
+    cpDecoyBG.P         = 9e4
+    cpDecoyBG.CFrame    = myHRP.CFrame
+    cpDecoyBG.Parent    = root
+
+    -- ── Clone every visible BasePart ──────────────────────────────────────────
     for _, orig in ipairs(myChar:GetDescendants()) do
         if orig:IsA("BasePart") and orig.Name ~= "HumanoidRootPart" then
             local copy = orig:Clone()
-
-            -- Strip scripts/joints so nothing runs inside the decoy
             for _, v in ipairs(copy:GetDescendants()) do
                 if v:IsA("Script") or v:IsA("LocalScript")
-                or v:IsA("Motor6D") or v:IsA("Weld") then
+                or v:IsA("Motor6D")  or v:IsA("Weld") then
                     v:Destroy()
                 end
             end
-
-            copy.Anchored    = true
-            copy.CanCollide  = false
-            copy.CanTouch    = false
-            copy.CastShadow  = true
-            -- Keep exact appearance (transparency, colour, texture unchanged)
-            copy.Transparency = orig.Transparency
+            copy.Anchored     = true          -- anchored so they don't fall; posed manually
+            copy.CanCollide   = false
+            copy.CanTouch     = false
+            copy.CastShadow   = true
+            copy.Transparency = orig.Transparency   -- exact appearance, no tint
             copy.Color        = orig.Color
 
-            -- Initial pose relative to origin
             local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
-            copy.CFrame = originCF * relCF
+            copy.CFrame = root.CFrame * relCF
             copy.Parent = cpDecoyModel
 
-            table.insert(partMap, { decoy = copy, name = orig.Name })
-        end
-    end
-
-    -- Also clone any accessories/hats parked under the character model
-    for _, obj in ipairs(myChar:GetChildren()) do
-        if obj:IsA("Accessory") then
-            local handle = obj:FindFirstChildWhichIsA("BasePart")
-            if handle then
-                -- The accessory part is already captured above via GetDescendants,
-                -- but clone the Accessory wrapper so SpecialMesh / Tags survive
-                local acc = obj:Clone()
-                for _, v in ipairs(acc:GetDescendants()) do
-                    if v:IsA("Script") or v:IsA("LocalScript") then v:Destroy() end
-                end
-                local accHandle = acc:FindFirstChildWhichIsA("BasePart")
-                if accHandle then
-                    accHandle.Anchored   = true
-                    accHandle.CanCollide = false
-                end
-                acc.Parent = cpDecoyModel
-            end
+            table.insert(cpDecoyPartMap, { decoy = copy, origName = orig.Name })
         end
     end
 
     cpDecoyModel.Parent = workspace
 
-    -- Every frame: recompute each decoy part's world CFrame from the real
-    -- character's current pose, but rooted to originCF instead of myHRP.CFrame.
-    -- This makes the decoy play all animations in-place at the spawn spot.
+    -- ── WASD input for decoy ──────────────────────────────────────────────────
+    cpDecoyInputConn = UIS.InputBegan:Connect(function(inp, gp)
+        if gp then return end
+        local k   = inp.KeyCode.Name:lower()
+        local map = { w="F", s="B", d="R", a="L" }
+        if map[k] then cpDecoyControl[map[k]] = 1 end
+    end)
+
+    cpDecoyInputEnd = UIS.InputEnded:Connect(function(inp, gp)
+        if gp then return end
+        local k   = inp.KeyCode.Name:lower()
+        local map = { w="F", s="B", d="R", a="L" }
+        if map[k] then cpDecoyControl[map[k]] = 0 end
+    end)
+
+    -- ── Per-frame: move root + mirror pose ───────────────────────────────────
     cpDecoyConn = weldRun.Heartbeat:Connect(function()
+        if not cpDecoyRoot or not cpDecoyRoot.Parent then return end
+
+        -- Flatten camera vectors to XZ for ground movement
+        local cam        = workspace.CurrentCamera
+        local look       = cam.CoordinateFrame.LookVector
+        local right      = cam.CoordinateFrame.RightVector
+        local flatLook   = Vector3.new(look.X,  0, look.Z)
+        local flatRight  = Vector3.new(right.X, 0, right.Z)
+        if flatLook.Magnitude  > 0 then flatLook  = flatLook.Unit  end
+        if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end
+
+        local horizVel =
+            (flatLook  * ((cpDecoyControl.F - cpDecoyControl.B) * DECOY_SPEED))
+          + (flatRight * ((cpDecoyControl.R - cpDecoyControl.L) * DECOY_SPEED))
+
+        cpDecoyBV.Velocity = horizVel
+
+        -- Rotate decoy to face the camera's yaw whenever moving
+        if horizVel.Magnitude > 0.1 then
+            local _, yaw, _ = cam.CoordinateFrame:ToEulerAnglesYXZ()
+            cpDecoyBG.CFrame = CFrame.Angles(0, yaw, 0)
+        end
+
+        -- Mirror real character's current limb pose onto the decoy in-place
         local realHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not realHRP or not cpDecoyRoot then return end
-
-        -- Keep the fake root anchored at the original spot
-        cpDecoyRoot.CFrame = originCF
-
-        for _, entry in ipairs(partMap) do
-            local realPart = myChar:FindFirstChild(entry.name)
-            if realPart and entry.decoy and entry.decoy.Parent then
-                -- Offset from the REAL HRP → apply to originCF
-                local relCF = realHRP.CFrame:ToObjectSpace(realPart.CFrame)
-                entry.decoy.CFrame = originCF * relCF
+        if realHRP then
+            for _, entry in ipairs(cpDecoyPartMap) do
+                local realPart = myChar:FindFirstChild(entry.origName)
+                if realPart and entry.decoy and entry.decoy.Parent then
+                    local relCF = realHRP.CFrame:ToObjectSpace(realPart.CFrame)
+                    entry.decoy.CFrame = cpDecoyRoot.CFrame * relCF
+                end
             end
         end
     end)
 end
 
--- ─── Toggle ───────────────────────────────────────────────────────────────────
+-- ── Toggle ────────────────────────────────────────────────────────────────────
 Tab:AddToggle({
     Label   = "Wall (Layered Clothing)",
     Default = false,
@@ -1467,7 +1511,17 @@ Tab:AddToggle({
 
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
-            destroyDecoy()   -- <── clean up decoy
+
+            -- Snap real character to wherever the decoy ended up
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot and cpDecoyRoot and cpDecoyRoot.Parent then
+                myRoot.CFrame                   = cpDecoyRoot.CFrame
+                myRoot.AssemblyLinearVelocity   = Vector3.zero
+                myRoot.AssemblyAngularVelocity  = Vector3.zero
+            end
+
+            destroyDecoy()
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
             cpConn   = nil
             cpTrack  = nil
@@ -1478,16 +1532,26 @@ Tab:AddToggle({
         if not selectedTarget then return end
         activeFlingCount = activeFlingCount + 1
 
-        -- Spawn the decoy immediately so it's visible before the first Heartbeat
+        -- Spawn decoy at current position before the real character moves
         local myChar = weldLocal.Character
         spawnDecoy(myChar)
 
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
 
+            -- Auto-disable if target disappears
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
+
+                local c = weldLocal.Character
+                local r = c and c:FindFirstChild("HumanoidRootPart")
+                if r and cpDecoyRoot and cpDecoyRoot.Parent then
+                    r.CFrame                  = cpDecoyRoot.CFrame
+                    r.AssemblyLinearVelocity  = Vector3.zero
+                    r.AssemblyAngularVelocity = Vector3.zero
+                end
+
                 destroyDecoy()
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
                 cpConn   = nil
@@ -1504,10 +1568,10 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Re-spawn decoy if character reloaded
+            -- Rebuild decoy and animation if character respawned
             if myChar ~= lastChar then
                 lastChar = myChar
-                spawnDecoy(myChar)   -- rebuild decoy for new character
+                spawnDecoy(myChar)
                 if cpTrack then
                     cpTrack:Stop()
                     cpTrack:Destroy()
@@ -1516,12 +1580,14 @@ Tab:AddToggle({
             end
 
             pcall(function()
+                -- Disable collisions on real character
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and cpNoCollide then
                         part.CanCollide = false
                     end
                 end
 
+                -- Suppress all animations except the wall emote
                 local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
@@ -1530,6 +1596,7 @@ Tab:AddToggle({
                     end
                 end
 
+                -- Lock real character under the target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
 
