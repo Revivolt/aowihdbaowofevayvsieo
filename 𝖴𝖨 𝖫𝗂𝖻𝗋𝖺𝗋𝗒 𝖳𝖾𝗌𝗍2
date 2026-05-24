@@ -1344,6 +1344,7 @@ Tab:AddToggle({
 end
 
 -- 13
+-- Wall (Layered Clothing) Config
 local cpConn      = nil
 local cpEnabled   = false
 local cpTrack     = nil
@@ -1361,6 +1362,14 @@ local cpNoCollide = true
 local cpFreezeAt  = 0
 local cpAnimId    = 70883871260184
 
+-- Fake position config
+local UIS         = game:GetService("UserInputService")
+local Camera      = workspace.CurrentCamera
+local cpMoveSpeed = 16  -- matches default walk speed
+
+local cpFakeCFrame  = nil
+local cpPrevCamType = nil
+
 -- Toggle
 Tab:AddToggle({
     Label   = "Wall (Layered Clothing)",
@@ -1372,23 +1381,71 @@ Tab:AddToggle({
         -- Cleanup on disable
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
+
+            -- Snap real character to fake position before cleanup
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot and cpFakeCFrame then
+                myRoot.CFrame = cpFakeCFrame
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+            end
+
+            -- Restore camera
+            if cpPrevCamType then
+                Camera.CameraType = cpPrevCamType
+                cpPrevCamType = nil
+            end
+
+            cpFakeCFrame = nil
+
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-            cpConn  = nil
-            cpTrack = nil
+            cpConn   = nil
+            cpTrack  = nil
             lastChar = nil
             return
         end
 
         if not selectedTarget then return end
+
+        -- Initialize fake position at current character location
+        local myChar = weldLocal.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            cpFakeCFrame = myRoot.CFrame
+        else
+            return
+        end
+
+        -- Take over camera
+        cpPrevCamType     = Camera.CameraType
+        Camera.CameraType = Enum.CameraType.Scriptable
+
         activeFlingCount = activeFlingCount + 1
 
-        cpConn = weldRun.Heartbeat:Connect(function()
+        cpConn = weldRun.Heartbeat:Connect(function(dt)
             if not cpEnabled then return end
 
             -- Auto-disable if target is gone
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
+
+                local mc = weldLocal.Character
+                local mr = mc and mc:FindFirstChild("HumanoidRootPart")
+                if mr and cpFakeCFrame then
+                    mr.CFrame = cpFakeCFrame
+                    mr.AssemblyLinearVelocity  = Vector3.zero
+                    mr.AssemblyAngularVelocity = Vector3.zero
+                end
+
+                if cpPrevCamType then
+                    Camera.CameraType = cpPrevCamType
+                    cpPrevCamType = nil
+                end
+
+                cpFakeCFrame = nil
+
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
                 cpConn   = nil
                 cpTrack  = nil
@@ -1404,6 +1461,25 @@ Tab:AddToggle({
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
+
+            -- Move fake position with WASD relative to camera yaw
+            local moveDir = Vector3.zero
+            if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir += Vector3.new( 0, 0, -1) end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir += Vector3.new( 0, 0,  1) end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir += Vector3.new(-1, 0,  0) end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir += Vector3.new( 1, 0,  0) end
+
+            if moveDir.Magnitude > 0 then
+                local camYaw   = math.atan2(-Camera.CFrame.LookVector.X, -Camera.CFrame.LookVector.Z)
+                local rotated  = CFrame.Angles(0, camYaw, 0):VectorToWorldSpace(moveDir.Unit)
+                cpFakeCFrame   = cpFakeCFrame * CFrame.new(Vector3.new(rotated.X, 0, rotated.Z) * cpMoveSpeed * dt)
+            end
+
+            -- Point camera at fake position (standard third-person offset)
+            local camOffset  = Vector3.new(0, 6, 14)
+            local fakeLook   = Camera.CFrame.LookVector  -- preserve mouse look direction
+            local camPos     = cpFakeCFrame.Position - (fakeLook * camOffset.Z) + Vector3.new(0, camOffset.Y, 0)
+            Camera.CFrame    = CFrame.new(camPos, cpFakeCFrame.Position + Vector3.new(0, 2, 0))
 
             -- Reload animation on character change
             if myChar ~= lastChar then
@@ -1434,7 +1510,7 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Position on target
+                -- Position real character under target (server/physics side)
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
 
