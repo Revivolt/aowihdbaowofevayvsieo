@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1512,13 +1512,12 @@ Tab:AddToggle({
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
 
-            -- Snap real character to wherever the decoy ended up
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myRoot and cpDecoyRoot and cpDecoyRoot.Parent then
-                myRoot.CFrame                   = cpDecoyRoot.CFrame
-                myRoot.AssemblyLinearVelocity   = Vector3.zero
-                myRoot.AssemblyAngularVelocity  = Vector3.zero
+                myRoot.CFrame                  = cpDecoyRoot.CFrame
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
             end
 
             destroyDecoy()
@@ -1532,14 +1531,17 @@ Tab:AddToggle({
         if not selectedTarget then return end
         activeFlingCount = activeFlingCount + 1
 
-        -- Spawn decoy at current position before the real character moves
         local myChar = weldLocal.Character
+
+        -- Spawn decoy at the real position BEFORE the first heartbeat moves anything
         spawnDecoy(myChar)
+
+        -- *** Set lastChar now so the first heartbeat tick never re-spawns the decoy ***
+        lastChar = myChar
 
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
 
-            -- Auto-disable if target disappears
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
@@ -1568,7 +1570,7 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Rebuild decoy and animation if character respawned
+            -- Only re-spawn if the character actually reloaded (respawn)
             if myChar ~= lastChar then
                 lastChar = myChar
                 spawnDecoy(myChar)
@@ -1580,14 +1582,12 @@ Tab:AddToggle({
             end
 
             pcall(function()
-                -- Disable collisions on real character
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and cpNoCollide then
                         part.CanCollide = false
                     end
                 end
 
-                -- Suppress all animations except the wall emote
                 local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
@@ -1596,7 +1596,6 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Lock real character under the target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
 
