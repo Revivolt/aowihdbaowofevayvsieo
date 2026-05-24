@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1361,298 +1361,7 @@ local cpNoCollide = true
 local cpFreezeAt  = 0
 local cpAnimId    = 70883871260184
 
--- ── Decoy state ───────────────────────────────────────────────────────────────
-local UIS              = game:GetService("UserInputService")
-local DECOY_SPEED      = 16
-local DECOY_GRAVITY    = 120
-local DECOY_JUMP       = 50
-local DECOY_HRP_HEIGHT = 3
-
-local cpDecoyModel      = nil
-local cpDecoyConn       = nil
-local cpDecoyInputConn  = nil
-local cpDecoyInputEnd   = nil
-local cpDecoyCamConn    = nil   -- watches for camera subject being stolen
-local cpDecoyBV         = nil
-local cpDecoyBG         = nil
-local cpDecoyRoot       = nil
-local cpDecoyHum        = nil
-local cpDecoyControl    = {F=0, B=0, R=0, L=0}
-local cpDecoyVelY       = 0
-local cpDecoyOnGround   = false
-local cpDecoyRayParams  = nil
-
-local function destroyDecoy()
-    if cpDecoyConn      then cpDecoyConn:Disconnect()      cpDecoyConn      = nil end
-    if cpDecoyInputConn then cpDecoyInputConn:Disconnect() cpDecoyInputConn = nil end
-    if cpDecoyInputEnd  then cpDecoyInputEnd:Disconnect()  cpDecoyInputEnd  = nil end
-    if cpDecoyCamConn   then cpDecoyCamConn:Disconnect()   cpDecoyCamConn   = nil end
-
-    pcall(function()
-        local myChar = weldLocal and weldLocal.Character
-        local hum    = myChar and myChar:FindFirstChildOfClass("Humanoid")
-        if hum then
-            workspace.CurrentCamera.CameraSubject = hum
-        end
-    end)
-
-    if cpDecoyModel and cpDecoyModel.Parent then cpDecoyModel:Destroy() end
-    cpDecoyModel     = nil
-    cpDecoyBV        = nil
-    cpDecoyBG        = nil
-    cpDecoyRoot      = nil
-    cpDecoyHum       = nil
-    cpDecoyControl   = {F=0, B=0, R=0, L=0}
-    cpDecoyVelY      = 0
-    cpDecoyOnGround  = false
-    cpDecoyRayParams = nil
-end
-
--- Reads animation IDs from the real character's Animate script
-local function getAnimIdsFromChar(myChar)
-    local animScript = myChar:FindFirstChild("Animate")
-    local ids = {}
-
-    local function extractId(folderName)
-        if not animScript then return nil end
-        local folder = animScript:FindFirstChild(folderName)
-        if not folder then return nil end
-        for _, v in ipairs(folder:GetChildren()) do
-            if v:IsA("Animation") then
-                if v.AnimationId and v.AnimationId ~= "" then
-                    return v.AnimationId
-                end
-            elseif v:IsA("StringValue") then
-                if v.Value and v.Value ~= "" then
-                    return v.Value
-                end
-            end
-        end
-        return nil
-    end
-
-    ids.idle = extractId("idle")
-    ids.walk = extractId("walk")
-    ids.run  = extractId("run")
-    ids.jump = extractId("jump")
-    ids.fall = extractId("fall")
-
-    -- Fallback defaults only for any missing entries
-    local isR15 = myChar:FindFirstChild("UpperTorso") ~= nil
-    local defaults = isR15 and {
-        idle = "rbxassetid://507766388",
-        walk = "rbxassetid://507777826",
-        run  = "rbxassetid://507767714",
-        jump = "rbxassetid://507765000",
-        fall = "rbxassetid://507767988",
-    } or {
-        idle = "rbxassetid://180435571",
-        walk = "rbxassetid://180426354",
-        run  = "rbxassetid://161006552",
-        jump = "rbxassetid://125750702",
-        fall = "rbxassetid://180436148",
-    }
-    for k, v in pairs(defaults) do
-        if not ids[k] or ids[k] == "" then ids[k] = v end
-    end
-
-    return ids
-end
-
-local function spawnDecoy(myChar)
-    destroyDecoy()
-    if not myChar then return end
-
-    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-    if not myHRP then return end
-
-    -- Clone full rig so Motor6D joints survive intact
-    cpDecoyModel      = myChar:Clone()
-    cpDecoyModel.Name = "CPDecoy"
-
-    -- Strip scripts only
-    for _, v in ipairs(cpDecoyModel:GetDescendants()) do
-        if v:IsA("Script") or v:IsA("LocalScript") or v:IsA("ModuleScript") then
-            v:Destroy()
-        end
-    end
-
-    -- Reuse existing Humanoid (destroying it severs Motor6D)
-    cpDecoyHum = cpDecoyModel:FindFirstChildOfClass("Humanoid")
-    if not cpDecoyHum then
-        cpDecoyHum        = Instance.new("Humanoid")
-        cpDecoyHum.Parent = cpDecoyModel
-    end
-    cpDecoyHum.MaxHealth     = 100
-    cpDecoyHum.Health        = 100
-    cpDecoyHum.PlatformStand = false
-
-    -- Fresh Animator only
-    local oldAnim = cpDecoyHum:FindFirstChildOfClass("Animator")
-    if oldAnim then oldAnim:Destroy() end
-    local animator  = Instance.new("Animator")
-    animator.Parent = cpDecoyHum
-
-    -- Root setup
-    cpDecoyRoot = cpDecoyModel:FindFirstChild("HumanoidRootPart")
-    if not cpDecoyRoot then destroyDecoy() return end
-    cpDecoyRoot.Anchored   = false
-    cpDecoyRoot.CanCollide = false
-    cpDecoyRoot.CFrame     = myHRP.CFrame
-
-    -- All non-root parts: unanchored, massless, no collide
-    for _, part in ipairs(cpDecoyModel:GetDescendants()) do
-        if part:IsA("BasePart") and part ~= cpDecoyRoot then
-            part.Anchored   = false
-            part.Massless   = true
-            part.CanCollide = false
-            part.CanTouch   = false
-        end
-    end
-
-    -- Physics movers
-    cpDecoyBV           = Instance.new("BodyVelocity")
-    cpDecoyBV.MaxForce  = Vector3.new(9e4, 9e4, 9e4)
-    cpDecoyBV.Velocity  = Vector3.zero
-    cpDecoyBV.Parent    = cpDecoyRoot
-
-    cpDecoyBG           = Instance.new("BodyGyro")
-    cpDecoyBG.MaxTorque = Vector3.new(0, 9e4, 0)
-    cpDecoyBG.P         = 9e4
-    cpDecoyBG.CFrame    = myHRP.CFrame
-    cpDecoyBG.Parent    = cpDecoyRoot
-
-    cpDecoyRayParams = RaycastParams.new()
-    cpDecoyRayParams.FilterType = Enum.RaycastFilterType.Exclude
-    cpDecoyRayParams.FilterDescendantsInstances = {cpDecoyModel, myChar}
-
-    -- Must be in workspace before LoadAnimation
-    cpDecoyModel.Parent = workspace
-
-    -- ── Load the real character's animation IDs ───────────────────────────────
-    local animIds = getAnimIdsFromChar(myChar)
-    local tracks  = {}
-
-    for name, id in pairs(animIds) do
-        pcall(function()
-            local anim       = Instance.new("Animation")
-            anim.AnimationId = id
-            local t          = animator:LoadAnimation(anim)
-            t.Priority       = (name == "idle")
-                                and Enum.AnimationPriority.Idle
-                                or  Enum.AnimationPriority.Movement
-            tracks[name]     = t
-        end)
-    end
-
-    if tracks.idle then tracks.idle:Play() end
-    local currentTrack = tracks.idle
-
-    local function switchAnim(track)
-        if not track then return end
-        if currentTrack == track then return end
-        if currentTrack then currentTrack:Stop(0.1) end
-        currentTrack = track
-        if not track.IsPlaying then track:Play(0.1) end
-    end
-
-    -- ── Camera: set once, then only fix it if something steals it ─────────────
-    -- Setting CameraSubject every frame causes crashes; use Changed event instead
-    workspace.CurrentCamera.CameraSubject = cpDecoyHum
-    cpDecoyCamConn = workspace.CurrentCamera
-        :GetPropertyChangedSignal("CameraSubject")
-        :Connect(function()
-            if cpDecoyHum and cpDecoyHum.Parent then
-                workspace.CurrentCamera.CameraSubject = cpDecoyHum
-            end
-        end)
-
-    -- ── Input ─────────────────────────────────────────────────────────────────
-    cpDecoyInputConn = UIS.InputBegan:Connect(function(inp, gp)
-        if gp then return end
-        local k   = inp.KeyCode.Name:lower()
-        local map = {w="F", s="B", d="R", a="L"}
-        if map[k] then cpDecoyControl[map[k]] = 1 end
-
-        if k == "space" and cpDecoyOnGround then
-            cpDecoyVelY     = DECOY_JUMP
-            cpDecoyOnGround = false
-            switchAnim(tracks.jump)
-        end
-    end)
-
-    cpDecoyInputEnd = UIS.InputEnded:Connect(function(inp, gp)
-        if gp then return end
-        local k   = inp.KeyCode.Name:lower()
-        local map = {w="F", s="B", d="R", a="L"}
-        if map[k] then cpDecoyControl[map[k]] = 0 end
-    end)
-
-    -- ── Per-frame loop ────────────────────────────────────────────────────────
-    cpDecoyConn = weldRun.Heartbeat:Connect(function(dt)
-        if not cpDecoyRoot or not cpDecoyRoot.Parent then return end
-
-        -- Ground check
-        local result = workspace:Raycast(
-            cpDecoyRoot.Position,
-            Vector3.new(0, -(DECOY_HRP_HEIGHT + 2.5), 0),
-            cpDecoyRayParams
-        )
-
-        if result then
-            local targetY = result.Position.Y + DECOY_HRP_HEIGHT
-            if cpDecoyVelY <= 0 then
-                cpDecoyOnGround = true
-                cpDecoyVelY     = 0
-                cpDecoyRoot.CFrame = CFrame.new(
-                    cpDecoyRoot.Position.X,
-                    targetY,
-                    cpDecoyRoot.Position.Z
-                )
-            end
-        else
-            cpDecoyOnGround = false
-        end
-
-        if not cpDecoyOnGround then
-            cpDecoyVelY = cpDecoyVelY - DECOY_GRAVITY * dt
-        end
-
-        -- Horizontal movement
-        local cam       = workspace.CurrentCamera
-        local look      = cam.CoordinateFrame.LookVector
-        local right     = cam.CoordinateFrame.RightVector
-        local flatLook  = Vector3.new(look.X,  0, look.Z)
-        local flatRight = Vector3.new(right.X, 0, right.Z)
-        if flatLook.Magnitude  > 0 then flatLook  = flatLook.Unit  end
-        if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end
-
-        local horizVel =
-            (flatLook  * ((cpDecoyControl.F - cpDecoyControl.B) * DECOY_SPEED))
-          + (flatRight * ((cpDecoyControl.R - cpDecoyControl.L) * DECOY_SPEED))
-
-        cpDecoyBV.Velocity = Vector3.new(horizVel.X, cpDecoyVelY, horizVel.Z)
-
-        if horizVel.Magnitude > 0.1 then
-            local _, yaw, _ = cam.CoordinateFrame:ToEulerAnglesYXZ()
-            cpDecoyBG.CFrame = CFrame.Angles(0, yaw, 0)
-        end
-
-        -- Animation state machine
-        local speed = horizVel.Magnitude
-        if not cpDecoyOnGround then
-            switchAnim(cpDecoyVelY > 0 and tracks.jump or tracks.fall)
-        elseif speed > 12 then
-            switchAnim(tracks.run)
-        elseif speed > 0.1 then
-            switchAnim(tracks.walk)
-        else
-            switchAnim(tracks.idle)
-        end
-    end)
-end
-
--- ── Toggle ────────────────────────────────────────────────────────────────────
+-- Toggle
 Tab:AddToggle({
     Label   = "Wall (Layered Clothing)",
     Default = false,
@@ -1660,25 +1369,12 @@ Tab:AddToggle({
     Callback = function(state)
         cpEnabled = state
 
+        -- Cleanup on disable
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
-
-            -- Disconnect cpConn FIRST so Heartbeat can't overwrite the snap
-            if cpConn then cpConn:Disconnect() cpConn = nil end
-
-            -- Snap real character to decoy's last position
-            local myChar = weldLocal.Character
-            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            if myRoot and cpDecoyRoot and cpDecoyRoot.Parent then
-                myRoot.CFrame                  = cpDecoyRoot.CFrame
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-            end
-
-            -- destroyDecoy restores CameraSubject to real character
-            destroyDecoy()
-            cleanupToggle(nil, cpTrack, cpNoCollide, nil)
-            cpTrack  = nil
+            cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+            cpConn  = nil
+            cpTrack = nil
             lastChar = nil
             return
         end
@@ -1686,67 +1382,59 @@ Tab:AddToggle({
         if not selectedTarget then return end
         activeFlingCount = activeFlingCount + 1
 
-        local myChar = weldLocal.Character
-
-        pcall(spawnDecoy, myChar)
-
-        lastChar = myChar
-        cpTrack  = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
-
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
 
+            -- Auto-disable if target is gone
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
-
-                if cpConn then cpConn:Disconnect() cpConn = nil end
-
-                local c = weldLocal.Character
-                local r = c and c:FindFirstChild("HumanoidRootPart")
-                if r and cpDecoyRoot and cpDecoyRoot.Parent then
-                    r.CFrame                  = cpDecoyRoot.CFrame
-                    r.AssemblyLinearVelocity  = Vector3.zero
-                    r.AssemblyAngularVelocity = Vector3.zero
-                end
-
-                destroyDecoy()
-                cleanupToggle(nil, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
+                cpConn   = nil
                 cpTrack  = nil
                 lastChar = nil
                 return
             end
 
-            local curChar = weldLocal.Character
-            local myRoot  = curChar and curChar:FindFirstChild("HumanoidRootPart")
-            if not curChar or not myRoot then return end
+            -- Resolve characters
+            local myChar  = weldLocal.Character
+            local myRoot  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
 
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            if curChar ~= lastChar then
-                lastChar = curChar
-                pcall(spawnDecoy, curChar)
-                if cpTrack then cpTrack:Stop() cpTrack:Destroy() end
-                cpTrack = loadAnim(curChar, cpAnimId, cpFreezeAt, false)
+            -- Reload animation on character change
+            if myChar ~= lastChar then
+                lastChar = myChar
+                if cpTrack then
+                    cpTrack:Stop()
+                    cpTrack:Destroy()
+                end
+                cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
             end
 
             pcall(function()
-                for _, part in ipairs(curChar:GetDescendants()) do
+                -- Disable collisions
+                for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and cpNoCollide then
                         part.CanCollide = false
                     end
                 end
 
-                local hum      = curChar:FindFirstChildOfClass("Humanoid")
+                -- Stop all animations except the active emote
+                local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
                     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                        if track ~= cpTrack then track:Stop(0) end
+                        if track ~= cpTrack then
+                            track:Stop(0)
+                        end
                     end
                 end
 
+                -- Position on target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
 
