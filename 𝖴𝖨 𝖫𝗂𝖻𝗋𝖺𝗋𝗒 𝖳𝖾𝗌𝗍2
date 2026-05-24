@@ -1344,25 +1344,120 @@ Tab:AddToggle({
 end
 
 -- 13
--- Wall (Layered Clothing) Config
-local cpConn      = nil
-local cpEnabled   = false
-local cpTrack     = nil
-local lastChar    = nil
+-- ─── Decoy state ──────────────────────────────────────────────────────────────
+local cpDecoyModel = nil
+local cpDecoyConn  = nil
+local cpDecoyRoot  = nil   -- the anchored "HumanoidRootPart" of the decoy
 
-local cpUp        = -80
-local cpForward   = 0
-local cpSide      = 0
-local cpTiltX     = 225
-local cpTiltY     = 0
-local cpTiltZ     = 0
+local function destroyDecoy()
+    if cpDecoyConn  then cpDecoyConn:Disconnect() cpDecoyConn  = nil end
+    if cpDecoyModel and cpDecoyModel.Parent then cpDecoyModel:Destroy() end
+    cpDecoyModel = nil
+    cpDecoyRoot  = nil
+end
 
-local cpFaceBack  = false
-local cpNoCollide = true
-local cpFreezeAt  = 0
-local cpAnimId    = 70883871260184
+local function spawnDecoy(myChar)
+    destroyDecoy()
+    if not myChar then return end
 
--- Toggle
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+
+    -- Snapshot the position where you were standing when the toggle fired
+    local originCF = myHRP.CFrame
+
+    cpDecoyModel = Instance.new("Model")
+    cpDecoyModel.Name = "CPDecoy"
+
+    -- Part map: ghost part → original part name (for pose mirroring)
+    local partMap = {}
+
+    -- Anchored invisible root so the model has a pivot; never seen by anyone
+    local fakeHRP       = Instance.new("Part")
+    fakeHRP.Name        = "HumanoidRootPart"
+    fakeHRP.Size        = Vector3.new(2, 2, 1)
+    fakeHRP.Transparency = 1
+    fakeHRP.CanCollide  = false
+    fakeHRP.Anchored    = true
+    fakeHRP.CFrame      = originCF
+    fakeHRP.Parent      = cpDecoyModel
+    cpDecoyRoot         = fakeHRP
+
+    -- Clone every visible BasePart (exact colours, textures, accessories)
+    for _, orig in ipairs(myChar:GetDescendants()) do
+        if orig:IsA("BasePart") and orig.Name ~= "HumanoidRootPart" then
+            local copy = orig:Clone()
+
+            -- Strip scripts/joints so nothing runs inside the decoy
+            for _, v in ipairs(copy:GetDescendants()) do
+                if v:IsA("Script") or v:IsA("LocalScript")
+                or v:IsA("Motor6D") or v:IsA("Weld") then
+                    v:Destroy()
+                end
+            end
+
+            copy.Anchored    = true
+            copy.CanCollide  = false
+            copy.CanTouch    = false
+            copy.CastShadow  = true
+            -- Keep exact appearance (transparency, colour, texture unchanged)
+            copy.Transparency = orig.Transparency
+            copy.Color        = orig.Color
+
+            -- Initial pose relative to origin
+            local relCF = myHRP.CFrame:ToObjectSpace(orig.CFrame)
+            copy.CFrame = originCF * relCF
+            copy.Parent = cpDecoyModel
+
+            table.insert(partMap, { decoy = copy, name = orig.Name })
+        end
+    end
+
+    -- Also clone any accessories/hats parked under the character model
+    for _, obj in ipairs(myChar:GetChildren()) do
+        if obj:IsA("Accessory") then
+            local handle = obj:FindFirstChildWhichIsA("BasePart")
+            if handle then
+                -- The accessory part is already captured above via GetDescendants,
+                -- but clone the Accessory wrapper so SpecialMesh / Tags survive
+                local acc = obj:Clone()
+                for _, v in ipairs(acc:GetDescendants()) do
+                    if v:IsA("Script") or v:IsA("LocalScript") then v:Destroy() end
+                end
+                local accHandle = acc:FindFirstChildWhichIsA("BasePart")
+                if accHandle then
+                    accHandle.Anchored   = true
+                    accHandle.CanCollide = false
+                end
+                acc.Parent = cpDecoyModel
+            end
+        end
+    end
+
+    cpDecoyModel.Parent = workspace
+
+    -- Every frame: recompute each decoy part's world CFrame from the real
+    -- character's current pose, but rooted to originCF instead of myHRP.CFrame.
+    -- This makes the decoy play all animations in-place at the spawn spot.
+    cpDecoyConn = weldRun.Heartbeat:Connect(function()
+        local realHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not realHRP or not cpDecoyRoot then return end
+
+        -- Keep the fake root anchored at the original spot
+        cpDecoyRoot.CFrame = originCF
+
+        for _, entry in ipairs(partMap) do
+            local realPart = myChar:FindFirstChild(entry.name)
+            if realPart and entry.decoy and entry.decoy.Parent then
+                -- Offset from the REAL HRP → apply to originCF
+                local relCF = realHRP.CFrame:ToObjectSpace(realPart.CFrame)
+                entry.decoy.CFrame = originCF * relCF
+            end
+        end
+    end)
+end
+
+-- ─── Toggle ───────────────────────────────────────────────────────────────────
 Tab:AddToggle({
     Label   = "Wall (Layered Clothing)",
     Default = false,
@@ -1370,12 +1465,12 @@ Tab:AddToggle({
     Callback = function(state)
         cpEnabled = state
 
-        -- Cleanup on disable
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
+            destroyDecoy()   -- <── clean up decoy
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-            cpConn  = nil
-            cpTrack = nil
+            cpConn   = nil
+            cpTrack  = nil
             lastChar = nil
             return
         end
@@ -1383,13 +1478,17 @@ Tab:AddToggle({
         if not selectedTarget then return end
         activeFlingCount = activeFlingCount + 1
 
+        -- Spawn the decoy immediately so it's visible before the first Heartbeat
+        local myChar = weldLocal.Character
+        spawnDecoy(myChar)
+
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
 
-            -- Auto-disable if target is gone
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
+                destroyDecoy()
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
                 cpConn   = nil
                 cpTrack  = nil
@@ -1397,7 +1496,6 @@ Tab:AddToggle({
                 return
             end
 
-            -- Resolve characters
             local myChar  = weldLocal.Character
             local myRoot  = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myChar or not myRoot then return end
@@ -1406,9 +1504,10 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Reload animation on character change
+            -- Re-spawn decoy if character reloaded
             if myChar ~= lastChar then
                 lastChar = myChar
+                spawnDecoy(myChar)   -- rebuild decoy for new character
                 if cpTrack then
                     cpTrack:Stop()
                     cpTrack:Destroy()
@@ -1417,25 +1516,20 @@ Tab:AddToggle({
             end
 
             pcall(function()
-                -- Disable collisions
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") and cpNoCollide then
                         part.CanCollide = false
                     end
                 end
 
-                -- Stop all animations except the active emote
                 local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
                     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                        if track ~= cpTrack then
-                            track:Stop(0)
-                        end
+                        if track ~= cpTrack then track:Stop(0) end
                     end
                 end
 
-                -- Position on target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
 
