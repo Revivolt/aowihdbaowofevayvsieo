@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1345,12 +1345,9 @@ end
 
 -- 13
 local cpConn      = nil
-local cpCamConn   = nil
 local cpEnabled   = false
 local cpTrack     = nil
 local lastChar    = nil
-local cpOrigCF    = nil  -- saved position before teleport
-
 local cpUp        = -80
 local cpForward   =  0
 local cpSide      =  0
@@ -1362,6 +1359,9 @@ local cpNoCollide = true
 local cpFreezeAt  = 0
 local cpAnimId    = 70883871260184
 
+-- Stores the real client CFrame so we can restore it on toggle-off
+local cpClientCFrame = nil
+
 Tab:AddToggle({
     Label    = "Wall (Layered Clothing)",
     Default  = false,
@@ -1369,17 +1369,16 @@ Tab:AddToggle({
         cpEnabled = state
 
         if not cpEnabled then
-            -- Restore camera to default
-            if cpCamConn then cpCamConn:Disconnect() cpCamConn = nil end
-            workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-
-            -- Teleport character back to original position
+            -- Snap server back to where the client actually is
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            if myRoot and cpOrigCF then
-                myRoot.CFrame = cpOrigCF
+            if myRoot and cpClientCFrame then
+                -- Write the real client position back so the server re-syncs
+                myRoot.CFrame = cpClientCFrame
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
             end
-            cpOrigCF = nil
+            cpClientCFrame = nil
 
             activeFlingCount = math.max(0, activeFlingCount - 1)
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
@@ -1388,49 +1387,31 @@ Tab:AddToggle({
         end
 
         if not selectedTarget then return end
-
-        -- Save current character position before moving
-        local myChar = weldLocal.Character
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if myRoot then
-            cpOrigCF = myRoot.CFrame
-        end
-
-        -- Lock camera to saved position so it looks like nothing changed
-        local camera = workspace.CurrentCamera
-        camera.CameraType = Enum.CameraType.Scriptable
-        cpCamConn = game:GetService("RunService").RenderStepped:Connect(function()
-            if cpOrigCF then
-                camera.CFrame = cpOrigCF
-            end
-        end)
-
         activeFlingCount = activeFlingCount + 1
+
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
+
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
-
-                if cpCamConn then cpCamConn:Disconnect() cpCamConn = nil end
-                workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-
-                local myChar2 = weldLocal.Character
-                local myRoot2 = myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
-                if myRoot2 and cpOrigCF then myRoot2.CFrame = cpOrigCF end
-                cpOrigCF = nil
-
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
-                cpConn = nil cpTrack = nil lastChar = nil
+                cpConn = nil cpTrack = nil lastChar = nil cpClientCFrame = nil
                 return
             end
 
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myChar or not myRoot then return end
+
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
+
+            -- Capture the real client CFrame BEFORE we touch anything
+            -- This is what the player's screen shows and what we restore on toggle-off
+            local realClientCF = myRoot.CFrame
+            cpClientCFrame     = realClientCF
 
             if myChar ~= lastChar then
                 lastChar = myChar
@@ -1440,28 +1421,40 @@ Tab:AddToggle({
 
             pcall(function()
                 for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
-                end
-
-                -- Stop all animation tracks except the emote
-                local hum = myChar:FindFirstChildOfClass("Humanoid")
-                local animator = hum and hum:FindFirstChildOfClass("Animator")
-                if animator then
-                    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                        if track ~= cpTrack then
-                            track:Stop(0)
-                        end
+                    if part:IsA("BasePart") and cpNoCollide then
+                        part.CanCollide = false
                     end
                 end
 
+                local hum      = myChar:FindFirstChildOfClass("Humanoid")
+                local animator = hum and hum:FindFirstChildOfClass("Animator")
+                if animator then
+                    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                        if track ~= cpTrack then track:Stop(0) end
+                    end
+                end
+
+                -- Build the spoofed server CFrame: -80 below the target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                local yaw          = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                local spoofedCF    = CFrame.new(tgtRoot.Position)
+                    * CFrame.Angles(0, yaw, 0)
                     * CFrame.new(cpSide, cpUp, -cpForward)
                     * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+
+                -- Push the spoofed CFrame to the server via the physics rep
+                -- The client root stays at realClientCF so the player sees no movement
+                myRoot.CFrame = realClientCF   -- client stays put visually
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
+
+                -- Feed the server the -80 offset position through the physics replication root
+                sethiddenproperty(myRoot, "NetworkOwnerV3", spoofedCF.Position)
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+
+                -- Secondary method: directly write the spoofed CF into the replication buffer
+                -- Some executors expose this; harmless no-op if not supported
+                pcall(sethiddenproperty, myRoot, "CFrame", spoofedCF)
             end)
         end)
     end,
