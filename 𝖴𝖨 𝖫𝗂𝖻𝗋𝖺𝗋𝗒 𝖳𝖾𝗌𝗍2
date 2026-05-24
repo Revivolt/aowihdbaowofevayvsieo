@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1359,17 +1359,17 @@ local cpNoCollide = true
 local cpFreezeAt = 0
 local cpAnimId = 70883871260184
 
-local dummyChar = nil -- Dummy character for client-side movement
-local clientFreeze = false -- Toggle for client-side freeze
+local dummyChar = nil -- Dummy for client-side movement
+local clientFreeze = false -- State for client-side freeze
 
--- Main toggle for Wall (Layered Clothing)
+-- Modified toggle with combined functionality
 AddToggle({
     Label = "Wall (Layered Clothing)",
     Default = false,
     Callback = function(state)
         cpEnabled = state
         if not cpEnabled then
-            -- Cleanup when disabled
+            -- Cleanup when toggled off
             activeFlingCount = math.max(0, activeFlingCount - 1)
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
             cpConn = nil
@@ -1380,7 +1380,7 @@ AddToggle({
                 dummyChar:Destroy()
                 dummyChar = nil
             end
-            -- Restore real character visibility
+            -- Restore real character's visibility
             if myChar then
                 for _, part in ipairs(myChar:GetDescendants()) do
                     if part:IsA("BasePart") then
@@ -1389,19 +1389,22 @@ AddToggle({
                     end
                 end
             end
+            -- Reset client freeze
+            clientFreeze = false
             return
         end
+
         -- When toggled on
         if not dummyChar then
-            -- Clone your character to create a dummy
+            -- Create a dummy clone
             dummyChar = myChar:Clone()
             for _, part in ipairs(dummyChar:GetDescendants()) do
                 if part:IsA("BasePart") then
-                    part.Transparency = 0 -- or 1 for fully invisible
+                    part.Transparency = 0 -- set to 1 if you want it invisible
                     part.CanCollide = false
                 end
             end
-            -- Make dummy follow your real character's position
+            -- Make dummy follow real character if clientFreeze is true
             weldRun.Heartbeat:Connect(function()
                 if clientFreeze and dummyChar and myChar then
                     local myRoot = myChar:FindFirstChild("HumanoidRootPart")
@@ -1412,7 +1415,8 @@ AddToggle({
                 end
             end)
         end
-        -- Hide or show real character based on clientFreeze
+
+        -- Handle appearance based on clientFreeze
         if myChar then
             for _, part in ipairs(myChar:GetDescendants()) do
                 if part:IsA("BasePart") then
@@ -1420,7 +1424,8 @@ AddToggle({
                 end
             end
         end
-        -- Existing logic for animation and positioning
+
+        -- Enable the emote and positioning
         activeFlingCount = activeFlingCount + 1
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
@@ -1432,12 +1437,10 @@ AddToggle({
                 cpConn = nil
                 cpTrack = nil
                 lastChar = nil
-                -- Remove dummy
                 if dummyChar then
                     dummyChar:Destroy()
                     dummyChar = nil
                 end
-                -- Show real character
                 if myChar then
                     for _, part in ipairs(myChar:GetDescendants()) do
                         if part:IsA("BasePart") then
@@ -1448,6 +1451,7 @@ AddToggle({
                 end
                 return
             end
+
             -- Resolve characters
             local myChar = weldLocal.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -1455,12 +1459,14 @@ AddToggle({
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
+
             -- Reload animation if character changed
             if myChar ~= lastChar then
                 lastChar = myChar
                 if cpTrack then cpTrack:Stop(); cpTrack:Destroy() end
                 cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
             end
+
             pcall(function()
                 -- Disable collisions if needed
                 for _, part in ipairs(myChar:GetDescendants()) do
@@ -1468,6 +1474,7 @@ AddToggle({
                         part.CanCollide = false
                     end
                 end
+
                 -- Stop other animations
                 local hum = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
@@ -1476,6 +1483,7 @@ AddToggle({
                         if track ~= cpTrack then track:Stop(0) end
                     end
                 end
+
                 -- Position on target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
@@ -1487,26 +1495,17 @@ AddToggle({
                 sethiddenproperty(myRoot, "PhysicsReplRootPart", tgtRoot)
             end)
         end)
-    end,
-})
 
--- Toggle for client-side freeze
-AddToggle({
-    Label = "Client Freeze (Appear stationary & movable)",
-    Default = false,
-    Callback = function(state)
-        clientFreeze = state
-        if not state then
-            -- When disabled, restore real character visibility
-            if myChar then
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.Transparency = 0
-                    end
+        -- Set client freeze to true to make the character appear stationary & movable
+        clientFreeze = true
+        if myChar then
+            for _, part in ipairs(myChar:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Transparency = 1 -- make invisible for appearance freeze
                 end
             end
         end
-    end
+    end,
 })
 
 -- 14
