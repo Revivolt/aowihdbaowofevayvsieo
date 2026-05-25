@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2066,12 +2066,15 @@ Tab:AddTextInput({
 
 local ANIMATION_ID = 102940155040466
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
 local emote1Track = nil
 local savedTracks = {}
 local toggleEnabled = false
+local localClone = nil
+local cloneConnection = nil
 
 local function updateCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
@@ -2141,6 +2144,77 @@ local function restoreTracks()
     savedTracks = {}
 end
 
+local function createLocalClone()
+    local char = player.Character
+    if not char then return end
+
+    -- Clean up any existing clone
+    if localClone then localClone:Destroy() localClone = nil end
+    if cloneConnection then cloneConnection:Disconnect() cloneConnection = nil end
+
+    -- Clone the character
+    localClone = char:Clone()
+    localClone.Name = "LocalClone"
+
+    -- Remove any server-side scripts from the clone
+    for _, obj in pairs(localClone:GetDescendants()) do
+        if obj:IsA("Script") then
+            obj:Destroy()
+        end
+    end
+
+    -- Make clone non-collidable so it doesn't interfere with physics
+    for _, part in pairs(localClone:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.Anchored = false
+        end
+    end
+
+    localClone.Parent = workspace
+
+    -- Hide the real character from yourself only
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.LocalTransparencyModifier = 1
+        end
+    end
+
+    -- Each frame, sync clone's root to real character's root
+    -- so the clone follows you around while playing normal animations
+    local realRoot = char:FindFirstChild("HumanoidRootPart")
+    local cloneRoot = localClone:FindFirstChild("HumanoidRootPart")
+    local realHum = char:FindFirstChild("Humanoid")
+    local cloneHum = localClone:FindFirstChild("Humanoid")
+
+    cloneConnection = RunService.RenderStepped:Connect(function()
+        if not char or not char.Parent then return end
+        if realRoot and cloneRoot then
+            cloneRoot.CFrame = realRoot.CFrame
+        end
+        if realHum and cloneHum then
+            cloneHum.MoveDirection = realHum.MoveDirection
+            cloneHum.WalkSpeed = realHum.WalkSpeed
+            cloneHum.Jump = realHum.Jump
+        end
+    end)
+end
+
+local function removeLocalClone()
+    if cloneConnection then cloneConnection:Disconnect() cloneConnection = nil end
+    if localClone then localClone:Destroy() localClone = nil end
+
+    -- Restore real character visibility
+    local char = player.Character
+    if char then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.LocalTransparencyModifier = 0
+            end
+        end
+    end
+end
+
 player.CharacterAdded:Connect(function(character)
     humanoid = character:WaitForChild("Humanoid")
     animator = humanoid:WaitForChild("Animator")
@@ -2150,6 +2224,7 @@ player.CharacterAdded:Connect(function(character)
     if toggleEnabled then
         task.wait(0.1)
         playAnim()
+        createLocalClone()
     end
 end)
 
@@ -2187,12 +2262,18 @@ Tab:AddToggle({
                     playAnim()
                 end
             end)
+
+            -- Spawn clone to look normal locally
+            createLocalClone()
         else
             destroyTrack(emote1Track)
             emote1Track = nil
             destroyTrack(animTrack)
             animTrack = nil
             restoreTracks()
+
+            -- Remove clone and restore real character visibility
+            removeLocalClone()
         end
     end,
 })
