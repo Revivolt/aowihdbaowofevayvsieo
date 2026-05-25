@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2067,6 +2067,7 @@ Tab:AddTextInput({
 local ANIMATION_ID = 102940155040466
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
@@ -2074,9 +2075,10 @@ local emote1Track = nil
 local savedTracks = {}
 local toggleEnabled = false
 
-local localDummy = nil
-local dummyConnection = nil
-local dummyIdleTrack = nil
+local fakeChar = nil
+local fakeIdleTrack = nil
+local realChar = nil
+local connections = {}
 
 local function updateCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
@@ -2146,97 +2148,112 @@ local function restoreTracks()
     savedTracks = {}
 end
 
-local function destroyLocalDummy()
-    if dummyConnection then
-        dummyConnection:Disconnect()
-        dummyConnection = nil
+local function destroyFakeChar()
+    -- Disconnect all RenderStepped etc.
+    for _, conn in pairs(connections) do
+        conn:Disconnect()
     end
-    if dummyIdleTrack then
-        dummyIdleTrack:Stop()
-        dummyIdleTrack = nil
+    connections = {}
+
+    if fakeIdleTrack then
+        fakeIdleTrack:Stop()
+        fakeIdleTrack = nil
     end
-    if localDummy then
-        localDummy:Destroy()
-        localDummy = nil
+
+    if fakeChar then
+        fakeChar:Destroy()
+        fakeChar = nil
     end
-    -- Restore real character visibility
-    local char = player.Character
-    if char then
-        for _, obj in pairs(char:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                obj.LocalTransparencyModifier = 0
-            end
+
+    -- Hand control back to the real character
+    if realChar and realChar.Parent then
+        player.Character = realChar
+        local realHum = realChar:FindFirstChildOfClass("Humanoid")
+        if realHum then
+            Camera.CameraSubject = realHum
+        end
+        local realRoot = realChar:FindFirstChild("HumanoidRootPart")
+        if realRoot then
+            realRoot.Anchored = false
         end
     end
+
+    realChar = nil
 end
 
-local function createLocalDummy()
+local function createFakeChar()
     local char = player.Character
     if not char then return end
+    if not char:FindFirstChild("HumanoidRootPart") then return end
 
-    destroyLocalDummy()
+    destroyFakeChar()
 
-    localDummy = char:Clone()
-    if not localDummy then return end
-    localDummy.Name = "_LocalDummy"
+    realChar = char
 
-    -- Strip all scripts
-    for _, obj in pairs(localDummy:GetDescendants()) do
+    -- Clone the character — LocalScript objects never replicate, only we see this
+    fakeChar = char:Clone()
+    if not fakeChar then return end
+    fakeChar.Name = "_FakeChar"
+
+    -- Strip all scripts from the clone so nothing conflicts
+    for _, obj in pairs(fakeChar:GetDescendants()) do
         if obj:IsA("BaseScript") then
             obj:Destroy()
         end
     end
 
-    -- No collision, no shadow
-    for _, obj in pairs(localDummy:GetDescendants()) do
+    -- Make all parts non-colliding and no shadow
+    for _, obj in pairs(fakeChar:GetDescendants()) do
         if obj:IsA("BasePart") then
             obj.CanCollide = false
             obj.CastShadow = false
         end
     end
 
-    -- Hide nametag
-    local dummyHum = localDummy:FindFirstChildOfClass("Humanoid")
-    if dummyHum then
-        dummyHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+    local fakeRoot = fakeChar:FindFirstChild("HumanoidRootPart")
+    local fakeHum = fakeChar:FindFirstChildOfClass("Humanoid")
+
+    if fakeRoot then
+        fakeRoot.Anchored = true
+        fakeRoot.Transparency = 1
     end
 
-    -- Anchor root, hide it
-    local dummyRoot = localDummy:FindFirstChild("HumanoidRootPart")
-    if dummyRoot then
-        dummyRoot.Anchored = true
-        dummyRoot.Transparency = 1
+    -- Hide nametag on the clone
+    if fakeHum then
+        fakeHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
     end
 
-    -- Parent to workspace — client-side only
-    localDummy.Parent = workspace
+    fakeChar.Parent = workspace
 
-    -- Play idle on the dummy so it looks normal
-    local dummyAnimator = dummyHum and dummyHum:FindFirstChildOfClass("Animator")
-    if dummyAnimator then
+    -- Play idle on the clone so we look normal
+    local fakeAnimator = fakeHum and fakeHum:FindFirstChildOfClass("Animator")
+    if fakeAnimator then
         local idleAnim = Instance.new("Animation")
         idleAnim.AnimationId = "rbxassetid://507766388" -- R15 idle; swap to 180435571 for R6
-        dummyIdleTrack = dummyAnimator:LoadAnimation(idleAnim)
-        dummyIdleTrack.Looped = true
-        dummyIdleTrack:Play()
+        fakeIdleTrack = fakeAnimator:LoadAnimation(idleAnim)
+        fakeIdleTrack.Looped = true
+        fakeIdleTrack:Play()
     end
 
-    local realRoot = char:FindFirstChild("HumanoidRootPart")
+    -- Point the game's camera at the fake character — this is the key part
+    -- It makes everything (including built-in camera scripts) follow the clone
+    player.Character = fakeChar
+    if fakeHum then
+        Camera.CameraSubject = fakeHum
+    end
 
-    -- Every frame: hide real character AND track dummy to real position
-    -- Doing both here ensures LocalTransparencyModifier never gets reset by the engine
-    dummyConnection = RunService.RenderStepped:Connect(function()
-        -- Continuously enforce real character invisibility on our screen
-        for _, obj in pairs(char:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                obj.LocalTransparencyModifier = 1
-            end
+    -- Anchor the real character's root so it stays put while playing emotes
+    local realRoot = realChar:FindFirstChild("HumanoidRootPart")
+    if realRoot then
+        realRoot.Anchored = true
+    end
+
+    -- Every frame, snap the fake char to the real char's position
+    table.insert(connections, RunService.RenderStepped:Connect(function()
+        if realRoot and fakeRoot then
+            fakeRoot.CFrame = realRoot.CFrame
         end
-        -- Keep dummy glued to real character position
-        if realRoot and dummyRoot then
-            dummyRoot.CFrame = realRoot.CFrame
-        end
-    end)
+    end))
 end
 
 player.CharacterAdded:Connect(function(character)
@@ -2245,10 +2262,14 @@ player.CharacterAdded:Connect(function(character)
     animTrack = nil
     emote1Track = nil
     savedTracks = {}
+    fakeChar = nil
+    fakeIdleTrack = nil
+    realChar = nil
+    connections = {}
     if toggleEnabled then
         task.wait(0.1)
         playAnim()
-        createLocalDummy()
+        createFakeChar()
     end
 end)
 
@@ -2286,15 +2307,15 @@ Tab:AddToggle({
                 local char = player.Character
                 if not char then return end
                 playAnim()
-                createLocalDummy()
+                createFakeChar()
             end)
         else
             destroyTrack(emote1Track)
             emote1Track = nil
             destroyTrack(animTrack)
             animTrack = nil
+            destroyFakeChar()
             restoreTracks()
-            destroyLocalDummy()
         end
     end,
 })
