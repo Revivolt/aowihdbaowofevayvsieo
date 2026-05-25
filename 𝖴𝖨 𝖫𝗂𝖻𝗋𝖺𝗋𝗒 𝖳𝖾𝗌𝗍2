@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2182,17 +2182,26 @@ local function createLocalClone()
     local cloneHum = localClone:FindFirstChild("Humanoid")
 
     cloneConnection = RunService.RenderStepped:Connect(function()
-        if not char or not char.Parent then return end
-        if realRoot and cloneRoot then
-            cloneRoot.CFrame = realRoot.CFrame
+    if not char or not char.Parent then return end
+
+    -- Keep real character hidden every frame since Roblox resets LocalTransparencyModifier
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.LocalTransparencyModifier = 1
         end
-        if realHum and cloneHum then
-            cloneHum.MoveDirection = realHum.MoveDirection
-            cloneHum.WalkSpeed = realHum.WalkSpeed
-            cloneHum.Jump = realHum.Jump
-        end
-    end)
-end
+    end
+
+    -- Sync clone position to real character
+    if realRoot and cloneRoot then
+        cloneRoot.CFrame = realRoot.CFrame
+    end
+
+    if realHum and cloneHum then
+        cloneHum.MoveDirection = realHum.MoveDirection
+        cloneHum.WalkSpeed = realHum.WalkSpeed
+        cloneHum.Jump = realHum.Jump
+    end
+end)
 
 local function removeLocalClone()
     if cloneConnection then cloneConnection:Disconnect() cloneConnection = nil end
