@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2066,6 +2066,7 @@ Tab:AddTextInput({
 
 local ANIMATION_ID = 102940155040466
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
@@ -2073,8 +2074,9 @@ local emote1Track = nil
 local savedTracks = {}
 local toggleEnabled = false
 
--- NEW: Store original LocalTransparencyModifier values so we can restore cleanly
-local savedTransparency = {}
+local localDummy = nil
+local dummyConnection = nil
+local dummyIdleTrack = nil
 
 local function updateCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
@@ -2144,29 +2146,96 @@ local function restoreTracks()
     savedTracks = {}
 end
 
--- NEW: Makes the local character invisible only to yourself (client-side, non-replicating)
-local function hideLocalCharacter()
+local function destroyLocalDummy()
+    if dummyConnection then
+        dummyConnection:Disconnect()
+        dummyConnection = nil
+    end
+    if dummyIdleTrack then
+        dummyIdleTrack:Stop()
+        dummyIdleTrack = nil
+    end
+    if localDummy then
+        localDummy:Destroy()
+        localDummy = nil
+    end
+    -- Restore real character visibility on our screen
     local char = player.Character
-    if not char then return end
-    savedTransparency = {}
-    for _, obj in pairs(char:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            savedTransparency[obj] = obj.LocalTransparencyModifier
-            obj.LocalTransparencyModifier = 1
+    if char then
+        for _, obj in pairs(char:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.LocalTransparencyModifier = 0
+            end
         end
     end
 end
 
--- NEW: Restores your character's local visibility back to what it was
-local function showLocalCharacter()
+local function createLocalDummy()
     local char = player.Character
     if not char then return end
-    for _, obj in pairs(char:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            obj.LocalTransparencyModifier = savedTransparency[obj] or 0
+
+    destroyLocalDummy()
+
+    -- Clone our character — LocalScript objects never replicate, so only we see this
+    localDummy = char:Clone()
+    localDummy.Name = "_LocalDummy"
+
+    -- Strip all scripts so nothing conflicts or replicates
+    for _, obj in pairs(localDummy:GetDescendants()) do
+        if obj:IsA("BaseScript") then
+            obj:Destroy()
         end
     end
-    savedTransparency = {}
+
+    -- Purely visual — no collision, no shadows
+    for _, obj in pairs(localDummy:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            obj.CanCollide = false
+            obj.CastShadow = false
+        end
+    end
+
+    -- Hide nametag so it doesn't float above the dummy on our screen
+    local dummyHum = localDummy:FindFirstChildOfClass("Humanoid")
+    if dummyHum then
+        dummyHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+    end
+
+    -- Anchor root so we can manually drive its position each frame
+    local dummyRoot = localDummy:FindFirstChild("HumanoidRootPart")
+    if dummyRoot then
+        dummyRoot.Anchored = true
+        dummyRoot.Transparency = 1
+    end
+
+    -- Parent to workspace — client-side only, never seen by others
+    localDummy.Parent = workspace
+
+    -- Play idle on the dummy so we see ourselves standing normally
+    -- Use 507766388 for R15 or 180435571 for R6
+    local dummyAnimator = dummyHum and dummyHum:FindFirstChildOfClass("Animator")
+    if dummyAnimator then
+        local idleAnim = Instance.new("Animation")
+        idleAnim.AnimationId = "rbxassetid://507766388"
+        dummyIdleTrack = dummyAnimator:LoadAnimation(idleAnim)
+        dummyIdleTrack.Looped = true
+        dummyIdleTrack:Play()
+    end
+
+    -- Hide the real character only on our screen; it still replicates normally to others
+    for _, obj in pairs(char:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            obj.LocalTransparencyModifier = 1
+        end
+    end
+
+    -- Every frame, snap the dummy's root to match where the real character is
+    local realRoot = char:FindFirstChild("HumanoidRootPart")
+    dummyConnection = RunService.RenderStepped:Connect(function()
+        if realRoot and dummyRoot then
+            dummyRoot.CFrame = realRoot.CFrame
+        end
+    end)
 end
 
 player.CharacterAdded:Connect(function(character)
@@ -2175,11 +2244,10 @@ player.CharacterAdded:Connect(function(character)
     animTrack = nil
     emote1Track = nil
     savedTracks = {}
-    savedTransparency = {}  -- NEW: reset on respawn
     if toggleEnabled then
         task.wait(0.1)
         playAnim()
-        hideLocalCharacter()  -- NEW: re-hide after respawn if still toggled on
+        createLocalDummy()
     end
 end)
 
@@ -2215,7 +2283,7 @@ Tab:AddToggle({
             task.delay(0, function()
                 if toggleEnabled then
                     playAnim()
-                    hideLocalCharacter()  -- NEW: hide from yourself after emotes start
+                    createLocalDummy()  -- spawn our visual stand-in
                 end
             end)
         else
@@ -2224,7 +2292,7 @@ Tab:AddToggle({
             destroyTrack(animTrack)
             animTrack = nil
             restoreTracks()
-            showLocalCharacter()  -- NEW: restore your own visibility
+            destroyLocalDummy()  -- remove stand-in and restore real character visibility
         end
     end,
 })
