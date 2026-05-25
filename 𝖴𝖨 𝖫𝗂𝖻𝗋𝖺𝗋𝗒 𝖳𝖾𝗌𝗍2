@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2159,6 +2159,7 @@ local function destroyLocalDummy()
         localDummy:Destroy()
         localDummy = nil
     end
+    -- Restore real character visibility
     local char = player.Character
     if char then
         for _, obj in pairs(char:GetDescendants()) do
@@ -2176,15 +2177,17 @@ local function createLocalDummy()
     destroyLocalDummy()
 
     localDummy = char:Clone()
-    if not localDummy then return end  -- guard against nil clone
+    if not localDummy then return end
     localDummy.Name = "_LocalDummy"
 
+    -- Strip all scripts
     for _, obj in pairs(localDummy:GetDescendants()) do
         if obj:IsA("BaseScript") then
             obj:Destroy()
         end
     end
 
+    -- No collision, no shadow
     for _, obj in pairs(localDummy:GetDescendants()) do
         if obj:IsA("BasePart") then
             obj.CanCollide = false
@@ -2192,36 +2195,44 @@ local function createLocalDummy()
         end
     end
 
+    -- Hide nametag
     local dummyHum = localDummy:FindFirstChildOfClass("Humanoid")
     if dummyHum then
         dummyHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
     end
 
+    -- Anchor root, hide it
     local dummyRoot = localDummy:FindFirstChild("HumanoidRootPart")
     if dummyRoot then
         dummyRoot.Anchored = true
         dummyRoot.Transparency = 1
     end
 
+    -- Parent to workspace — client-side only
     localDummy.Parent = workspace
 
+    -- Play idle on the dummy so it looks normal
     local dummyAnimator = dummyHum and dummyHum:FindFirstChildOfClass("Animator")
     if dummyAnimator then
         local idleAnim = Instance.new("Animation")
-        idleAnim.AnimationId = "rbxassetid://507766388"
+        idleAnim.AnimationId = "rbxassetid://507766388" -- R15 idle; swap to 180435571 for R6
         dummyIdleTrack = dummyAnimator:LoadAnimation(idleAnim)
         dummyIdleTrack.Looped = true
         dummyIdleTrack:Play()
     end
 
-    for _, obj in pairs(char:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            obj.LocalTransparencyModifier = 1
-        end
-    end
-
     local realRoot = char:FindFirstChild("HumanoidRootPart")
+
+    -- Every frame: hide real character AND track dummy to real position
+    -- Doing both here ensures LocalTransparencyModifier never gets reset by the engine
     dummyConnection = RunService.RenderStepped:Connect(function()
+        -- Continuously enforce real character invisibility on our screen
+        for _, obj in pairs(char:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                obj.LocalTransparencyModifier = 1
+            end
+        end
+        -- Keep dummy glued to real character position
         if realRoot and dummyRoot then
             dummyRoot.CFrame = realRoot.CFrame
         end
@@ -2273,7 +2284,7 @@ Tab:AddToggle({
             task.delay(0, function()
                 if not toggleEnabled then return end
                 local char = player.Character
-                if not char then return end  -- guard before createLocalDummy
+                if not char then return end
                 playAnim()
                 createLocalDummy()
             end)
