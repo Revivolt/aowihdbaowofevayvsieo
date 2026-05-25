@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2067,7 +2067,6 @@ Tab:AddTextInput({
 local ANIMATION_ID = 102940155040466
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
 local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
@@ -2075,10 +2074,18 @@ local emote1Track = nil
 local savedTracks = {}
 local toggleEnabled = false
 
-local fakeChar = nil
-local fakeIdleTrack = nil
-local realChar = nil
-local connections = {}
+-- Fake stand-in vars
+local FakeChar = nil
+local fakeConnections = {}
+local AnimTracks = {}
+
+local OfficialIDs = {
+    Idle = "rbxassetid://507766388",
+    Walk = "rbxassetid://507777826",
+    Run  = "rbxassetid://507767714",
+    Jump = "rbxassetid://507765000",
+    Fall = "rbxassetid://507767968",
+}
 
 local function updateCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
@@ -2134,9 +2141,7 @@ local function restoreTracks()
     local char = player.Character
     if char then
         local animateScript = char:FindFirstChild("Animate")
-        if animateScript then
-            animateScript.Disabled = false
-        end
+        if animateScript then animateScript.Disabled = false end
     end
     for _, saved in pairs(savedTracks) do
         if saved.track and not saved.track.IsPlaying then
@@ -2148,112 +2153,122 @@ local function restoreTracks()
     savedTracks = {}
 end
 
-local function destroyFakeChar()
-    -- Disconnect all RenderStepped etc.
-    for _, conn in pairs(connections) do
-        conn:Disconnect()
-    end
-    connections = {}
-
-    if fakeIdleTrack then
-        fakeIdleTrack:Stop()
-        fakeIdleTrack = nil
-    end
-
-    if fakeChar then
-        fakeChar:Destroy()
-        fakeChar = nil
-    end
-
-    -- Hand control back to the real character
-    if realChar and realChar.Parent then
-        player.Character = realChar
-        local realHum = realChar:FindFirstChildOfClass("Humanoid")
-        if realHum then
-            Camera.CameraSubject = realHum
-        end
-        local realRoot = realChar:FindFirstChild("HumanoidRootPart")
-        if realRoot then
-            realRoot.Anchored = false
-        end
-    end
-
-    realChar = nil
-end
-
-local function createFakeChar()
+-- Hides/shows the real character locally only
+local function setRealCharTransparency(alpha)
     local char = player.Character
     if not char then return end
-    if not char:FindFirstChild("HumanoidRootPart") then return end
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") or part:IsA("MeshPart") or part:IsA("SpecialMesh") then
+            part.LocalTransparencyModifier = alpha
+        end
+    end
+end
 
-    destroyFakeChar()
+local function LoadFakeAnim(hum, id)
+    local a = Instance.new("Animation")
+    a.AnimationId = id
+    return hum:LoadAnimation(a)
+end
 
-    realChar = char
+local function StopFakeAnims()
+    for _, track in pairs(AnimTracks) do
+        if track and track.IsPlaying then track:Stop(0.1) end
+    end
+end
 
-    -- Clone the character — LocalScript objects never replicate, only we see this
-    fakeChar = char:Clone()
-    if not fakeChar then return end
-    fakeChar.Name = "_FakeChar"
+local function spawnFakeChar()
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
-    -- Strip all scripts from the clone so nothing conflicts
-    for _, obj in pairs(fakeChar:GetDescendants()) do
-        if obj:IsA("BaseScript") then
-            obj:Destroy()
+    char.Archivable = true
+    FakeChar = char:Clone()
+    FakeChar.Name = "InvisClone"
+    FakeChar.Parent = workspace
+
+    local fakeHum  = FakeChar:FindFirstChild("Humanoid")
+    local fakeRoot = FakeChar:FindFirstChild("HumanoidRootPart")
+
+    -- Clean up scripts and physics on the clone
+    for _, v in pairs(FakeChar:GetDescendants()) do
+        if v:IsA("LocalScript") or v:IsA("Script") then
+            v:Destroy()
+        elseif v:IsA("BasePart") then
+            v.Anchored = false
+            v.CanCollide = false
+            -- Keep HumanoidRootPart invisible but present
+            if v.Name == "HumanoidRootPart" then
+                v.Transparency = 1
+            end
         end
     end
 
-    -- Make all parts non-colliding and no shadow
-    for _, obj in pairs(fakeChar:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            obj.CanCollide = false
-            obj.CastShadow = false
-        end
-    end
+    -- Disable the clone's Animate script so we drive animations manually
+    local cloneAnimate = FakeChar:FindFirstChild("Animate")
+    if cloneAnimate then cloneAnimate.Disabled = true end
 
-    local fakeRoot = fakeChar:FindFirstChild("HumanoidRootPart")
-    local fakeHum = fakeChar:FindFirstChildOfClass("Humanoid")
+    -- Load stand-in animations
+    AnimTracks.Idle = LoadFakeAnim(fakeHum, OfficialIDs.Idle)
+    AnimTracks.Walk = LoadFakeAnim(fakeHum, OfficialIDs.Walk)
+    AnimTracks.Run  = LoadFakeAnim(fakeHum, OfficialIDs.Run)
+    AnimTracks.Jump = LoadFakeAnim(fakeHum, OfficialIDs.Jump)
+    AnimTracks.Fall = LoadFakeAnim(fakeHum, OfficialIDs.Fall)
 
-    if fakeRoot then
-        fakeRoot.Anchored = true
-        fakeRoot.Transparency = 1
-    end
+    if AnimTracks.Idle then AnimTracks.Idle:Play() end
 
-    -- Hide nametag on the clone
-    if fakeHum then
-        fakeHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-    end
+    -- Mirror real character position and animations every frame
+    table.insert(fakeConnections, RunService.RenderStepped:Connect(function()
+        local realChar = player.Character
+        if not realChar or not FakeChar or not fakeRoot then return end
 
-    fakeChar.Parent = workspace
+        local realRoot = realChar:FindFirstChild("HumanoidRootPart")
+        if not realRoot then return end
 
-    -- Play idle on the clone so we look normal
-    local fakeAnimator = fakeHum and fakeHum:FindFirstChildOfClass("Animator")
-    if fakeAnimator then
-        local idleAnim = Instance.new("Animation")
-        idleAnim.AnimationId = "rbxassetid://507766388" -- R15 idle; swap to 180435571 for R6
-        fakeIdleTrack = fakeAnimator:LoadAnimation(idleAnim)
-        fakeIdleTrack.Looped = true
-        fakeIdleTrack:Play()
-    end
+        -- Snap clone to real character's CFrame
+        fakeRoot.CFrame = realRoot.CFrame
 
-    -- Point the game's camera at the fake character — this is the key part
-    -- It makes everything (including built-in camera scripts) follow the clone
-    player.Character = fakeChar
-    if fakeHum then
-        Camera.CameraSubject = fakeHum
-    end
+        -- Mirror movement animations from the real humanoid
+        local realHum = realChar:FindFirstChild("Humanoid")
+        if not realHum or not fakeHum then return end
 
-    -- Anchor the real character's root so it stays put while playing emotes
-    local realRoot = realChar:FindFirstChild("HumanoidRootPart")
-    if realRoot then
-        realRoot.Anchored = true
-    end
+        local state = realHum:GetState()
+        local isMoving = realHum.MoveDirection.Magnitude > 0.01
+        local isGrounded = state == Enum.HumanoidStateType.Running
+            or state == Enum.HumanoidStateType.RunningNoPhysics
 
-    -- Every frame, snap the fake char to the real char's position
-    table.insert(connections, RunService.RenderStepped:Connect(function()
-        if realRoot and fakeRoot then
-            fakeRoot.CFrame = realRoot.CFrame
+        if isGrounded then
+            if isMoving then
+                if AnimTracks.Run and not AnimTracks.Run.IsPlaying then
+                    StopFakeAnims()
+                    AnimTracks.Run:Play(0.1)
+                end
+            else
+                if AnimTracks.Idle and not AnimTracks.Idle.IsPlaying then
+                    StopFakeAnims()
+                    AnimTracks.Idle:Play(0.1)
+                end
+            end
+        elseif state == Enum.HumanoidStateType.Jumping then
+            if AnimTracks.Jump and not AnimTracks.Jump.IsPlaying then
+                StopFakeAnims()
+                AnimTracks.Jump:Play(0.1)
+            end
+        elseif state == Enum.HumanoidStateType.Freefall then
+            if AnimTracks.Fall and not AnimTracks.Fall.IsPlaying then
+                StopFakeAnims()
+                AnimTracks.Fall:Play(0.1)
+            end
         end
     end))
+end
+
+local function destroyFakeChar()
+    for _, conn in pairs(fakeConnections) do conn:Disconnect() end
+    fakeConnections = {}
+    AnimTracks = {}
+    if FakeChar then
+        FakeChar:Destroy()
+        FakeChar = nil
+    end
 end
 
 player.CharacterAdded:Connect(function(character)
@@ -2262,14 +2277,11 @@ player.CharacterAdded:Connect(function(character)
     animTrack = nil
     emote1Track = nil
     savedTracks = {}
-    fakeChar = nil
-    fakeIdleTrack = nil
-    realChar = nil
-    connections = {}
     if toggleEnabled then
         task.wait(0.1)
+        setRealCharTransparency(1)
+        spawnFakeChar()
         playAnim()
-        createFakeChar()
     end
 end)
 
@@ -2291,9 +2303,11 @@ Tab:AddToggle({
             end
 
             local animateScript = char:FindFirstChild("Animate")
-            if animateScript then
-                animateScript.Disabled = true
-            end
+            if animateScript then animateScript.Disabled = true end
+
+            -- Hide real character locally, spawn visible stand-in
+            setRealCharTransparency(1)
+            spawnFakeChar()
 
             local emote1Anim = Instance.new("Animation")
             emote1Anim.AnimationId = "rbxassetid://" .. hi
@@ -2303,18 +2317,19 @@ Tab:AddToggle({
             emote1Track.TimePosition = size * 0.00000323
 
             task.delay(0, function()
-                if not toggleEnabled then return end
-                local char = player.Character
-                if not char then return end
-                playAnim()
-                createFakeChar()
+                if toggleEnabled then
+                    playAnim()
+                end
             end)
         else
+            -- Tear down stand-in, restore real character
+            destroyFakeChar()
+            setRealCharTransparency(0)
+
             destroyTrack(emote1Track)
             emote1Track = nil
             destroyTrack(animTrack)
             animTrack = nil
-            destroyFakeChar()
             restoreTracks()
         end
     end,
