@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2159,7 +2159,6 @@ local function destroyLocalDummy()
         localDummy:Destroy()
         localDummy = nil
     end
-    -- Restore real character visibility on our screen
     local char = player.Character
     if char then
         for _, obj in pairs(char:GetDescendants()) do
@@ -2176,18 +2175,16 @@ local function createLocalDummy()
 
     destroyLocalDummy()
 
-    -- Clone our character — LocalScript objects never replicate, so only we see this
     localDummy = char:Clone()
+    if not localDummy then return end  -- guard against nil clone
     localDummy.Name = "_LocalDummy"
 
-    -- Strip all scripts so nothing conflicts or replicates
     for _, obj in pairs(localDummy:GetDescendants()) do
         if obj:IsA("BaseScript") then
             obj:Destroy()
         end
     end
 
-    -- Purely visual — no collision, no shadows
     for _, obj in pairs(localDummy:GetDescendants()) do
         if obj:IsA("BasePart") then
             obj.CanCollide = false
@@ -2195,24 +2192,19 @@ local function createLocalDummy()
         end
     end
 
-    -- Hide nametag so it doesn't float above the dummy on our screen
     local dummyHum = localDummy:FindFirstChildOfClass("Humanoid")
     if dummyHum then
         dummyHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
     end
 
-    -- Anchor root so we can manually drive its position each frame
     local dummyRoot = localDummy:FindFirstChild("HumanoidRootPart")
     if dummyRoot then
         dummyRoot.Anchored = true
         dummyRoot.Transparency = 1
     end
 
-    -- Parent to workspace — client-side only, never seen by others
     localDummy.Parent = workspace
 
-    -- Play idle on the dummy so we see ourselves standing normally
-    -- Use 507766388 for R15 or 180435571 for R6
     local dummyAnimator = dummyHum and dummyHum:FindFirstChildOfClass("Animator")
     if dummyAnimator then
         local idleAnim = Instance.new("Animation")
@@ -2222,14 +2214,12 @@ local function createLocalDummy()
         dummyIdleTrack:Play()
     end
 
-    -- Hide the real character only on our screen; it still replicates normally to others
     for _, obj in pairs(char:GetDescendants()) do
         if obj:IsA("BasePart") then
             obj.LocalTransparencyModifier = 1
         end
     end
 
-    -- Every frame, snap the dummy's root to match where the real character is
     local realRoot = char:FindFirstChild("HumanoidRootPart")
     dummyConnection = RunService.RenderStepped:Connect(function()
         if realRoot and dummyRoot then
@@ -2281,10 +2271,11 @@ Tab:AddToggle({
             emote1Track.TimePosition = size * 0.00000323
 
             task.delay(0, function()
-                if toggleEnabled then
-                    playAnim()
-                    createLocalDummy()  -- spawn our visual stand-in
-                end
+                if not toggleEnabled then return end
+                local char = player.Character
+                if not char then return end  -- guard before createLocalDummy
+                playAnim()
+                createLocalDummy()
             end)
         else
             destroyTrack(emote1Track)
@@ -2292,7 +2283,7 @@ Tab:AddToggle({
             destroyTrack(animTrack)
             animTrack = nil
             restoreTracks()
-            destroyLocalDummy()  -- remove stand-in and restore real character visibility
+            destroyLocalDummy()
         end
     end,
 })
