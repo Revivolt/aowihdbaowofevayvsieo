@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2066,15 +2066,12 @@ Tab:AddTextInput({
 
 local ANIMATION_ID = 102940155040466
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local humanoid, animator
 local animTrack = nil
 local emote1Track = nil
 local savedTracks = {}
 local toggleEnabled = false
-local localClone = nil
-local cloneConnection = nil
 
 local function updateCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
@@ -2127,6 +2124,7 @@ local function saveTracks()
 end
 
 local function restoreTracks()
+    -- Re-enable the Animate script so walk/run/jump/fall/climb all resume
     local char = player.Character
     if char then
         local animateScript = char:FindFirstChild("Animate")
@@ -2134,6 +2132,7 @@ local function restoreTracks()
             animateScript.Disabled = false
         end
     end
+    -- Restore any other saved tracks (e.g. idle)
     for _, saved in pairs(savedTracks) do
         if saved.track and not saved.track.IsPlaying then
             saved.track:Play()
@@ -2142,81 +2141,6 @@ local function restoreTracks()
         end
     end
     savedTracks = {}
-end
-
-local function createLocalClone()
-    local char = player.Character
-    if not char then return end
-
-    if localClone then localClone:Destroy() localClone = nil end
-    if cloneConnection then cloneConnection:Disconnect() cloneConnection = nil end
-
-    localClone = char:Clone()
-    if not localClone then return end  -- guard against nil clone
-    localClone.Name = "LocalClone"
-
-    for _, obj in pairs(localClone:GetDescendants()) do
-        if obj:IsA("Script") then
-            obj:Destroy()
-        end
-    end
-
-    for _, part in pairs(localClone:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-            part.Anchored = false
-        end
-    end
-
-    localClone.Parent = workspace
-
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.LocalTransparencyModifier = 1
-        end
-    end
-
-    local realRoot = char:FindFirstChild("HumanoidRootPart")
-    local cloneRoot = localClone:FindFirstChild("HumanoidRootPart")
-    local realHum = char:FindFirstChild("Humanoid")
-    local cloneHum = localClone:FindFirstChild("Humanoid")
-
-    cloneConnection = RunService.RenderStepped:Connect(function()
-        if not char or not char.Parent then return end
-    
-        -- Keep real character hidden every frame since Roblox resets LocalTransparencyModifier
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.LocalTransparencyModifier = 1
-            end
-        end
-    
-        -- Sync clone position to real character
-        if realRoot and cloneRoot then
-            cloneRoot.CFrame = realRoot.CFrame
-        end
-    
-        if realHum and cloneHum then
-            cloneHum.MoveDirection = realHum.MoveDirection
-            cloneHum.WalkSpeed = realHum.WalkSpeed
-            cloneHum.Jump = realHum.Jump
-        end
-    end)
-end
-
-local function removeLocalClone()
-    if cloneConnection then cloneConnection:Disconnect() cloneConnection = nil end
-    if localClone then localClone:Destroy() localClone = nil end
-
-    -- Restore real character visibility
-    local char = player.Character
-    if char then
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.LocalTransparencyModifier = 0
-            end
-        end
-    end
 end
 
 player.CharacterAdded:Connect(function(character)
@@ -2228,7 +2152,6 @@ player.CharacterAdded:Connect(function(character)
     if toggleEnabled then
         task.wait(0.1)
         playAnim()
-        createLocalClone()
     end
 end)
 
@@ -2238,8 +2161,10 @@ Tab:AddToggle({
     Callback = function(value)
         toggleEnabled = value
         if value then
+            -- Save currently playing tracks before we touch anything
             saveTracks()
 
+            -- Step 1: Play Emote 1
             local char = player.Character or player.CharacterAdded:Wait()
             local hum = char:WaitForChild("Humanoid")
             local size = 1678
@@ -2249,6 +2174,7 @@ Tab:AddToggle({
                 t:Stop()
             end
 
+            -- Disable instead of destroy so we can restore it later
             local animateScript = char:FindFirstChild("Animate")
             if animateScript then
                 animateScript.Disabled = true
@@ -2261,23 +2187,19 @@ Tab:AddToggle({
             emote1Track:AdjustSpeed(0)
             emote1Track.TimePosition = size * 0.00000323
 
+            -- Step 2: Immediately play the main invisibility anim
             task.delay(0, function()
                 if toggleEnabled then
                     playAnim()
                 end
             end)
-
-            -- Spawn clone to look normal locally
-            createLocalClone()
         else
+            -- Stop both tracks then restore everything
             destroyTrack(emote1Track)
             emote1Track = nil
             destroyTrack(animTrack)
             animTrack = nil
             restoreTracks()
-
-            -- Remove clone and restore real character visibility
-            removeLocalClone()
         end
     end,
 })
