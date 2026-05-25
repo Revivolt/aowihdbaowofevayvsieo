@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2153,7 +2153,6 @@ local function restoreTracks()
     savedTracks = {}
 end
 
--- Hides/shows the real character locally only
 local function setRealCharTransparency(alpha)
     local char = player.Character
     if not char then return end
@@ -2193,18 +2192,18 @@ local function spawnFakeChar()
         if v:IsA("LocalScript") or v:IsA("Script") then
             v:Destroy()
         elseif v:IsA("BasePart") then
-            v.Anchored = false
+            v.Anchored = true  -- fully anchored, no physics
             v.CanCollide = false
-            -- Keep HumanoidRootPart invisible but present
             if v.Name == "HumanoidRootPart" then
                 v.Transparency = 1
             end
         end
     end
 
-    -- Disable the clone's Animate script so we drive animations manually
+    -- Disable Animate and kill Humanoid physics so it never flies off
     local cloneAnimate = FakeChar:FindFirstChild("Animate")
     if cloneAnimate then cloneAnimate.Disabled = true end
+    fakeHum.PlatformStand = true
 
     -- Load stand-in animations
     AnimTracks.Idle = LoadFakeAnim(fakeHum, OfficialIDs.Idle)
@@ -2223,10 +2222,8 @@ local function spawnFakeChar()
         local realRoot = realChar:FindFirstChild("HumanoidRootPart")
         if not realRoot then return end
 
-        -- Snap clone to real character's CFrame
         fakeRoot.CFrame = realRoot.CFrame
 
-        -- Mirror movement animations from the real humanoid
         local realHum = realChar:FindFirstChild("Humanoid")
         if not realHum or not fakeHum then return end
 
@@ -2305,7 +2302,6 @@ Tab:AddToggle({
             local animateScript = char:FindFirstChild("Animate")
             if animateScript then animateScript.Disabled = true end
 
-            -- Hide real character locally, spawn visible stand-in
             setRealCharTransparency(1)
             spawnFakeChar()
 
@@ -2322,7 +2318,6 @@ Tab:AddToggle({
                 end
             end)
         else
-            -- Tear down stand-in, restore real character
             destroyFakeChar()
             setRealCharTransparency(0)
 
