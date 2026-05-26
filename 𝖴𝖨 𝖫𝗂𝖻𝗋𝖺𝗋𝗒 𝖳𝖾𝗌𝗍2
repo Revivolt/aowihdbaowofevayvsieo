@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2200,11 +2200,12 @@ local function spawnFakeChar()
             v:Destroy()
 
         elseif v:IsA("BasePart") then
-            v.Anchored = true      -- anchor everything, no physics on any part
+            v.Anchored = false
             v.CanCollide = false
             v.Massless = true
             if v.Name == "HumanoidRootPart" then
                 v.Transparency = 1
+                v.Anchored = true
             end
         end
     end
@@ -2217,6 +2218,7 @@ local function spawnFakeChar()
 
     -- Prevent rotation fighting
     fakeHum.AutoRotate = false
+    fakeHum.PlatformStand = true
 
 
     -- Load fake animations
