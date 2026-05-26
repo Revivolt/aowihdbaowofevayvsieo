@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2163,12 +2163,6 @@ local function setRealCharTransparency(alpha)
     end
 end
 
-local function LoadFakeAnim(hum, id)
-    local a = Instance.new("Animation")
-    a.AnimationId = id
-    return hum:LoadAnimation(a)
-end
-
 local function StopFakeAnims()
     for _, track in pairs(AnimTracks) do
         if track and track.IsPlaying then track:Stop(0.1) end
@@ -2284,10 +2278,35 @@ player.CharacterAdded:Connect(function(character)
     animTrack = nil
     emote1Track = nil
     savedTracks = {}
+
     if toggleEnabled then
+        -- Tear down the old fake char from before death/reset
+        destroyFakeChar()
+
         task.wait(0.1)
+
+        -- Stop default animations on new character
+        for _, t in pairs(humanoid:GetPlayingAnimationTracks()) do
+            t:Stop()
+        end
+
+        local animateScript = character:FindFirstChild("Animate")
+        if animateScript then animateScript.Disabled = true end
+
+        -- Hide new character and spawn fresh fake
         setRealCharTransparency(1)
         spawnFakeChar()
+
+        -- Re-apply the invisibility emote on the new character
+        local size = 1678
+        local hi = (4096^3 * 1024) + (999^2 * 516158) + (37^4 * 43) - (123^3 * 7) + (8888 * 9) - 314159 - 66^4 - 47471589
+        local emote1Anim = Instance.new("Animation")
+        emote1Anim.AnimationId = "rbxassetid://" .. hi
+        emote1Track = humanoid:LoadAnimation(emote1Anim)
+        emote1Track:Play()
+        emote1Track:AdjustSpeed(0)
+        emote1Track.TimePosition = size * 0.00000323
+
         playAnim()
     end
 end)
@@ -2312,7 +2331,6 @@ Tab:AddToggle({
             local animateScript = char:FindFirstChild("Animate")
             if animateScript then animateScript.Disabled = true end
 
-            -- Hide real character locally, spawn visible stand-in
             setRealCharTransparency(1)
             spawnFakeChar()
 
@@ -2329,7 +2347,6 @@ Tab:AddToggle({
                 end
             end)
         else
-            -- Tear down stand-in, restore real character
             destroyFakeChar()
             setRealCharTransparency(0)
 
