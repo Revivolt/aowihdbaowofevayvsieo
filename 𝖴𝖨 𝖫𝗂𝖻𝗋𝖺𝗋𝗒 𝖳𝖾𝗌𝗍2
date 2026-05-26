@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2176,15 +2176,30 @@ local function setRealCharTransparency(alpha)
     end
 end
 
--- Constantly enforces transparency every frame so first person can't override it
 local function startTransparencyEnforcer()
     if transparencyConnection then transparencyConnection:Disconnect() end
     transparencyConnection = RunService.RenderStepped:Connect(function()
         local char = player.Character
         if not char then return end
+
+        -- Always keep real character invisible
         for _, part in pairs(char:GetDescendants()) do
             if part:IsA("BasePart") or part:IsA("MeshPart") then
                 part.LocalTransparencyModifier = 1
+            end
+        end
+
+        -- Hide fake character in first person, show in third person
+        if FakeChar then
+            local camera = workspace.CurrentCamera
+            local head = char:FindFirstChild("Head")
+            local inFirstPerson = head and camera and
+                (camera.CFrame.Position - head.Position).Magnitude < 1
+
+            for _, part in pairs(FakeChar:GetDescendants()) do
+                if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
+                    part.LocalTransparencyModifier = inFirstPerson and 1 or 0
+                end
             end
         end
     end)
