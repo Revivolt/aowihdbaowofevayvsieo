@@ -2218,8 +2218,6 @@ local function spawnFakeChar()
     -- Prevent rotation fighting
     fakeHum.AutoRotate = false
 
-    -- FIX: disable all humanoid-driven forces so it can't apply jump/fall physics
-    fakeHum:ChangeState(Enum.HumanoidStateType.Physics)
 
     -- Load fake animations
     AnimTracks.Idle = LoadFakeAnim(fakeHum, OfficialIDs.Idle)
