@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2177,32 +2177,28 @@ end
 
 local function spawnFakeChar()
     local char = player.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then
-        return
-    end
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
     char.Archivable = true
-
     FakeChar = char:Clone()
     FakeChar.Name = "InvisClone"
     FakeChar.Parent = workspace
 
-    local fakeHum = FakeChar:FindFirstChild("Humanoid")
     local fakeRoot = FakeChar:FindFirstChild("HumanoidRootPart")
+    if not fakeRoot then return end
 
-    if not fakeHum or not fakeRoot then
-        return
-    end
+    -- Destroy the Humanoid entirely — it's the source of all physics fighting
+    local fakeHum = FakeChar:FindFirstChild("Humanoid")
+    if fakeHum then fakeHum:Destroy() end
 
-    -- Clean clone
+    -- Disable any scripts and clean up parts
     for _, v in pairs(FakeChar:GetDescendants()) do
         if v:IsA("LocalScript") or v:IsA("Script") then
             v:Destroy()
-
         elseif v:IsA("BasePart") then
-            v.Anchored = false
             v.CanCollide = false
             v.Massless = true
+            v.Anchored = false
             if v.Name == "HumanoidRootPart" then
                 v.Transparency = 1
                 v.Anchored = true
@@ -2210,50 +2206,38 @@ local function spawnFakeChar()
         end
     end
 
-    -- Disable default animation controller
-    local cloneAnimate = FakeChar:FindFirstChild("Animate")
-    if cloneAnimate then
-        cloneAnimate.Disabled = true
+    -- AnimationController drives animations with no physics at all
+    local animController = Instance.new("AnimationController")
+    animController.Parent = FakeChar
+    local fakeAnimator = Instance.new("Animator")
+    fakeAnimator.Parent = animController
+
+    local function LoadFakeAnim(id)
+        local a = Instance.new("Animation")
+        a.AnimationId = id
+        return fakeAnimator:LoadAnimation(a)
     end
 
-    -- Prevent rotation fighting
-    fakeHum.AutoRotate = false
-    fakeHum.PlatformStand = true
+    AnimTracks.Idle = LoadFakeAnim(OfficialIDs.Idle)
+    AnimTracks.Walk = LoadFakeAnim(OfficialIDs.Walk)
+    AnimTracks.Run  = LoadFakeAnim(OfficialIDs.Run)
+    AnimTracks.Jump = LoadFakeAnim(OfficialIDs.Jump)
+    AnimTracks.Fall = LoadFakeAnim(OfficialIDs.Fall)
 
+    if AnimTracks.Idle then AnimTracks.Idle:Play() end
 
-    -- Load fake animations
-    AnimTracks.Idle = LoadFakeAnim(fakeHum, OfficialIDs.Idle)
-    AnimTracks.Walk = LoadFakeAnim(fakeHum, OfficialIDs.Walk)
-    AnimTracks.Run  = LoadFakeAnim(fakeHum, OfficialIDs.Run)
-    AnimTracks.Jump = LoadFakeAnim(fakeHum, OfficialIDs.Jump)
-    AnimTracks.Fall = LoadFakeAnim(fakeHum, OfficialIDs.Fall)
-
-    if AnimTracks.Idle then
-        AnimTracks.Idle:Play()
-    end
-
-    -- Sync clone to real character
     table.insert(fakeConnections, RunService.RenderStepped:Connect(function()
         local realChar = player.Character
-
-        if not realChar or not FakeChar then
-            return
-        end
+        if not realChar or not FakeChar then return end
 
         local realRoot = realChar:FindFirstChild("HumanoidRootPart")
         local realHum = realChar:FindFirstChild("Humanoid")
+        if not realRoot or not realHum then return end
 
-        if not realRoot or not realHum then
-            return
-        end
-
-        -- Match position (anchored root moves only when we tell it to)
         fakeRoot.CFrame = realRoot.CFrame
 
-        -- Animation mirroring
         local state = realHum:GetState()
         local isMoving = realHum.MoveDirection.Magnitude > 0.01
-
         local grounded =
             state == Enum.HumanoidStateType.Running or
             state == Enum.HumanoidStateType.RunningNoPhysics
@@ -2270,13 +2254,11 @@ local function spawnFakeChar()
                     AnimTracks.Idle:Play(0.1)
                 end
             end
-
         elseif state == Enum.HumanoidStateType.Jumping then
             if AnimTracks.Jump and not AnimTracks.Jump.IsPlaying then
                 StopFakeAnims()
                 AnimTracks.Jump:Play(0.1)
             end
-
         elseif state == Enum.HumanoidStateType.Freefall then
             if AnimTracks.Fall and not AnimTracks.Fall.IsPlaying then
                 StopFakeAnims()
