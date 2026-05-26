@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2073,6 +2073,7 @@ local animTrack = nil
 local emote1Track = nil
 local savedTracks = {}
 local toggleEnabled = false
+local transparencyConnection = nil
 
 -- Fake stand-in vars
 local FakeChar = nil
@@ -2175,6 +2176,27 @@ local function setRealCharTransparency(alpha)
     end
 end
 
+-- Constantly enforces transparency every frame so first person can't override it
+local function startTransparencyEnforcer()
+    if transparencyConnection then transparencyConnection:Disconnect() end
+    transparencyConnection = RunService.RenderStepped:Connect(function()
+        local char = player.Character
+        if not char then return end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") or part:IsA("MeshPart") then
+                part.LocalTransparencyModifier = 1
+            end
+        end
+    end)
+end
+
+local function stopTransparencyEnforcer()
+    if transparencyConnection then
+        transparencyConnection:Disconnect()
+        transparencyConnection = nil
+    end
+end
+
 local function StopFakeAnims()
     for _, track in pairs(AnimTracks) do
         if track and track.IsPlaying then track:Stop(0.1) end
@@ -2217,11 +2239,10 @@ local function spawnFakeChar()
 
     local function LoadFakeAnim(id)
         local a = Instance.new("Animation")
-        a.AnimationId = id -- already a full rbxassetid:// string
+        a.AnimationId = id
         return fakeAnimator:LoadAnimation(a)
     end
 
-    -- Pull animation IDs straight from the real character
     local charAnims = getCharAnims(char)
 
     if charAnims.Idle then AnimTracks.Idle = LoadFakeAnim(charAnims.Idle) end
@@ -2302,7 +2323,7 @@ player.CharacterAdded:Connect(function(character)
         local animateScript = character:FindFirstChild("Animate")
         if animateScript then animateScript.Disabled = true end
 
-        setRealCharTransparency(1)
+        startTransparencyEnforcer()
         spawnFakeChar()
 
         local size = 1678
@@ -2338,7 +2359,7 @@ Tab:AddToggle({
             local animateScript = char:FindFirstChild("Animate")
             if animateScript then animateScript.Disabled = true end
 
-            setRealCharTransparency(1)
+            startTransparencyEnforcer()
             spawnFakeChar()
 
             local emote1Anim = Instance.new("Animation")
@@ -2355,6 +2376,7 @@ Tab:AddToggle({
             end)
         else
             destroyFakeChar()
+            stopTransparencyEnforcer()
             setRealCharTransparency(0)
 
             destroyTrack(emote1Track)
