@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2153,7 +2153,6 @@ local function restoreTracks()
     savedTracks = {}
 end
 
--- Hides/shows the real character locally only
 local function setRealCharTransparency(alpha)
     local char = player.Character
     if not char then return end
@@ -2205,13 +2204,10 @@ local function spawnFakeChar()
             v.CanCollide = false
             v.Massless = true
 
-            -- Prevent physics accumulation
-            v.AssemblyLinearVelocity = Vector3.zero
-            v.AssemblyAngularVelocity = Vector3.zero
-
-            -- Hide root part
+            -- Hide root part and anchor it so physics can't fight CFrame assignment
             if v.Name == "HumanoidRootPart" then
                 v.Transparency = 1
+                v.Anchored = true -- FIX: pure CFrame puppet, no physics interference
             end
         end
     end
@@ -2224,6 +2220,9 @@ local function spawnFakeChar()
 
     -- Prevent rotation fighting
     fakeHum.AutoRotate = false
+
+    -- FIX: disable all humanoid-driven forces so it can't apply jump/fall physics
+    fakeHum:ChangeState(Enum.HumanoidStateType.Physics)
 
     -- Load fake animations
     AnimTracks.Idle = LoadFakeAnim(fakeHum, OfficialIDs.Idle)
@@ -2251,18 +2250,12 @@ local function spawnFakeChar()
             return
         end
 
-        -- Match position
+        -- Match position (anchored root moves only when we tell it to)
         fakeRoot.CFrame = realRoot.CFrame
-
-        -- Kill velocity every frame (fixes flying)
-        fakeRoot.AssemblyLinearVelocity = Vector3.zero
-        fakeRoot.AssemblyAngularVelocity = Vector3.zero
 
         -- Animation mirroring
         local state = realHum:GetState()
-
-        local isMoving =
-            realHum.MoveDirection.Magnitude > 0.01
+        local isMoving = realHum.MoveDirection.Magnitude > 0.01
 
         local grounded =
             state == Enum.HumanoidStateType.Running or
