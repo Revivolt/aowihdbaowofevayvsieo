@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2193,22 +2193,17 @@ local function spawnFakeChar()
         if v:IsA("LocalScript") or v:IsA("Script") then
             v:Destroy()
         elseif v:IsA("BasePart") then
+            v.Anchored = false       -- keep original; let humanoid control limbs normally
             v.CanCollide = false
             if v.Name == "HumanoidRootPart" then
                 v.Transparency = 1
-                v.Anchored = true  -- Anchor the root; we drive CFrame manually
-            else
-                v.Anchored = false
             end
         end
     end
 
-    -- Prevent the fake humanoid from ever applying jump/fall physics
+    -- Prevent any jump force from ever being applied
     fakeHum.JumpPower = 0
     fakeHum.JumpHeight = 0
-    fakeHum:SetStateEnabled(Enum.HumanoidStateType.Jumping,  false)
-    fakeHum:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
-    fakeHum:SetStateEnabled(Enum.HumanoidStateType.Landed,   false)
 
     -- Disable the clone's Animate script so we drive animations manually
     local cloneAnimate = FakeChar:FindFirstChild("Animate")
@@ -2223,7 +2218,6 @@ local function spawnFakeChar()
 
     if AnimTracks.Idle then AnimTracks.Idle:Play() end
 
-    -- Mirror real character position and animations every frame
     table.insert(fakeConnections, RunService.RenderStepped:Connect(function()
         local realChar = player.Character
         if not realChar or not FakeChar or not fakeRoot then return end
@@ -2234,11 +2228,15 @@ local function spawnFakeChar()
         -- Snap clone to real character's CFrame
         fakeRoot.CFrame = realRoot.CFrame
 
-        -- Mirror movement animations from the real humanoid
+        -- Zero out velocity every frame so CFrame teleporting never
+        -- accumulates momentum that causes flying or drifting
+        fakeRoot.AssemblyLinearVelocity  = Vector3.zero
+        fakeRoot.AssemblyAngularVelocity = Vector3.zero
+
         local realHum = realChar:FindFirstChild("Humanoid")
         if not realHum or not fakeHum then return end
 
-        local state = realHum:GetState()
+        local state    = realHum:GetState()
         local isMoving = realHum.MoveDirection.Magnitude > 0.01
         local isGrounded = state == Enum.HumanoidStateType.Running
             or state == Enum.HumanoidStateType.RunningNoPhysics
