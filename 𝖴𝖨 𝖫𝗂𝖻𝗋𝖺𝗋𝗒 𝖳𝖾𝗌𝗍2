@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2187,28 +2187,39 @@ local function spawnFakeChar()
 
     local fakeHum  = FakeChar:FindFirstChild("Humanoid")
     local fakeRoot = FakeChar:FindFirstChild("HumanoidRootPart")
+    
+    -- Prevent fake humanoid physics from fighting movement
+    fakeHum.PlatformStand = true
+    fakeHum.AutoRotate = false
+    
+    -- Disable unwanted humanoid states
+    fakeHum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+    fakeHum:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
+    fakeHum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    fakeHum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    
+    -- Force physics state
+    fakeHum:ChangeState(Enum.HumanoidStateType.Physics)
 
+    -- Clean up scripts and physics on the clone
     for _, v in pairs(FakeChar:GetDescendants()) do
         if v:IsA("LocalScript") or v:IsA("Script") then
             v:Destroy()
         elseif v:IsA("BasePart") then
-            v.Anchored = false
+            v.Anchored = v.Name ~= "HumanoidRootPart"
             v.CanCollide = false
+            -- Keep HumanoidRootPart invisible but present
             if v.Name == "HumanoidRootPart" then
                 v.Transparency = 1
             end
         end
     end
 
-    -- Disable ALL humanoid physics. The clone is a pure visual puppet;
-    -- we move it ourselves via CFrame. PlatformStand is exactly what
-    -- the second script uses for its fly mode — it cuts gravity, jumping,
-    -- and state transitions in one line without breaking animations.
-    fakeHum.PlatformStand = true
-
+    -- Disable the clone's Animate script so we drive animations manually
     local cloneAnimate = FakeChar:FindFirstChild("Animate")
     if cloneAnimate then cloneAnimate.Disabled = true end
 
+    -- Load stand-in animations
     AnimTracks.Idle = LoadFakeAnim(fakeHum, OfficialIDs.Idle)
     AnimTracks.Walk = LoadFakeAnim(fakeHum, OfficialIDs.Walk)
     AnimTracks.Run  = LoadFakeAnim(fakeHum, OfficialIDs.Run)
@@ -2217,6 +2228,7 @@ local function spawnFakeChar()
 
     if AnimTracks.Idle then AnimTracks.Idle:Play() end
 
+    -- Mirror real character position and animations every frame
     table.insert(fakeConnections, RunService.RenderStepped:Connect(function()
         local realChar = player.Character
         if not realChar or not FakeChar or not fakeRoot then return end
@@ -2224,15 +2236,18 @@ local function spawnFakeChar()
         local realRoot = realChar:FindFirstChild("HumanoidRootPart")
         if not realRoot then return end
 
+        -- Snap clone to real character's CFrame
         fakeRoot.CFrame = realRoot.CFrame
-        -- Still zero velocity each frame so CFrame delta never builds momentum
-        fakeRoot.AssemblyLinearVelocity  = Vector3.zero
+        
+        -- Kill all velocity so it cannot fly away
+        fakeRoot.AssemblyLinearVelocity = Vector3.zero
         fakeRoot.AssemblyAngularVelocity = Vector3.zero
 
+        -- Mirror movement animations from the real humanoid
         local realHum = realChar:FindFirstChild("Humanoid")
         if not realHum or not fakeHum then return end
 
-        local state    = realHum:GetState()
+        local state = realHum:GetState()
         local isMoving = realHum.MoveDirection.Magnitude > 0.01
         local isGrounded = state == Enum.HumanoidStateType.Running
             or state == Enum.HumanoidStateType.RunningNoPhysics
