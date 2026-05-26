@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -2079,13 +2079,25 @@ local FakeChar = nil
 local fakeConnections = {}
 local AnimTracks = {}
 
-local OfficialIDs = {
-    Idle = "rbxassetid://507766388",
-    Walk = "rbxassetid://507777826",
-    Run  = "rbxassetid://507767714",
-    Jump = "rbxassetid://507765000",
-    Fall = "rbxassetid://507767968",
-}
+local function getCharAnims(char)
+    local animate = char:FindFirstChild("Animate")
+    if not animate then return {} end
+    local function getAnim(name)
+        local folder = animate:FindFirstChild(name)
+        if folder then
+            local anim = folder:FindFirstChildWhichIsA("Animation")
+            if anim then return anim.AnimationId end
+        end
+        return nil
+    end
+    return {
+        Idle = getAnim("idle"),
+        Walk = getAnim("walk"),
+        Run  = getAnim("run"),
+        Jump = getAnim("jump"),
+        Fall = getAnim("fall"),
+    }
+end
 
 local function updateCharacter()
     local character = player.Character or player.CharacterAdded:Wait()
@@ -2181,11 +2193,9 @@ local function spawnFakeChar()
     local fakeRoot = FakeChar:FindFirstChild("HumanoidRootPart")
     if not fakeRoot then return end
 
-    -- Destroy the Humanoid entirely — it's the source of all physics fighting
     local fakeHum = FakeChar:FindFirstChild("Humanoid")
     if fakeHum then fakeHum:Destroy() end
 
-    -- Disable any scripts and clean up parts
     for _, v in pairs(FakeChar:GetDescendants()) do
         if v:IsA("LocalScript") or v:IsA("Script") then
             v:Destroy()
@@ -2200,7 +2210,6 @@ local function spawnFakeChar()
         end
     end
 
-    -- AnimationController drives animations with no physics at all
     local animController = Instance.new("AnimationController")
     animController.Parent = FakeChar
     local fakeAnimator = Instance.new("Animator")
@@ -2208,15 +2217,18 @@ local function spawnFakeChar()
 
     local function LoadFakeAnim(id)
         local a = Instance.new("Animation")
-        a.AnimationId = id
+        a.AnimationId = id -- already a full rbxassetid:// string
         return fakeAnimator:LoadAnimation(a)
     end
 
-    AnimTracks.Idle = LoadFakeAnim(OfficialIDs.Idle)
-    AnimTracks.Walk = LoadFakeAnim(OfficialIDs.Walk)
-    AnimTracks.Run  = LoadFakeAnim(OfficialIDs.Run)
-    AnimTracks.Jump = LoadFakeAnim(OfficialIDs.Jump)
-    AnimTracks.Fall = LoadFakeAnim(OfficialIDs.Fall)
+    -- Pull animation IDs straight from the real character
+    local charAnims = getCharAnims(char)
+
+    if charAnims.Idle then AnimTracks.Idle = LoadFakeAnim(charAnims.Idle) end
+    if charAnims.Walk then AnimTracks.Walk = LoadFakeAnim(charAnims.Walk) end
+    if charAnims.Run  then AnimTracks.Run  = LoadFakeAnim(charAnims.Run)  end
+    if charAnims.Jump then AnimTracks.Jump = LoadFakeAnim(charAnims.Jump) end
+    if charAnims.Fall then AnimTracks.Fall = LoadFakeAnim(charAnims.Fall) end
 
     if AnimTracks.Idle then AnimTracks.Idle:Play() end
 
@@ -2280,12 +2292,9 @@ player.CharacterAdded:Connect(function(character)
     savedTracks = {}
 
     if toggleEnabled then
-        -- Tear down the old fake char from before death/reset
         destroyFakeChar()
-
         task.wait(0.1)
 
-        -- Stop default animations on new character
         for _, t in pairs(humanoid:GetPlayingAnimationTracks()) do
             t:Stop()
         end
@@ -2293,11 +2302,9 @@ player.CharacterAdded:Connect(function(character)
         local animateScript = character:FindFirstChild("Animate")
         if animateScript then animateScript.Disabled = true end
 
-        -- Hide new character and spawn fresh fake
         setRealCharTransparency(1)
         spawnFakeChar()
 
-        -- Re-apply the invisibility emote on the new character
         local size = 1678
         local hi = (4096^3 * 1024) + (999^2 * 516158) + (37^4 * 43) - (123^3 * 7) + (8888 * 9) - 314159 - 66^4 - 47471589
         local emote1Anim = Instance.new("Animation")
