@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1363,9 +1363,14 @@ local cpAnimId    = 70883871260184
 local cpFakeChar         = nil
 local cpFakeAnimTracks   = {}
 local cpTransparencyConn = nil
-local cpFakeRenderConn   = nil
 local cpRealChar         = nil
 local cpSavedCamSubject  = nil
+
+-- Manual movement state for fake char
+local cpFakePosition  = Vector3.zero
+local cpFakeVelocityY = 0
+local cpFakeOnGround  = true
+local cpFakeYaw       = 0
 
 local function cpGetCharAnims(char)
     local animate = char:FindFirstChild("Animate")
@@ -1408,11 +1413,9 @@ local function cpSpawnFakeChar()
     local fakeHead = cpFakeChar:FindFirstChild("Head")
     if not fakeRoot then return end
 
-    -- Destroy humanoid so it can't fight CFrame
     local fakeHum = cpFakeChar:FindFirstChild("Humanoid")
     if fakeHum then fakeHum:Destroy() end
 
-    -- Clean up scripts and parts
     for _, v in pairs(cpFakeChar:GetDescendants()) do
         if v:IsA("LocalScript") or v:IsA("Script") then
             v:Destroy()
@@ -1427,13 +1430,17 @@ local function cpSpawnFakeChar()
         end
     end
 
-    -- Spawn at real character's current position
+    -- Initialize fake char position to real char's current position
     local realRoot = char:FindFirstChild("HumanoidRootPart")
     if realRoot then
         fakeRoot.CFrame = realRoot.CFrame
+        cpFakePosition  = realRoot.CFrame.Position
+        cpFakeYaw       = select(2, realRoot.CFrame:ToEulerAnglesYXZ())
     end
 
-    -- AnimationController so animations play with no physics
+    cpFakeVelocityY = 0
+    cpFakeOnGround  = true
+
     local animController = Instance.new("AnimationController")
     animController.Parent = cpFakeChar
     local fakeAnimator = Instance.new("Animator")
@@ -1455,20 +1462,25 @@ local function cpSpawnFakeChar()
 
     if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
 
-    -- Point camera at fake character's head
+    -- Point camera at fake character
     local camera = workspace.CurrentCamera
     cpSavedCamSubject = camera.CameraSubject
     if fakeHead then
         camera.CameraSubject = fakeHead
     end
 
-    -- Sync fake char animations and first person hiding
-    cpTransparencyConn = RunService.RenderStepped:Connect(function()
+    cpTransparencyConn = RunService.RenderStepped:Connect(function(dt)
         local realChar = weldLocal.Character
         if not realChar or not cpFakeChar then return end
 
+        local fRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
+        if not fRoot then return end
+
+        local realHum = realChar:FindFirstChild("Humanoid")
+        if not realHum then return end
+
         -- First person hiding
-        local cam = workspace.CurrentCamera
+        local cam  = workspace.CurrentCamera
         local head = realChar:FindFirstChild("Head")
         local inFirstPerson = head and cam and
             (cam.CFrame.Position - head.Position).Magnitude < 1
@@ -1479,12 +1491,53 @@ local function cpSpawnFakeChar()
             end
         end
 
-        -- Mirror real character's movement state onto fake char animations
-        local realHum = realChar:FindFirstChild("Humanoid")
-        if not realHum then return end
+        -- Read movement input from real humanoid (still set by keyboard even when pinned)
+        local moveDir  = realHum.MoveDirection
+        local walkSpeed = realHum.WalkSpeed
+        local state     = realHum:GetState()
 
-        local state = realHum:GetState()
-        local isMoving = realHum.MoveDirection.Magnitude > 0.01
+        -- Horizontal movement
+        cpFakePosition = cpFakePosition + Vector3.new(moveDir.X, 0, moveDir.Z) * walkSpeed * dt
+
+        -- Jumping
+        if state == Enum.HumanoidStateType.Jumping and cpFakeOnGround then
+            cpFakeVelocityY = realHum.JumpPower > 0 and realHum.JumpPower or 50
+            cpFakeOnGround  = false
+        end
+
+        -- Gravity
+        cpFakeVelocityY = cpFakeVelocityY - workspace.Gravity * dt
+        cpFakePosition  = cpFakePosition + Vector3.new(0, cpFakeVelocityY * dt, 0)
+
+        -- Raycast downward to find ground and snap to it
+        local hrpHeight  = 2.5
+        local rayOrigin  = Vector3.new(cpFakePosition.X, cpFakePosition.Y + 5, cpFakePosition.Z)
+        local rayParams  = RaycastParams.new()
+        rayParams.FilterDescendantsInstances = {cpFakeChar, realChar}
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        local result = workspace:Raycast(rayOrigin, Vector3.new(0, -(5 + hrpHeight + 0.5), 0), rayParams)
+
+        if result then
+            local groundY = result.Position.Y + hrpHeight
+            if cpFakePosition.Y <= groundY then
+                cpFakePosition  = Vector3.new(cpFakePosition.X, groundY, cpFakePosition.Z)
+                cpFakeVelocityY = 0
+                cpFakeOnGround  = true
+            end
+        else
+            cpFakeOnGround = false
+        end
+
+        -- Rotation: smoothly face movement direction
+        local lookDir = Vector3.new(moveDir.X, 0, moveDir.Z)
+        if lookDir.Magnitude > 0.01 then
+            cpFakeYaw = math.atan2(-lookDir.X, -lookDir.Z)
+        end
+
+        fRoot.CFrame = CFrame.new(cpFakePosition) * CFrame.Angles(0, cpFakeYaw, 0)
+
+        -- Animation mirroring
+        local isMoving = moveDir.Magnitude > 0.01
         local grounded =
             state == Enum.HumanoidStateType.Running or
             state == Enum.HumanoidStateType.RunningNoPhysics
@@ -1516,25 +1569,23 @@ local function cpSpawnFakeChar()
 end
 
 local function cpDestroyFakeChar()
-    -- Disconnect enforcer
     if cpTransparencyConn then
         cpTransparencyConn:Disconnect()
         cpTransparencyConn = nil
     end
 
-    -- Restore camera to real character
+    -- Restore camera
     local camera = workspace.CurrentCamera
     if cpSavedCamSubject then
         camera.CameraSubject = cpSavedCamSubject
         cpSavedCamSubject = nil
     else
-        -- Fallback: point camera back at real character's humanoid
         local realChar = weldLocal.Character
         local realHum = realChar and realChar:FindFirstChild("Humanoid")
         if realHum then camera.CameraSubject = realHum end
     end
 
-    -- Teleport real char to where fake char is before removing it
+    -- Teleport real char to where fake char was
     if cpFakeChar and cpRealChar then
         local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
         local realRoot = cpRealChar:FindFirstChild("HumanoidRootPart")
@@ -1550,7 +1601,10 @@ local function cpDestroyFakeChar()
         cpFakeChar = nil
     end
 
-    cpRealChar = nil
+    cpRealChar      = nil
+    cpFakePosition  = Vector3.zero
+    cpFakeVelocityY = 0
+    cpFakeOnGround  = true
 end
 
 Tab:AddToggle({
@@ -1575,11 +1629,7 @@ Tab:AddToggle({
         local initChar = weldLocal.Character
         if initChar then
             lastChar = initChar
-
-            -- Load and play the emote on the real character immediately
-            cpTrack = loadAnim(initChar, cpAnimId, cpFreezeAt, false)
-
-            -- Spawn the fake character
+            cpTrack  = loadAnim(initChar, cpAnimId, cpFreezeAt, false)
             cpSpawnFakeChar()
         end
 
@@ -1605,7 +1655,6 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
-            -- Respawn fake char on character change
             if myChar ~= lastChar then
                 lastChar = myChar
                 if cpTrack then
@@ -1615,9 +1664,7 @@ Tab:AddToggle({
                 cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
                 cpDestroyFakeChar()
                 task.defer(function()
-                    if cpEnabled then
-                        cpSpawnFakeChar()
-                    end
+                    if cpEnabled then cpSpawnFakeChar() end
                 end)
             end
 
@@ -1628,7 +1675,6 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Stop all animations on real char except the wall emote
                 local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
@@ -1639,7 +1685,6 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Pin real character under target
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
                 local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
                 myRoot.CFrame =
