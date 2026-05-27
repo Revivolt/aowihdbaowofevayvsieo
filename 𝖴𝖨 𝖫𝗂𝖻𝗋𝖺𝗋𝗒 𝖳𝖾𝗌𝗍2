@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1366,6 +1366,7 @@ local cpTransparencyConn = nil
 local cpRealChar         = nil
 local cpSavedCamSubject  = nil
 local cpRespawning       = false
+local cpSavedTracks      = {}  -- saved animation tracks to restore on toggle off
 
 -- Mobile controls support
 local cpControls = nil
@@ -1374,7 +1375,6 @@ pcall(function()
     cpControls = PlayerModule:GetControls()
 end)
 
--- Loads and plays the invisibility animation on the given character's humanoid
 local function cpLoadEmote(char)
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return nil end
@@ -1382,8 +1382,14 @@ local function cpLoadEmote(char)
     local size = 1678
     local hi = (4096^3 * 1024) + (999^2 * 516158) + (37^4 * 43) - (123^3 * 7) + (8888 * 9) - 314159 - 66^4 - 47471589
 
-    -- Stop all current animations
+    -- Save current tracks before stopping them so we can restore later
+    cpSavedTracks = {}
     for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+        table.insert(cpSavedTracks, {
+            track        = t,
+            speed        = t.Speed,
+            timePosition = t.TimePosition,
+        })
         t:Stop()
     end
 
@@ -1399,6 +1405,24 @@ local function cpLoadEmote(char)
     track.TimePosition = size * 0.00000323
 
     return track
+end
+
+local function cpRestoreTracks(char)
+    if not char then return end
+
+    -- Re-enable Animate script
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript then animateScript.Disabled = false end
+
+    -- Restore saved tracks
+    for _, saved in pairs(cpSavedTracks) do
+        if saved.track and not saved.track.IsPlaying then
+            saved.track:Play()
+            saved.track:AdjustSpeed(saved.speed)
+            saved.track.TimePosition = saved.timePosition
+        end
+    end
+    cpSavedTracks = {}
 end
 
 local function cpGetCharAnims(char)
@@ -1453,6 +1477,7 @@ local function cpDestroyFakeChar()
         if realHum then camera.CameraSubject = realHum end
     end
 
+    -- Teleport real char to where fake char was
     if cpFakeChar and cpRealChar then
         local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
         local realRoot = cpRealChar:FindFirstChild("HumanoidRootPart")
@@ -1460,6 +1485,9 @@ local function cpDestroyFakeChar()
             realRoot.CFrame = fakeRoot.CFrame
         end
     end
+
+    -- Restore real character's animation tracks
+    cpRestoreTracks(cpRealChar)
 
     cpCleanupFakeChar()
 end
@@ -1533,13 +1561,15 @@ local function cpSpawnFakeChar()
         end
     end)
 
+    -- FIX: check fake char's head distance to camera, not real char's
+    -- since the camera follows the fake char, that's what zooms in first person
     cpTransparencyConn = RunService.RenderStepped:Connect(function()
-        local realChar = weldLocal.Character
-        if not realChar or not cpFakeChar then return end
-        local cam  = workspace.CurrentCamera
-        local head = realChar:FindFirstChild("Head")
-        local inFirstPerson = head and cam and
-            (cam.CFrame.Position - head.Position).Magnitude < 1
+        if not cpFakeChar then return end
+        local cam      = workspace.CurrentCamera
+        local fakeH    = cpFakeChar:FindFirstChild("Head")
+        local inFirstPerson = fakeH and cam and
+            (cam.CFrame.Position - fakeH.Position).Magnitude < 1
+
         for _, part in pairs(cpFakeChar:GetDescendants()) do
             if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
                 part.LocalTransparencyModifier = inFirstPerson and 1 or 0
@@ -1663,6 +1693,7 @@ Tab:AddToggle({
                     cpTrack:Destroy()
                     cpTrack = nil
                 end
+                cpSavedTracks = {}
 
                 task.spawn(function()
                     task.wait(0.5)
@@ -1682,7 +1713,6 @@ Tab:AddToggle({
                     end
                 end
 
-                -- Keep emote playing and stop everything else
                 local hum      = myChar:FindFirstChildOfClass("Humanoid")
                 local animator = hum and hum:FindFirstChildOfClass("Animator")
                 if animator then
