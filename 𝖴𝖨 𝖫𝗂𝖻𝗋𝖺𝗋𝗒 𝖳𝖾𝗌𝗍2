@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1359,14 +1359,135 @@ local cpNoCollide = true
 local cpFreezeAt  = 0
 local cpAnimId    = 70883871260184
 
-local function cpEnableFakeChar(char)
-    startTransparencyEnforcer()
-    spawnFakeChar()
+-- Wall toggle fake char state
+local cpFakeChar        = nil
+local cpFakeAnimTracks  = {}
+local cpTransparencyConn = nil
+local cpRealChar        = nil
+
+local function cpGetCharAnims(char)
+    local animate = char:FindFirstChild("Animate")
+    if not animate then return {} end
+    local function getAnim(name)
+        local folder = animate:FindFirstChild(name)
+        if folder then
+            local anim = folder:FindFirstChildWhichIsA("Animation")
+            if anim then return anim.AnimationId end
+        end
+        return nil
+    end
+    return {
+        Idle = getAnim("idle"),
+        Walk = getAnim("walk"),
+        Run  = getAnim("run"),
+        Jump = getAnim("jump"),
+        Fall = getAnim("fall"),
+    }
 end
 
-local function cpDisableFakeChar()
-    destroyFakeChar()
-    stopTransparencyEnforcer()
+local function cpSpawnFakeChar()
+    local char = weldLocal.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+    cpRealChar = char
+    char.Archivable = true
+
+    cpFakeChar = char:Clone()
+    cpFakeChar.Name = "WallClone"
+    cpFakeChar.Parent = workspace
+
+    local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
+    if not fakeRoot then return end
+
+    -- Destroy humanoid so it can't fight CFrame
+    local fakeHum = cpFakeChar:FindFirstChild("Humanoid")
+    if fakeHum then fakeHum:Destroy() end
+
+    -- Clean up scripts and parts
+    for _, v in pairs(cpFakeChar:GetDescendants()) do
+        if v:IsA("LocalScript") or v:IsA("Script") then
+            v:Destroy()
+        elseif v:IsA("BasePart") then
+            v.CanCollide = false
+            v.Massless = true
+            v.Anchored = false
+            if v.Name == "HumanoidRootPart" then
+                v.Transparency = 1
+                v.Anchored = true
+            end
+        end
+    end
+
+    -- Spawn at real character's current position
+    local realRoot = char:FindFirstChild("HumanoidRootPart")
+    if realRoot then
+        fakeRoot.CFrame = realRoot.CFrame
+    end
+
+    -- AnimationController so animations play with no physics
+    local animController = Instance.new("AnimationController")
+    animController.Parent = cpFakeChar
+    local fakeAnimator = Instance.new("Animator")
+    fakeAnimator.Parent = animController
+
+    local function LoadAnim(id)
+        if not id then return nil end
+        local a = Instance.new("Animation")
+        a.AnimationId = id
+        return fakeAnimator:LoadAnimation(a)
+    end
+
+    local charAnims = cpGetCharAnims(char)
+    cpFakeAnimTracks.Idle = LoadAnim(charAnims.Idle)
+    cpFakeAnimTracks.Walk = LoadAnim(charAnims.Walk)
+    cpFakeAnimTracks.Run  = LoadAnim(charAnims.Run)
+    cpFakeAnimTracks.Jump = LoadAnim(charAnims.Jump)
+    cpFakeAnimTracks.Fall = LoadAnim(charAnims.Fall)
+
+    if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
+
+    -- Hide fake char in first person
+    cpTransparencyConn = RunService.RenderStepped:Connect(function()
+        local realChar = weldLocal.Character
+        if not realChar or not cpFakeChar then return end
+
+        local camera = workspace.CurrentCamera
+        local head = realChar:FindFirstChild("Head")
+        local inFirstPerson = head and camera and
+            (camera.CFrame.Position - head.Position).Magnitude < 1
+
+        for _, part in pairs(cpFakeChar:GetDescendants()) do
+            if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
+                part.LocalTransparencyModifier = inFirstPerson and 1 or 0
+            end
+        end
+    end)
+end
+
+local function cpDestroyFakeChar()
+    -- Disconnect first person enforcer
+    if cpTransparencyConn then
+        cpTransparencyConn:Disconnect()
+        cpTransparencyConn = nil
+    end
+
+    -- Teleport real char to where fake char is before removing it
+    if cpFakeChar and cpRealChar then
+        local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
+        local realRoot = cpRealChar:FindFirstChild("HumanoidRootPart")
+        if fakeRoot and realRoot then
+            realRoot.CFrame = fakeRoot.CFrame
+        end
+    end
+
+    cpFakeAnimTracks = {}
+
+    if cpFakeChar then
+        cpFakeChar:Destroy()
+        cpFakeChar = nil
+    end
+
+    cpRealChar = nil
 end
 
 Tab:AddToggle({
@@ -1381,7 +1502,7 @@ Tab:AddToggle({
             cpConn   = nil
             cpTrack  = nil
             lastChar = nil
-            cpDisableFakeChar()
+            cpDestroyFakeChar()
             return
         end
 
@@ -1391,7 +1512,7 @@ Tab:AddToggle({
         local initChar = weldLocal.Character
         if initChar then
             lastChar = initChar
-            cpEnableFakeChar(initChar)
+            cpSpawnFakeChar()
         end
 
         cpConn = weldRun.Heartbeat:Connect(function()
@@ -1404,7 +1525,7 @@ Tab:AddToggle({
                 cpConn   = nil
                 cpTrack  = nil
                 lastChar = nil
-                cpDisableFakeChar()
+                cpDestroyFakeChar()
                 return
             end
 
@@ -1416,6 +1537,7 @@ Tab:AddToggle({
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
             if not tgtChar or not tgtRoot then return end
 
+            -- Respawn fake char on character change
             if myChar ~= lastChar then
                 lastChar = myChar
                 if cpTrack then
@@ -1423,10 +1545,11 @@ Tab:AddToggle({
                     cpTrack:Destroy()
                 end
                 cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
-                destroyFakeChar()
+
+                cpDestroyFakeChar()
                 task.defer(function()
                     if cpEnabled then
-                        cpEnableFakeChar(myChar)
+                        cpSpawnFakeChar()
                     end
                 end)
             end
