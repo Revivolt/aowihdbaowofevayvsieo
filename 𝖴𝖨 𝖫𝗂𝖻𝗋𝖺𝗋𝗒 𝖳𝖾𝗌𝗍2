@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1367,6 +1367,7 @@ local cpJumpConn         = nil
 local cpTransparencyConn = nil
 local cpRealChar         = nil
 local cpSavedCamSubject  = nil
+local cpRespawning       = false  -- blocks heartbeat during respawn window
 
 -- Mobile controls support
 local cpControls = nil
@@ -1401,8 +1402,6 @@ local function cpStopFakeAnims()
     end
 end
 
--- Internal cleanup: destroys fake char and disconnects connections
--- but does NOT touch the camera (used during respawn)
 local function cpCleanupFakeChar()
     if cpRenderConn       then cpRenderConn:Disconnect();       cpRenderConn       = nil end
     if cpJumpConn         then cpJumpConn:Disconnect();         cpJumpConn         = nil end
@@ -1418,9 +1417,7 @@ local function cpCleanupFakeChar()
     cpRealChar = nil
 end
 
--- Full cleanup: also restores camera and teleports real char (used on toggle off)
 local function cpDestroyFakeChar()
-    -- Restore camera before destroying fake char
     local camera = workspace.CurrentCamera
     if cpSavedCamSubject then
         camera.CameraSubject = cpSavedCamSubject
@@ -1431,7 +1428,6 @@ local function cpDestroyFakeChar()
         if realHum then camera.CameraSubject = realHum end
     end
 
-    -- Teleport real char to where fake char was
     if cpFakeChar and cpRealChar then
         local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
         local realRoot = cpRealChar:FindFirstChild("HumanoidRootPart")
@@ -1474,7 +1470,6 @@ local function cpSpawnFakeChar()
     local cloneAnimate = cpFakeChar:FindFirstChild("Animate")
     if cloneAnimate then cloneAnimate.Disabled = true end
 
-    -- Spawn at real character's current position
     local realRoot = char:FindFirstChild("HumanoidRootPart")
     if realRoot then
         fakeRoot.CFrame = realRoot.CFrame
@@ -1496,7 +1491,6 @@ local function cpSpawnFakeChar()
 
     if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
 
-    -- Point camera at fake character
     local camera = workspace.CurrentCamera
     cpSavedCamSubject    = camera.CameraSubject
     camera.CameraSubject = fakeHum
@@ -1586,9 +1580,10 @@ Tab:AddToggle({
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-            cpConn   = nil
-            cpTrack  = nil
-            lastChar = nil
+            cpConn      = nil
+            cpTrack     = nil
+            lastChar    = nil
+            cpRespawning = false
             cpDestroyFakeChar()
             return
         end
@@ -1606,13 +1601,17 @@ Tab:AddToggle({
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
 
+            -- Block heartbeat during respawn window
+            if cpRespawning then return end
+
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
-                cpConn   = nil
-                cpTrack  = nil
-                lastChar = nil
+                cpConn      = nil
+                cpTrack     = nil
+                lastChar    = nil
+                cpRespawning = false
                 cpDestroyFakeChar()
                 return
             end
@@ -1626,30 +1625,33 @@ Tab:AddToggle({
             if not tgtChar or not tgtRoot then return end
 
             if myChar ~= lastChar then
-                lastChar = myChar
+                lastChar     = myChar
+                cpRespawning = true
 
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                end
-
-                -- Point camera at new character's humanoid immediately
-                -- so it doesn't fall into the void during respawn
+                -- Clean up old fake char and restore camera to new humanoid immediately
+                cpCleanupFakeChar()
                 local newHum = myChar:FindFirstChild("Humanoid")
                 if newHum then
                     workspace.CurrentCamera.CameraSubject = newHum
                     cpSavedCamSubject = newHum
                 end
 
-                -- Clean up old fake char without touching camera
-                cpCleanupFakeChar()
+                if cpTrack then
+                    cpTrack:Stop()
+                    cpTrack:Destroy()
+                    cpTrack = nil
+                end
 
+                -- Wait 0.5s then re-trigger everything fresh
                 task.spawn(function()
-                    task.wait(0.1) -- let new character settle before cloning
+                    task.wait(0.5)
                     if not cpEnabled then return end
                     cpTrack = loadAnim(myChar, cpAnimId, cpFreezeAt, false)
                     cpSpawnFakeChar()
+                    cpRespawning = false
                 end)
+
+                return
             end
 
             pcall(function()
