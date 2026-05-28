@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1348,7 +1348,7 @@ local cpConn      = nil
 local cpEnabled   = false
 local cpTrack     = nil
 local lastChar    = nil
-local cpUp        = -200
+local cpUp        = -80
 local cpForward   = 0
 local cpSide      = 0
 local cpTiltX     = 225
@@ -1362,6 +1362,7 @@ local cpFakeChar         = nil
 local cpFakeAnimTracks   = {}
 local cpRenderConn       = nil
 local cpTransparencyConn = nil
+local cpCamConn          = nil  -- camera subject enforcer
 local cpRealChar         = nil
 local cpSavedCamSubject  = nil
 local cpRespawning       = false
@@ -1447,6 +1448,7 @@ end
 local function cpCleanupFakeChar()
     if cpRenderConn       then cpRenderConn:Disconnect();       cpRenderConn       = nil end
     if cpTransparencyConn then cpTransparencyConn:Disconnect(); cpTransparencyConn = nil end
+    if cpCamConn          then cpCamConn:Disconnect();          cpCamConn          = nil end
 
     cpFakeAnimTracks = {}
 
@@ -1459,6 +1461,9 @@ local function cpCleanupFakeChar()
 end
 
 local function cpDestroyFakeChar()
+    -- Disconnect camera enforcer first so restoring subject doesn't get fought
+    if cpCamConn then cpCamConn:Disconnect(); cpCamConn = nil end
+
     local camera = workspace.CurrentCamera
     if cpSavedCamSubject then
         camera.CameraSubject = cpSavedCamSubject
@@ -1532,9 +1537,19 @@ local function cpSpawnFakeChar()
 
     if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
 
+    -- Set camera to fake humanoid
     local camera = workspace.CurrentCamera
     cpSavedCamSubject    = camera.CameraSubject
     camera.CameraSubject = fakeHum
+
+    -- Re-enforce camera subject whenever any game script tries to override it
+    cpCamConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+        if not cpFakeChar then return end
+        local fHum = cpFakeChar:FindFirstChild("Humanoid")
+        if fHum and camera.CameraSubject ~= fHum then
+            camera.CameraSubject = fHum
+        end
+    end)
 
     fakeHum.StateChanged:Connect(function(_, newState)
         if newState == Enum.HumanoidStateType.Jumping then
@@ -1578,7 +1593,6 @@ local function cpSpawnFakeChar()
             if UIS:IsKeyDown(Enum.KeyCode.D) then inputVector += Vector3.new( 1, 0, 0) end
         end
 
-        -- Poll spacebar every frame so holding it keeps jumping
         local currentState = fakeHum:GetState()
         if UIS:IsKeyDown(Enum.KeyCode.Space) and
             currentState ~= Enum.HumanoidStateType.Jumping and
