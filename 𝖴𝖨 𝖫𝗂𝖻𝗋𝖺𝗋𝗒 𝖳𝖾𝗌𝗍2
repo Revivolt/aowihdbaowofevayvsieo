@@ -1746,8 +1746,8 @@ do
     local cpEnabled = false
     local cpTrack   = nil
     local lastChar  = nil
-    local cpUp        = -2
-    local cpForward   =  1.5
+    local cpUp        =  0
+    local cpForward   =  0
     local cpSide      =  0
     local cpTiltX     =  0
     local cpTiltY     =  0
