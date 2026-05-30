@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -532,6 +532,402 @@ Tab:AddToggle({
                     * CFrame.Angles(0, yaw, 0)
                     * CFrame.new(cpSide, cpUp, -cpForward)
                     * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end)
+    end,
+})
+
+
+
+
+local cp2Conn      = nil
+local cp2Enabled   = false
+local cp2Track     = nil
+local last2Char    = nil
+local cp2Up        = 20
+local cp2Forward   = 0
+local cp2Side      = 0
+local cp2TiltX     = 90
+local cp2TiltY     = 0
+local cp2TiltZ     = 0
+local cp2FaceBack  = false
+local cp2NoCollide = true
+
+-- Wall toggle fake char state
+local cp2FakeChar         = nil
+local cp2FakeAnimTracks   = {}
+local cp2RenderConn       = nil
+local cp2TransparencyConn = nil
+local cp2CamConn          = nil
+local cp2RealChar         = nil
+local cp2SavedCamSubject  = nil
+local cp2Respawning       = false
+local cp2SavedTracks      = {}
+
+-- Mobile controls support
+local cp2Controls = nil
+pcall(function()
+    local PlayerModule = require(weldLocal:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+    cp2Controls = PlayerModule:GetControls()
+end)
+
+local function cp2LoadEmote(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return nil end
+
+    local size = 1678
+    local hi = (4096^3 * 1024) + (999^2 * 516158) + (37^4 * 43) - (123^3 * 7) + (8888 * 9) - 314159 - 66^4 - 47471589
+
+    cp2SavedTracks = {}
+    for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+        table.insert(cp2SavedTracks, {
+            track        = t,
+            speed        = t.Speed,
+            timePosition = t.TimePosition,
+        })
+        t:Stop()
+    end
+
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript then animateScript.Disabled = true end
+
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://" .. hi
+    local track = hum:LoadAnimation(anim)
+    track:Play()
+    track:AdjustSpeed(0)
+    track.TimePosition = size * 0.00000323
+
+    return track
+end
+
+local function cp2RestoreTracks(char)
+    if not char then return end
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript then animateScript.Disabled = false end
+    for _, saved in pairs(cp2SavedTracks) do
+        if saved.track and not saved.track.IsPlaying then
+            saved.track:Play()
+            saved.track:AdjustSpeed(saved.speed)
+            saved.track.TimePosition = saved.timePosition
+        end
+    end
+    cp2SavedTracks = {}
+end
+
+local function cp2GetCharAnims(char)
+    local animate = char:FindFirstChild("Animate")
+    if not animate then return {} end
+    local function getAnim(name)
+        local folder = animate:FindFirstChild(name)
+        if folder then
+            local anim = folder:FindFirstChildWhichIsA("Animation")
+            if anim then return anim.AnimationId end
+        end
+        return nil
+    end
+    return {
+        Idle = getAnim("idle"),
+        Walk = getAnim("walk"),
+        Run  = getAnim("run"),
+        Jump = getAnim("jump"),
+        Fall = getAnim("fall"),
+    }
+end
+
+local function cp2StopFakeAnims()
+    for _, track in pairs(cp2FakeAnimTracks) do
+        if track and track.IsPlaying then track:Stop(0.1) end
+    end
+end
+
+local function cp2CleanupFakeChar()
+    if cp2RenderConn       then cp2RenderConn:Disconnect();       cp2RenderConn       = nil end
+    if cp2TransparencyConn then cp2TransparencyConn:Disconnect(); cp2TransparencyConn = nil end
+    if cp2CamConn          then cp2CamConn:Disconnect();          cp2CamConn          = nil end
+
+    cp2FakeAnimTracks = {}
+
+    if cp2FakeChar then
+        cp2FakeChar:Destroy()
+        cp2FakeChar = nil
+    end
+
+    cp2RealChar = nil
+end
+
+local function cp2DestroyFakeChar()
+    if cp2CamConn then cp2CamConn:Disconnect(); cp2CamConn = nil end
+
+    local camera = workspace.CurrentCamera
+    if cp2SavedCamSubject then
+        camera.CameraSubject = cp2SavedCamSubject
+        cp2SavedCamSubject = nil
+    else
+        local realChar = weldLocal.Character
+        local realHum  = realChar and realChar:FindFirstChild("Humanoid")
+        if realHum then camera.CameraSubject = realHum end
+    end
+
+    if cp2FakeChar and cp2RealChar then
+        local fakeRoot = cp2FakeChar:FindFirstChild("HumanoidRootPart")
+        local realRoot = cp2RealChar:FindFirstChild("HumanoidRootPart")
+        if fakeRoot and realRoot then
+            realRoot.CFrame = fakeRoot.CFrame
+        end
+    end
+
+    cp2RestoreTracks(cp2RealChar)
+    cp2CleanupFakeChar()
+end
+
+local function cp2SpawnFakeChar()
+    local char = weldLocal.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+    cp2RealChar = char
+    char.Archivable = true
+
+    cp2FakeChar = char:Clone()
+    cp2FakeChar.Name = "WallClone2"
+    cp2FakeChar.Parent = workspace
+
+    local fakeHum  = cp2FakeChar:FindFirstChild("Humanoid")
+    local fakeRoot = cp2FakeChar:FindFirstChild("HumanoidRootPart")
+    if not fakeHum or not fakeRoot then return end
+
+    for _, v in pairs(cp2FakeChar:GetDescendants()) do
+        if v:IsA("LocalScript") or v:IsA("Script") then
+            v:Destroy()
+        elseif v:IsA("BasePart") then
+            v.Anchored   = false
+            v.CanCollide = (v.Name == "HumanoidRootPart")
+            if v.Name == "HumanoidRootPart" then
+                v.Transparency = 1
+            end
+        end
+    end
+
+    local cloneAnimate = cp2FakeChar:FindFirstChild("Animate")
+    if cloneAnimate then cloneAnimate.Disabled = true end
+
+    local realRoot = char:FindFirstChild("HumanoidRootPart")
+    if realRoot then
+        fakeRoot.CFrame = realRoot.CFrame
+    end
+
+    local charAnims = cp2GetCharAnims(char)
+    local function LoadAnim(id)
+        if not id then return nil end
+        local a = Instance.new("Animation")
+        a.AnimationId = id
+        return fakeHum:LoadAnimation(a)
+    end
+
+    cp2FakeAnimTracks.Idle = LoadAnim(charAnims.Idle)
+    cp2FakeAnimTracks.Walk = LoadAnim(charAnims.Walk)
+    cp2FakeAnimTracks.Run  = LoadAnim(charAnims.Run)
+    cp2FakeAnimTracks.Jump = LoadAnim(charAnims.Jump)
+    cp2FakeAnimTracks.Fall = LoadAnim(charAnims.Fall)
+
+    if cp2FakeAnimTracks.Idle then cp2FakeAnimTracks.Idle:Play() end
+
+    local camera = workspace.CurrentCamera
+    cp2SavedCamSubject    = camera.CameraSubject
+    camera.CameraSubject = fakeHum
+
+    cp2CamConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+        if not cp2FakeChar then return end
+        local fHum = cp2FakeChar:FindFirstChild("Humanoid")
+        if fHum and camera.CameraSubject ~= fHum then
+            camera.CameraSubject = fHum
+        end
+    end)
+
+    fakeHum.StateChanged:Connect(function(_, newState)
+        if newState == Enum.HumanoidStateType.Jumping then
+            cp2StopFakeAnims()
+            if cp2FakeAnimTracks.Jump then cp2FakeAnimTracks.Jump:Play() end
+        elseif newState == Enum.HumanoidStateType.Freefall then
+            cp2StopFakeAnims()
+            if cp2FakeAnimTracks.Fall then cp2FakeAnimTracks.Fall:Play() end
+        elseif newState == Enum.HumanoidStateType.Landed then
+            cp2StopFakeAnims()
+            if cp2FakeAnimTracks.Idle then cp2FakeAnimTracks.Idle:Play() end
+        end
+    end)
+
+    cp2TransparencyConn = RunService.RenderStepped:Connect(function()
+        if not cp2FakeChar then return end
+        local cam   = workspace.CurrentCamera
+        local fakeH = cp2FakeChar:FindFirstChild("Head")
+        local inFirstPerson = fakeH and cam and
+            (cam.CFrame.Position - fakeH.Position).Magnitude < 2.5
+
+        for _, part in pairs(cp2FakeChar:GetDescendants()) do
+            if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
+                part.LocalTransparencyModifier = inFirstPerson and 1 or 0
+            end
+        end
+    end)
+
+    cp2RenderConn = RunService.RenderStepped:Connect(function()
+        if not cp2FakeChar or not fakeHum or not fakeRoot then return end
+
+        local UIS = game:GetService("UserInputService")
+
+        local inputVector = Vector3.zero
+        if cp2Controls then
+            inputVector = cp2Controls:GetMoveVector()
+        else
+            if UIS:IsKeyDown(Enum.KeyCode.W) then inputVector += Vector3.new(0, 0, -1) end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then inputVector += Vector3.new(0, 0,  1) end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then inputVector += Vector3.new(-1, 0, 0) end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then inputVector += Vector3.new( 1, 0, 0) end
+        end
+
+        local currentState = fakeHum:GetState()
+        if UIS:IsKeyDown(Enum.KeyCode.Space) and
+            currentState ~= Enum.HumanoidStateType.Jumping and
+            currentState ~= Enum.HumanoidStateType.Freefall then
+            fakeHum.Jump = true
+        end
+
+        local camCF    = workspace.CurrentCamera.CFrame
+        local finalDir = (camCF.RightVector * inputVector.X) + (camCF.LookVector * -inputVector.Z)
+        finalDir = Vector3.new(finalDir.X, 0, finalDir.Z)
+
+        local isGrounded =
+            currentState == Enum.HumanoidStateType.Running or
+            currentState == Enum.HumanoidStateType.RunningNoPhysics
+
+        if finalDir.Magnitude > 0.01 then
+            fakeHum:Move(finalDir.Unit, false)
+            if isGrounded then
+                if cp2FakeAnimTracks.Run and not cp2FakeAnimTracks.Run.IsPlaying then
+                    cp2StopFakeAnims()
+                    cp2FakeAnimTracks.Run:Play(0.1)
+                end
+            end
+        else
+            fakeHum:Move(Vector3.zero, false)
+            if isGrounded then
+                if cp2FakeAnimTracks.Idle and not cp2FakeAnimTracks.Idle.IsPlaying then
+                    cp2StopFakeAnims()
+                    cp2FakeAnimTracks.Idle:Play(0.1)
+                end
+            end
+        end
+    end)
+end
+
+Tab:AddToggle({
+    Label   = "Floor (Layered Clothing)",
+    Default = false,
+    Callback = function(state)
+        cp2Enabled = state
+
+        if not cp2Enabled then
+            activeFlingCount = math.max(0, activeFlingCount - 1)
+            cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, nil)
+            cp2Conn       = nil
+            cp2Track      = nil
+            last2Char     = nil
+            cp2Respawning = false
+            cp2DestroyFakeChar()
+            return
+        end
+
+        if not selectedTarget then return end
+        activeFlingCount = activeFlingCount + 1
+
+        local initChar = weldLocal.Character
+        if initChar then
+            last2Char = initChar
+            cp2Track  = cp2LoadEmote(initChar)
+            cp2SpawnFakeChar()
+        end
+
+        cp2Conn = weldRun.Heartbeat:Connect(function()
+            if not cp2Enabled then return end
+            if cp2Respawning then return end
+
+            if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                cp2Enabled = false
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, "Floor (Layered Clothing)")
+                cp2Conn       = nil
+                cp2Track      = nil
+                last2Char     = nil
+                cp2Respawning = false
+                cp2DestroyFakeChar()
+                return
+            end
+
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+
+            if myChar ~= last2Char then
+                last2Char     = myChar
+                cp2Respawning = true
+
+                cp2CleanupFakeChar()
+                local newHum = myChar:FindFirstChild("Humanoid")
+                if newHum then
+                    workspace.CurrentCamera.CameraSubject = newHum
+                    cp2SavedCamSubject = newHum
+                end
+
+                if cp2Track then
+                    cp2Track:Stop()
+                    cp2Track:Destroy()
+                    cp2Track = nil
+                end
+                cp2SavedTracks = {}
+
+                task.spawn(function()
+                    task.wait(0.5)
+                    if not cp2Enabled then return end
+                    cp2Track = cp2LoadEmote(myChar)
+                    cp2SpawnFakeChar()
+                    cp2Respawning = false
+                end)
+
+                return
+            end
+
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") and cp2NoCollide then
+                        part.CanCollide = false
+                    end
+                end
+
+                local hum      = myChar:FindFirstChildOfClass("Humanoid")
+                local animator = hum and hum:FindFirstChildOfClass("Animator")
+                if animator then
+                    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                        if track ~= cp2Track then
+                            track:Stop(0)
+                        end
+                    end
+                end
+
+                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                local yaw = cp2FaceBack and (tgtYaw + math.pi) or tgtYaw
+                myRoot.CFrame =
+                    CFrame.new(tgtRoot.Position)
+                    * CFrame.Angles(0, yaw, 0)
+                    * CFrame.new(cp2Side, cp2Up, -cp2Forward)
+                    * CFrame.Angles(math.rad(cp2TiltX), math.rad(cp2TiltY), math.rad(cp2TiltZ))
                 myRoot.AssemblyLinearVelocity  = Vector3.zero
                 myRoot.AssemblyAngularVelocity = Vector3.zero
                 sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
