@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -1343,402 +1343,7 @@ Tab:AddToggle({
     })
 end
 
--- 13
-local cpConn      = nil
-local cpEnabled   = false
-local cpTrack     = nil
-local lastChar    = nil
-local cpUp        = -300
-local cpForward   = 0.5
-local cpSide      = 0
-local cpTiltX     = 225
-local cpTiltY     = 0
-local cpTiltZ     = 0
-local cpFaceBack  = false
-local cpNoCollide = true
 
--- Wall toggle fake char state
-local cpFakeChar         = nil
-local cpFakeAnimTracks   = {}
-local cpRenderConn       = nil
-local cpTransparencyConn = nil
-local cpCamConn          = nil  -- camera subject enforcer
-local cpRealChar         = nil
-local cpSavedCamSubject  = nil
-local cpRespawning       = false
-local cpSavedTracks      = {}
-
--- Mobile controls support
-local cpControls = nil
-pcall(function()
-    local PlayerModule = require(weldLocal:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
-    cpControls = PlayerModule:GetControls()
-end)
-
-local function cpLoadEmote(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return nil end
-
-    local size = 1678
-    local hi = (4096^3 * 1024) + (999^2 * 516158) + (37^4 * 43) - (123^3 * 7) + (8888 * 9) - 314159 - 66^4 - 47471589
-
-    cpSavedTracks = {}
-    for _, t in pairs(hum:GetPlayingAnimationTracks()) do
-        table.insert(cpSavedTracks, {
-            track        = t,
-            speed        = t.Speed,
-            timePosition = t.TimePosition,
-        })
-        t:Stop()
-    end
-
-    local animateScript = char:FindFirstChild("Animate")
-    if animateScript then animateScript.Disabled = true end
-
-    local anim = Instance.new("Animation")
-    anim.AnimationId = "rbxassetid://" .. hi
-    local track = hum:LoadAnimation(anim)
-    track:Play()
-    track:AdjustSpeed(0)
-    track.TimePosition = size * 0.00000323
-
-    return track
-end
-
-local function cpRestoreTracks(char)
-    if not char then return end
-    local animateScript = char:FindFirstChild("Animate")
-    if animateScript then animateScript.Disabled = false end
-    for _, saved in pairs(cpSavedTracks) do
-        if saved.track and not saved.track.IsPlaying then
-            saved.track:Play()
-            saved.track:AdjustSpeed(saved.speed)
-            saved.track.TimePosition = saved.timePosition
-        end
-    end
-    cpSavedTracks = {}
-end
-
-local function cpGetCharAnims(char)
-    local animate = char:FindFirstChild("Animate")
-    if not animate then return {} end
-    local function getAnim(name)
-        local folder = animate:FindFirstChild(name)
-        if folder then
-            local anim = folder:FindFirstChildWhichIsA("Animation")
-            if anim then return anim.AnimationId end
-        end
-        return nil
-    end
-    return {
-        Idle = getAnim("idle"),
-        Walk = getAnim("walk"),
-        Run  = getAnim("run"),
-        Jump = getAnim("jump"),
-        Fall = getAnim("fall"),
-    }
-end
-
-local function cpStopFakeAnims()
-    for _, track in pairs(cpFakeAnimTracks) do
-        if track and track.IsPlaying then track:Stop(0.1) end
-    end
-end
-
-local function cpCleanupFakeChar()
-    if cpRenderConn       then cpRenderConn:Disconnect();       cpRenderConn       = nil end
-    if cpTransparencyConn then cpTransparencyConn:Disconnect(); cpTransparencyConn = nil end
-    if cpCamConn          then cpCamConn:Disconnect();          cpCamConn          = nil end
-
-    cpFakeAnimTracks = {}
-
-    if cpFakeChar then
-        cpFakeChar:Destroy()
-        cpFakeChar = nil
-    end
-
-    cpRealChar = nil
-end
-
-local function cpDestroyFakeChar()
-    -- Disconnect camera enforcer first so restoring subject doesn't get fought
-    if cpCamConn then cpCamConn:Disconnect(); cpCamConn = nil end
-
-    local camera = workspace.CurrentCamera
-    if cpSavedCamSubject then
-        camera.CameraSubject = cpSavedCamSubject
-        cpSavedCamSubject = nil
-    else
-        local realChar = weldLocal.Character
-        local realHum  = realChar and realChar:FindFirstChild("Humanoid")
-        if realHum then camera.CameraSubject = realHum end
-    end
-
-    if cpFakeChar and cpRealChar then
-        local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
-        local realRoot = cpRealChar:FindFirstChild("HumanoidRootPart")
-        if fakeRoot and realRoot then
-            realRoot.CFrame = fakeRoot.CFrame
-        end
-    end
-
-    cpRestoreTracks(cpRealChar)
-    cpCleanupFakeChar()
-end
-
-local function cpSpawnFakeChar()
-    local char = weldLocal.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-
-    cpRealChar = char
-    char.Archivable = true
-
-    cpFakeChar = char:Clone()
-    cpFakeChar.Name = "WallClone"
-    cpFakeChar.Parent = workspace
-
-    local fakeHum  = cpFakeChar:FindFirstChild("Humanoid")
-    local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
-    if not fakeHum or not fakeRoot then return end
-
-    for _, v in pairs(cpFakeChar:GetDescendants()) do
-        if v:IsA("LocalScript") or v:IsA("Script") then
-            v:Destroy()
-        elseif v:IsA("BasePart") then
-            v.Anchored   = false
-            v.CanCollide = (v.Name == "HumanoidRootPart")
-            if v.Name == "HumanoidRootPart" then
-                v.Transparency = 1
-            end
-        end
-    end
-
-    local cloneAnimate = cpFakeChar:FindFirstChild("Animate")
-    if cloneAnimate then cloneAnimate.Disabled = true end
-
-    local realRoot = char:FindFirstChild("HumanoidRootPart")
-    if realRoot then
-        fakeRoot.CFrame = realRoot.CFrame
-    end
-
-    local charAnims = cpGetCharAnims(char)
-    local function LoadAnim(id)
-        if not id then return nil end
-        local a = Instance.new("Animation")
-        a.AnimationId = id
-        return fakeHum:LoadAnimation(a)
-    end
-
-    cpFakeAnimTracks.Idle = LoadAnim(charAnims.Idle)
-    cpFakeAnimTracks.Walk = LoadAnim(charAnims.Walk)
-    cpFakeAnimTracks.Run  = LoadAnim(charAnims.Run)
-    cpFakeAnimTracks.Jump = LoadAnim(charAnims.Jump)
-    cpFakeAnimTracks.Fall = LoadAnim(charAnims.Fall)
-
-    if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
-
-    -- Set camera to fake humanoid
-    local camera = workspace.CurrentCamera
-    cpSavedCamSubject    = camera.CameraSubject
-    camera.CameraSubject = fakeHum
-
-    -- Re-enforce camera subject whenever any game script tries to override it
-    cpCamConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
-        if not cpFakeChar then return end
-        local fHum = cpFakeChar:FindFirstChild("Humanoid")
-        if fHum and camera.CameraSubject ~= fHum then
-            camera.CameraSubject = fHum
-        end
-    end)
-
-    fakeHum.StateChanged:Connect(function(_, newState)
-        if newState == Enum.HumanoidStateType.Jumping then
-            cpStopFakeAnims()
-            if cpFakeAnimTracks.Jump then cpFakeAnimTracks.Jump:Play() end
-        elseif newState == Enum.HumanoidStateType.Freefall then
-            cpStopFakeAnims()
-            if cpFakeAnimTracks.Fall then cpFakeAnimTracks.Fall:Play() end
-        elseif newState == Enum.HumanoidStateType.Landed then
-            cpStopFakeAnims()
-            if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
-        end
-    end)
-
-    cpTransparencyConn = RunService.RenderStepped:Connect(function()
-        if not cpFakeChar then return end
-        local cam   = workspace.CurrentCamera
-        local fakeH = cpFakeChar:FindFirstChild("Head")
-        local inFirstPerson = fakeH and cam and
-            (cam.CFrame.Position - fakeH.Position).Magnitude < 2.5
-
-        for _, part in pairs(cpFakeChar:GetDescendants()) do
-            if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
-                part.LocalTransparencyModifier = inFirstPerson and 1 or 0
-            end
-        end
-    end)
-
-    cpRenderConn = RunService.RenderStepped:Connect(function()
-        if not cpFakeChar or not fakeHum or not fakeRoot then return end
-
-        local UIS = game:GetService("UserInputService")
-
-        local inputVector = Vector3.zero
-        if cpControls then
-            inputVector = cpControls:GetMoveVector()
-        else
-            if UIS:IsKeyDown(Enum.KeyCode.W) then inputVector += Vector3.new(0, 0, -1) end
-            if UIS:IsKeyDown(Enum.KeyCode.S) then inputVector += Vector3.new(0, 0,  1) end
-            if UIS:IsKeyDown(Enum.KeyCode.A) then inputVector += Vector3.new(-1, 0, 0) end
-            if UIS:IsKeyDown(Enum.KeyCode.D) then inputVector += Vector3.new( 1, 0, 0) end
-        end
-
-        local currentState = fakeHum:GetState()
-        if UIS:IsKeyDown(Enum.KeyCode.Space) and
-            currentState ~= Enum.HumanoidStateType.Jumping and
-            currentState ~= Enum.HumanoidStateType.Freefall then
-            fakeHum.Jump = true
-        end
-
-        local camCF    = workspace.CurrentCamera.CFrame
-        local finalDir = (camCF.RightVector * inputVector.X) + (camCF.LookVector * -inputVector.Z)
-        finalDir = Vector3.new(finalDir.X, 0, finalDir.Z)
-
-        local isGrounded =
-            currentState == Enum.HumanoidStateType.Running or
-            currentState == Enum.HumanoidStateType.RunningNoPhysics
-
-        if finalDir.Magnitude > 0.01 then
-            fakeHum:Move(finalDir.Unit, false)
-            if isGrounded then
-                if cpFakeAnimTracks.Run and not cpFakeAnimTracks.Run.IsPlaying then
-                    cpStopFakeAnims()
-                    cpFakeAnimTracks.Run:Play(0.1)
-                end
-            end
-        else
-            fakeHum:Move(Vector3.zero, false)
-            if isGrounded then
-                if cpFakeAnimTracks.Idle and not cpFakeAnimTracks.Idle.IsPlaying then
-                    cpStopFakeAnims()
-                    cpFakeAnimTracks.Idle:Play(0.1)
-                end
-            end
-        end
-    end)
-end
-
-Tab:AddToggle({
-    Label   = "Wall (Layered Clothing)",
-    Default = false,
-    Callback = function(state)
-        cpEnabled = state
-
-        if not cpEnabled then
-            activeFlingCount = math.max(0, activeFlingCount - 1)
-            cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-            cpConn       = nil
-            cpTrack      = nil
-            lastChar     = nil
-            cpRespawning = false
-            cpDestroyFakeChar()
-            return
-        end
-
-        if not selectedTarget then return end
-        activeFlingCount = activeFlingCount + 1
-
-        local initChar = weldLocal.Character
-        if initChar then
-            lastChar = initChar
-            cpTrack  = cpLoadEmote(initChar)
-            cpSpawnFakeChar()
-        end
-
-        cpConn = weldRun.Heartbeat:Connect(function()
-            if not cpEnabled then return end
-            if cpRespawning then return end
-
-            if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
-                cpEnabled = false
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
-                cpConn       = nil
-                cpTrack      = nil
-                lastChar     = nil
-                cpRespawning = false
-                cpDestroyFakeChar()
-                return
-            end
-
-            local myChar = weldLocal.Character
-            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            if not myChar or not myRoot then return end
-
-            local tgtChar = selectedTarget.Character
-            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-            if not tgtChar or not tgtRoot then return end
-
-            if myChar ~= lastChar then
-                lastChar     = myChar
-                cpRespawning = true
-
-                cpCleanupFakeChar()
-                local newHum = myChar:FindFirstChild("Humanoid")
-                if newHum then
-                    workspace.CurrentCamera.CameraSubject = newHum
-                    cpSavedCamSubject = newHum
-                end
-
-                if cpTrack then
-                    cpTrack:Stop()
-                    cpTrack:Destroy()
-                    cpTrack = nil
-                end
-                cpSavedTracks = {}
-
-                task.spawn(function()
-                    task.wait(0.5)
-                    if not cpEnabled then return end
-                    cpTrack = cpLoadEmote(myChar)
-                    cpSpawnFakeChar()
-                    cpRespawning = false
-                end)
-
-                return
-            end
-
-            pcall(function()
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") and cpNoCollide then
-                        part.CanCollide = false
-                    end
-                end
-
-                local hum      = myChar:FindFirstChildOfClass("Humanoid")
-                local animator = hum and hum:FindFirstChildOfClass("Animator")
-                if animator then
-                    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                        if track ~= cpTrack then
-                            track:Stop(0)
-                        end
-                    end
-                end
-
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                myRoot.CFrame =
-                    CFrame.new(tgtRoot.Position)
-                    * CFrame.Angles(0, yaw, 0)
-                    * CFrame.new(cpSide, cpUp, -cpForward)
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.AssemblyLinearVelocity  = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-            end)
-        end)
-    end,
-})
 
 -- 14
 do
@@ -2777,6 +2382,555 @@ Tab:AddToggle({
     end,
 })
 
+
+
+Tab:AddButton({
+    Label    = "Fling",
+    Callback = function()
+        if nanTarget == "" then return end  -- ADD THIS
+        local targets = {}
+        if nanTarget == "-" then
+            for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                if plr ~= weldLocal then table.insert(targets, plr) end
+            end
+        else
+            for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                if plr ~= weldLocal
+                and (plr.Name:lower():find(nanTarget:lower())
+                     or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                    table.insert(targets, plr)
+                    break
+                end
+            end
+        end
+        for _, target in ipairs(targets) do
+            local conn
+            activeFlingCount = activeFlingCount + 1
+            conn = weldRun.Heartbeat:Connect(function()
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local tgtChar = target.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
+                pcall(function()
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
+                        * CFrame.new(0, 0, 0)
+                    myRoot.Velocity    = Vector3.new(500, 500, 500)
+                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+            task.delay(0.5, function()
+                conn:Disconnect()
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+            end)
+            task.wait(0.3)
+        end
+    end,
+})
+
+
+-- 11
+do
+    local cpConn      = nil
+    local cpEnabled   = false
+    local cpLoopTask  = nil
+
+    local cpUp        =  0
+    local cpForward   =  0
+    local cpSide      =  0
+    local cpTiltX     =  0
+    local cpTiltY     =  0
+    local cpTiltZ     =  0
+    local cpFaceBack  = false
+    local cpNoCollide = false
+    local cpFreezeAt  = 0
+
+    local function stopFlingConn()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+    end
+
+    local function startFlingOnTarget(target)
+        if cpConn then cpConn:Disconnect() cpConn = nil end
+        activeFlingCount = activeFlingCount + 1
+        cpConn = weldRun.Heartbeat:Connect(function()
+            if not cpEnabled then return end
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            if not myChar or not myRoot or not myHum then return end
+            local tgtChar = target.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
+                end
+                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                    * CFrame.new(cpSide, cpUp, -cpForward)
+                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                myRoot.Velocity    = Vector3.new(500, 500, 500)
+                myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end)
+    end
+
+    local function flingTarget(target)
+        if not cpEnabled then return end
+        startFlingOnTarget(target)
+        local elapsed = 0
+        repeat
+            task.wait(0.1)
+            elapsed = elapsed + 0.1
+            if not cpEnabled then stopFlingConn() return end
+        until elapsed >= 0.5
+        stopFlingConn()
+    end
+
+    Tab:AddToggle({
+        Label    = " Loop Fling",
+        Default  = false,
+        Callback = function(state)
+            cpEnabled = state
+            if not cpEnabled then
+                if cpLoopTask then task.cancel(cpLoopTask) cpLoopTask = nil end
+                stopFlingConn()
+                return
+            end
+            cpLoopTask = task.spawn(function()
+                while cpEnabled do
+                    if nanTarget == "" then task.wait(0.1) continue end  -- ADD THIS
+                    local targets = {}
+                    if nanTarget == "-" then
+                        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                            if plr ~= weldLocal then table.insert(targets, plr) end
+                        end
+                    else
+                        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                            if plr ~= weldLocal
+                            and (plr.Name:lower():find(nanTarget:lower())
+                                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                                table.insert(targets, plr)
+                                break
+                            end
+                        end
+                    end
+                    for _, target in ipairs(targets) do
+                        if not cpEnabled then return end
+                        flingTarget(target)
+                        task.wait(0.3)
+                    end
+                    if #targets == 0 then task.wait(0.1) end
+                end
+            end)
+        end,
+    })
+end
+
+
+
+
+-- 13
+local cpConn      = nil
+local cpEnabled   = false
+local cpTrack     = nil
+local lastChar    = nil
+local cpUp        = -300
+local cpForward   = 0.5
+local cpSide      = 0
+local cpTiltX     = 225
+local cpTiltY     = 0
+local cpTiltZ     = 0
+local cpFaceBack  = false
+local cpNoCollide = true
+
+-- Wall toggle fake char state
+local cpFakeChar         = nil
+local cpFakeAnimTracks   = {}
+local cpRenderConn       = nil
+local cpTransparencyConn = nil
+local cpCamConn          = nil  -- camera subject enforcer
+local cpRealChar         = nil
+local cpSavedCamSubject  = nil
+local cpRespawning       = false
+local cpSavedTracks      = {}
+
+-- Mobile controls support
+local cpControls = nil
+pcall(function()
+    local PlayerModule = require(weldLocal:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+    cpControls = PlayerModule:GetControls()
+end)
+
+local function cpLoadEmote(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return nil end
+
+    local size = 1678
+    local hi = (4096^3 * 1024) + (999^2 * 516158) + (37^4 * 43) - (123^3 * 7) + (8888 * 9) - 314159 - 66^4 - 47471589
+
+    cpSavedTracks = {}
+    for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+        table.insert(cpSavedTracks, {
+            track        = t,
+            speed        = t.Speed,
+            timePosition = t.TimePosition,
+        })
+        t:Stop()
+    end
+
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript then animateScript.Disabled = true end
+
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://" .. hi
+    local track = hum:LoadAnimation(anim)
+    track:Play()
+    track:AdjustSpeed(0)
+    track.TimePosition = size * 0.00000323
+
+    return track
+end
+
+local function cpRestoreTracks(char)
+    if not char then return end
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript then animateScript.Disabled = false end
+    for _, saved in pairs(cpSavedTracks) do
+        if saved.track and not saved.track.IsPlaying then
+            saved.track:Play()
+            saved.track:AdjustSpeed(saved.speed)
+            saved.track.TimePosition = saved.timePosition
+        end
+    end
+    cpSavedTracks = {}
+end
+
+local function cpGetCharAnims(char)
+    local animate = char:FindFirstChild("Animate")
+    if not animate then return {} end
+    local function getAnim(name)
+        local folder = animate:FindFirstChild(name)
+        if folder then
+            local anim = folder:FindFirstChildWhichIsA("Animation")
+            if anim then return anim.AnimationId end
+        end
+        return nil
+    end
+    return {
+        Idle = getAnim("idle"),
+        Walk = getAnim("walk"),
+        Run  = getAnim("run"),
+        Jump = getAnim("jump"),
+        Fall = getAnim("fall"),
+    }
+end
+
+local function cpStopFakeAnims()
+    for _, track in pairs(cpFakeAnimTracks) do
+        if track and track.IsPlaying then track:Stop(0.1) end
+    end
+end
+
+local function cpCleanupFakeChar()
+    if cpRenderConn       then cpRenderConn:Disconnect();       cpRenderConn       = nil end
+    if cpTransparencyConn then cpTransparencyConn:Disconnect(); cpTransparencyConn = nil end
+    if cpCamConn          then cpCamConn:Disconnect();          cpCamConn          = nil end
+
+    cpFakeAnimTracks = {}
+
+    if cpFakeChar then
+        cpFakeChar:Destroy()
+        cpFakeChar = nil
+    end
+
+    cpRealChar = nil
+end
+
+local function cpDestroyFakeChar()
+    -- Disconnect camera enforcer first so restoring subject doesn't get fought
+    if cpCamConn then cpCamConn:Disconnect(); cpCamConn = nil end
+
+    local camera = workspace.CurrentCamera
+    if cpSavedCamSubject then
+        camera.CameraSubject = cpSavedCamSubject
+        cpSavedCamSubject = nil
+    else
+        local realChar = weldLocal.Character
+        local realHum  = realChar and realChar:FindFirstChild("Humanoid")
+        if realHum then camera.CameraSubject = realHum end
+    end
+
+    if cpFakeChar and cpRealChar then
+        local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
+        local realRoot = cpRealChar:FindFirstChild("HumanoidRootPart")
+        if fakeRoot and realRoot then
+            realRoot.CFrame = fakeRoot.CFrame
+        end
+    end
+
+    cpRestoreTracks(cpRealChar)
+    cpCleanupFakeChar()
+end
+
+local function cpSpawnFakeChar()
+    local char = weldLocal.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+    cpRealChar = char
+    char.Archivable = true
+
+    cpFakeChar = char:Clone()
+    cpFakeChar.Name = "WallClone"
+    cpFakeChar.Parent = workspace
+
+    local fakeHum  = cpFakeChar:FindFirstChild("Humanoid")
+    local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
+    if not fakeHum or not fakeRoot then return end
+
+    for _, v in pairs(cpFakeChar:GetDescendants()) do
+        if v:IsA("LocalScript") or v:IsA("Script") then
+            v:Destroy()
+        elseif v:IsA("BasePart") then
+            v.Anchored   = false
+            v.CanCollide = (v.Name == "HumanoidRootPart")
+            if v.Name == "HumanoidRootPart" then
+                v.Transparency = 1
+            end
+        end
+    end
+
+    local cloneAnimate = cpFakeChar:FindFirstChild("Animate")
+    if cloneAnimate then cloneAnimate.Disabled = true end
+
+    local realRoot = char:FindFirstChild("HumanoidRootPart")
+    if realRoot then
+        fakeRoot.CFrame = realRoot.CFrame
+    end
+
+    local charAnims = cpGetCharAnims(char)
+    local function LoadAnim(id)
+        if not id then return nil end
+        local a = Instance.new("Animation")
+        a.AnimationId = id
+        return fakeHum:LoadAnimation(a)
+    end
+
+    cpFakeAnimTracks.Idle = LoadAnim(charAnims.Idle)
+    cpFakeAnimTracks.Walk = LoadAnim(charAnims.Walk)
+    cpFakeAnimTracks.Run  = LoadAnim(charAnims.Run)
+    cpFakeAnimTracks.Jump = LoadAnim(charAnims.Jump)
+    cpFakeAnimTracks.Fall = LoadAnim(charAnims.Fall)
+
+    if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
+
+    -- Set camera to fake humanoid
+    local camera = workspace.CurrentCamera
+    cpSavedCamSubject    = camera.CameraSubject
+    camera.CameraSubject = fakeHum
+
+    -- Re-enforce camera subject whenever any game script tries to override it
+    cpCamConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+        if not cpFakeChar then return end
+        local fHum = cpFakeChar:FindFirstChild("Humanoid")
+        if fHum and camera.CameraSubject ~= fHum then
+            camera.CameraSubject = fHum
+        end
+    end)
+
+    fakeHum.StateChanged:Connect(function(_, newState)
+        if newState == Enum.HumanoidStateType.Jumping then
+            cpStopFakeAnims()
+            if cpFakeAnimTracks.Jump then cpFakeAnimTracks.Jump:Play() end
+        elseif newState == Enum.HumanoidStateType.Freefall then
+            cpStopFakeAnims()
+            if cpFakeAnimTracks.Fall then cpFakeAnimTracks.Fall:Play() end
+        elseif newState == Enum.HumanoidStateType.Landed then
+            cpStopFakeAnims()
+            if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
+        end
+    end)
+
+    cpTransparencyConn = RunService.RenderStepped:Connect(function()
+        if not cpFakeChar then return end
+        local cam   = workspace.CurrentCamera
+        local fakeH = cpFakeChar:FindFirstChild("Head")
+        local inFirstPerson = fakeH and cam and
+            (cam.CFrame.Position - fakeH.Position).Magnitude < 2.5
+
+        for _, part in pairs(cpFakeChar:GetDescendants()) do
+            if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
+                part.LocalTransparencyModifier = inFirstPerson and 1 or 0
+            end
+        end
+    end)
+
+    cpRenderConn = RunService.RenderStepped:Connect(function()
+        if not cpFakeChar or not fakeHum or not fakeRoot then return end
+
+        local UIS = game:GetService("UserInputService")
+
+        local inputVector = Vector3.zero
+        if cpControls then
+            inputVector = cpControls:GetMoveVector()
+        else
+            if UIS:IsKeyDown(Enum.KeyCode.W) then inputVector += Vector3.new(0, 0, -1) end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then inputVector += Vector3.new(0, 0,  1) end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then inputVector += Vector3.new(-1, 0, 0) end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then inputVector += Vector3.new( 1, 0, 0) end
+        end
+
+        local currentState = fakeHum:GetState()
+        if UIS:IsKeyDown(Enum.KeyCode.Space) and
+            currentState ~= Enum.HumanoidStateType.Jumping and
+            currentState ~= Enum.HumanoidStateType.Freefall then
+            fakeHum.Jump = true
+        end
+
+        local camCF    = workspace.CurrentCamera.CFrame
+        local finalDir = (camCF.RightVector * inputVector.X) + (camCF.LookVector * -inputVector.Z)
+        finalDir = Vector3.new(finalDir.X, 0, finalDir.Z)
+
+        local isGrounded =
+            currentState == Enum.HumanoidStateType.Running or
+            currentState == Enum.HumanoidStateType.RunningNoPhysics
+
+        if finalDir.Magnitude > 0.01 then
+            fakeHum:Move(finalDir.Unit, false)
+            if isGrounded then
+                if cpFakeAnimTracks.Run and not cpFakeAnimTracks.Run.IsPlaying then
+                    cpStopFakeAnims()
+                    cpFakeAnimTracks.Run:Play(0.1)
+                end
+            end
+        else
+            fakeHum:Move(Vector3.zero, false)
+            if isGrounded then
+                if cpFakeAnimTracks.Idle and not cpFakeAnimTracks.Idle.IsPlaying then
+                    cpStopFakeAnims()
+                    cpFakeAnimTracks.Idle:Play(0.1)
+                end
+            end
+        end
+    end)
+end
+
+Tab:AddToggle({
+    Label   = "Wall (Layered Clothing)",
+    Default = false,
+    Callback = function(state)
+        cpEnabled = state
+
+        if not cpEnabled then
+            activeFlingCount = math.max(0, activeFlingCount - 1)
+            cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
+            cpConn       = nil
+            cpTrack      = nil
+            lastChar     = nil
+            cpRespawning = false
+            cpDestroyFakeChar()
+            return
+        end
+
+        if not nanTarget then return end
+        activeFlingCount = activeFlingCount + 1
+
+        local initChar = weldLocal.Character
+        if initChar then
+            lastChar = initChar
+            cpTrack  = cpLoadEmote(initChar)
+            cpSpawnFakeChar()
+        end
+
+        cpConn = weldRun.Heartbeat:Connect(function()
+            if not cpEnabled then return end
+            if cpRespawning then return end
+
+            if not nanTarget or not weldPlayers:FindFirstChild(nanTarget.Name) then
+                cpEnabled = false
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
+                cpConn       = nil
+                cpTrack      = nil
+                lastChar     = nil
+                cpRespawning = false
+                cpDestroyFakeChar()
+                return
+            end
+
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+
+            local tgtChar = nanTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+
+            if myChar ~= lastChar then
+                lastChar     = myChar
+                cpRespawning = true
+
+                cpCleanupFakeChar()
+                local newHum = myChar:FindFirstChild("Humanoid")
+                if newHum then
+                    workspace.CurrentCamera.CameraSubject = newHum
+                    cpSavedCamSubject = newHum
+                end
+
+                if cpTrack then
+                    cpTrack:Stop()
+                    cpTrack:Destroy()
+                    cpTrack = nil
+                end
+                cpSavedTracks = {}
+
+                task.spawn(function()
+                    task.wait(0.5)
+                    if not cpEnabled then return end
+                    cpTrack = cpLoadEmote(myChar)
+                    cpSpawnFakeChar()
+                    cpRespawning = false
+                end)
+
+                return
+            end
+
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") and cpNoCollide then
+                        part.CanCollide = false
+                    end
+                end
+
+                local hum      = myChar:FindFirstChildOfClass("Humanoid")
+                local animator = hum and hum:FindFirstChildOfClass("Animator")
+                if animator then
+                    for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                        if track ~= cpTrack then
+                            track:Stop(0)
+                        end
+                    end
+                end
+
+                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
+                myRoot.CFrame =
+                    CFrame.new(tgtRoot.Position)
+                    * CFrame.Angles(0, yaw, 0)
+                    * CFrame.new(cpSide, cpUp, -cpForward)
+                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+            end)
+        end)
+    end,
+})
 
 
 
@@ -3858,155 +4012,6 @@ Tab:AddToggle({
         end
     end,
 })
-
-
-Tab:AddButton({
-    Label    = "Fling",
-    Callback = function()
-        if nanTarget == "" then return end  -- ADD THIS
-        local targets = {}
-        if nanTarget == "-" then
-            for _, plr in ipairs(weldPlayers:GetPlayers()) do
-                if plr ~= weldLocal then table.insert(targets, plr) end
-            end
-        else
-            for _, plr in ipairs(weldPlayers:GetPlayers()) do
-                if plr ~= weldLocal
-                and (plr.Name:lower():find(nanTarget:lower())
-                     or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                    table.insert(targets, plr)
-                    break
-                end
-            end
-        end
-        for _, target in ipairs(targets) do
-            local conn
-            activeFlingCount = activeFlingCount + 1
-            conn = weldRun.Heartbeat:Connect(function()
-                local myChar = weldLocal.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                local tgtChar = target.Character
-                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-                if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
-                pcall(function()
-                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
-                        * CFrame.new(0, 0, 0)
-                    myRoot.Velocity    = Vector3.new(500, 500, 500)
-                    myRoot.RotVelocity = Vector3.new(500, 500, 500)
-                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-                end)
-            end)
-            task.delay(0.5, function()
-                conn:Disconnect()
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-            end)
-            task.wait(0.3)
-        end
-    end,
-})
-
-
--- 11
-do
-    local cpConn      = nil
-    local cpEnabled   = false
-    local cpLoopTask  = nil
-
-    local cpUp        =  0
-    local cpForward   =  0
-    local cpSide      =  0
-    local cpTiltX     =  0
-    local cpTiltY     =  0
-    local cpTiltZ     =  0
-    local cpFaceBack  = false
-    local cpNoCollide = false
-    local cpFreezeAt  = 0
-
-    local function stopFlingConn()
-        activeFlingCount = math.max(0, activeFlingCount - 1)
-        if cpConn then cpConn:Disconnect() cpConn = nil end
-    end
-
-    local function startFlingOnTarget(target)
-        if cpConn then cpConn:Disconnect() cpConn = nil end
-        activeFlingCount = activeFlingCount + 1
-        cpConn = weldRun.Heartbeat:Connect(function()
-            if not cpEnabled then return end
-            local myChar = weldLocal.Character
-            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            local myHum  = myChar and myChar:FindFirstChildOfClass("Humanoid")
-            if not myChar or not myRoot or not myHum then return end
-            local tgtChar = target.Character
-            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-            if not tgtChar or not tgtRoot then return end
-            pcall(function()
-                for _, part in ipairs(myChar:GetDescendants()) do
-                    if part:IsA("BasePart") and cpNoCollide then part.CanCollide = false end
-                end
-                local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw = cpFaceBack and (tgtYaw + math.pi) or tgtYaw
-                myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
-                    * CFrame.new(cpSide, cpUp, -cpForward)
-                    * CFrame.Angles(math.rad(cpTiltX), math.rad(cpTiltY), math.rad(cpTiltZ))
-                myRoot.Velocity    = Vector3.new(500, 500, 500)
-                myRoot.RotVelocity = Vector3.new(500, 500, 500)
-                sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
-            end)
-        end)
-    end
-
-    local function flingTarget(target)
-        if not cpEnabled then return end
-        startFlingOnTarget(target)
-        local elapsed = 0
-        repeat
-            task.wait(0.1)
-            elapsed = elapsed + 0.1
-            if not cpEnabled then stopFlingConn() return end
-        until elapsed >= 0.5
-        stopFlingConn()
-    end
-
-    Tab:AddToggle({
-        Label    = " Loop Fling",
-        Default  = false,
-        Callback = function(state)
-            cpEnabled = state
-            if not cpEnabled then
-                if cpLoopTask then task.cancel(cpLoopTask) cpLoopTask = nil end
-                stopFlingConn()
-                return
-            end
-            cpLoopTask = task.spawn(function()
-                while cpEnabled do
-                    if nanTarget == "" then task.wait(0.1) continue end  -- ADD THIS
-                    local targets = {}
-                    if nanTarget == "-" then
-                        for _, plr in ipairs(weldPlayers:GetPlayers()) do
-                            if plr ~= weldLocal then table.insert(targets, plr) end
-                        end
-                    else
-                        for _, plr in ipairs(weldPlayers:GetPlayers()) do
-                            if plr ~= weldLocal
-                            and (plr.Name:lower():find(nanTarget:lower())
-                                 or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
-                                table.insert(targets, plr)
-                                break
-                            end
-                        end
-                    end
-                    for _, target in ipairs(targets) do
-                        if not cpEnabled then return end
-                        flingTarget(target)
-                        task.wait(0.3)
-                    end
-                    if #targets == 0 then task.wait(0.1) end
-                end
-            end)
-        end,
-    })
-end
 
 
 
