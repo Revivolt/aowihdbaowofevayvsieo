@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -684,15 +684,17 @@ local cp2FaceBack  = false
 local cp2NoCollide = true
 
 -- Wall toggle fake char state
-local cp2FakeChar         = nil
-local cp2FakeAnimTracks   = {}
-local cp2RenderConn       = nil
-local cp2TransparencyConn = nil
-local cp2CamConn          = nil
-local cp2RealChar         = nil
-local cp2SavedCamSubject  = nil
-local cp2Respawning       = false
-local cp2SavedTracks      = {}
+local cp2FakeChar          = nil
+local cp2FakeAnimTracks    = {}
+local cp2RenderConn        = nil
+local cp2TransparencyConn  = nil
+local cp2CamConn           = nil
+local cp2RealChar          = nil
+local cp2SavedCamSubject   = nil
+local cp2Respawning        = false
+local cp2SavedTracks       = {}
+local cp2TargetDiedConn    = nil
+local cp2TargetRespawnConn = nil
 
 -- Mobile controls support
 local cp2Controls = nil
@@ -786,6 +788,17 @@ local function cp2CleanupFakeChar()
     cp2RealChar = nil
 end
 
+local function cp2TeleportToFake()
+    local myChar = weldLocal.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if cp2FakeChar and myRoot then
+        local fakeRoot = cp2FakeChar:FindFirstChild("HumanoidRootPart")
+        if fakeRoot then
+            myRoot.CFrame = fakeRoot.CFrame
+        end
+    end
+end
+
 local function cp2DestroyFakeChar()
     if cp2CamConn then cp2CamConn:Disconnect(); cp2CamConn = nil end
 
@@ -811,6 +824,7 @@ local function cp2DestroyFakeChar()
     cp2CleanupFakeChar()
 end
 
+-- Defined BEFORE cp2ConnectTargetDied so the CharacterAdded callback can call it
 local function cp2SpawnFakeChar()
     local char = weldLocal.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
@@ -864,7 +878,7 @@ local function cp2SpawnFakeChar()
 
     local camera = workspace.CurrentCamera
     cp2SavedCamSubject    = camera.CameraSubject
-    camera.CameraSubject = fakeHum
+    camera.CameraSubject  = fakeHum
 
     cp2CamConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
         if not cp2FakeChar then return end
@@ -951,6 +965,84 @@ local function cp2SpawnFakeChar()
     end)
 end
 
+-- Defined AFTER cp2SpawnFakeChar so the CharacterAdded callback inside can reference it
+local function cp2ConnectTargetDied(tgtChar)
+    if cp2TargetDiedConn then
+        cp2TargetDiedConn:Disconnect()
+        cp2TargetDiedConn = nil
+    end
+    if not tgtChar then return end
+    local tgtHum = tgtChar:FindFirstChildOfClass("Humanoid")
+    if not tgtHum then return end
+
+    cp2TargetDiedConn = tgtHum.Died:Connect(function()
+        if not cp2Enabled then return end
+
+        -- Disconnect immediately so this can't double-fire
+        if cp2TargetDiedConn then
+            cp2TargetDiedConn:Disconnect()
+            cp2TargetDiedConn = nil
+        end
+
+        -- Pause the heartbeat FIRST so it can't fight the teleport
+        cp2Respawning = true
+
+        cp2TeleportToFake()
+        cp2DestroyFakeChar()
+
+        if cp2Track then
+            cp2Track:Stop()
+            cp2Track:Destroy()
+            cp2Track = nil
+        end
+        cp2SavedTracks = {}
+
+        if not selectedTarget then
+            cp2Enabled = false
+            activeFlingCount = math.max(0, activeFlingCount - 1)
+            cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, "Floor (Layered Clothing)")
+            cp2Conn       = nil
+            last2Char     = nil
+            cp2Respawning = false
+            return
+        end
+
+        if cp2TargetRespawnConn then
+            cp2TargetRespawnConn:Disconnect()
+            cp2TargetRespawnConn = nil
+        end
+
+        -- Wait for target to respawn; do NOT disable the toggle
+        cp2TargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+            if cp2TargetRespawnConn then
+                cp2TargetRespawnConn:Disconnect()
+                cp2TargetRespawnConn = nil
+            end
+
+            if not cp2Enabled then
+                cp2Respawning = false
+                return
+            end
+
+            task.wait(0.8)
+            if not cp2Enabled then
+                cp2Respawning = false
+                return
+            end
+
+            local myChar = weldLocal.Character
+            if myChar then
+                last2Char = myChar
+                cp2Track  = cp2LoadEmote(myChar)
+                cp2SpawnFakeChar()
+            end
+
+            cp2ConnectTargetDied(newChar)
+            cp2Respawning = false
+        end)
+    end)
+end
+
 Tab:AddToggle({
     Label   = "Floor (Layered Clothing)",
     Default = false,
@@ -964,6 +1056,17 @@ Tab:AddToggle({
             cp2Track      = nil
             last2Char     = nil
             cp2Respawning = false
+
+            if cp2TargetDiedConn then
+                cp2TargetDiedConn:Disconnect()
+                cp2TargetDiedConn = nil
+            end
+
+            if cp2TargetRespawnConn then
+                cp2TargetRespawnConn:Disconnect()
+                cp2TargetRespawnConn = nil
+            end
+
             cp2DestroyFakeChar()
             return
         end
@@ -978,11 +1081,17 @@ Tab:AddToggle({
             cp2SpawnFakeChar()
         end
 
+        local initTgtChar = selectedTarget.Character
+        cp2ConnectTargetDied(initTgtChar)
+
         cp2Conn = weldRun.Heartbeat:Connect(function()
             if not cp2Enabled then return end
             if cp2Respawning then return end
 
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                -- Target fully left the game; teleport and disable
+                cp2TeleportToFake()
+
                 cp2Enabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, "Floor (Layered Clothing)")
@@ -990,6 +1099,17 @@ Tab:AddToggle({
                 cp2Track      = nil
                 last2Char     = nil
                 cp2Respawning = false
+
+                if cp2TargetDiedConn then
+                    cp2TargetDiedConn:Disconnect()
+                    cp2TargetDiedConn = nil
+                end
+
+                if cp2TargetRespawnConn then
+                    cp2TargetRespawnConn:Disconnect()
+                    cp2TargetRespawnConn = nil
+                end
+
                 cp2DestroyFakeChar()
                 return
             end
@@ -1019,6 +1139,8 @@ Tab:AddToggle({
                     cp2Track = nil
                 end
                 cp2SavedTracks = {}
+
+                cp2ConnectTargetDied(tgtChar)
 
                 task.spawn(function()
                     task.wait(0.5)
