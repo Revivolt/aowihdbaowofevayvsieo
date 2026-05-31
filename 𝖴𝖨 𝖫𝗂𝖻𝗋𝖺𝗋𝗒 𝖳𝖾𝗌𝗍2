@@ -1,5 +1,5 @@
 
--- test
+-- test2
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -162,11 +162,12 @@ local cpFakeChar         = nil
 local cpFakeAnimTracks   = {}
 local cpRenderConn       = nil
 local cpTransparencyConn = nil
-local cpCamConn          = nil  -- camera subject enforcer
+local cpCamConn          = nil
 local cpRealChar         = nil
 local cpSavedCamSubject  = nil
 local cpRespawning       = false
 local cpSavedTracks      = {}
+local cpTargetDiedConn   = nil  -- NEW
 
 -- Mobile controls support
 local cpControls = nil
@@ -260,8 +261,19 @@ local function cpCleanupFakeChar()
     cpRealChar = nil
 end
 
+-- NEW: Teleports real character to wherever the fake character currently is
+local function cpTeleportToFake()
+    local myChar = weldLocal.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if cpFakeChar and myRoot then
+        local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
+        if fakeRoot then
+            myRoot.CFrame = fakeRoot.CFrame
+        end
+    end
+end
+
 local function cpDestroyFakeChar()
-    -- Disconnect camera enforcer first so restoring subject doesn't get fought
     if cpCamConn then cpCamConn:Disconnect(); cpCamConn = nil end
 
     local camera = workspace.CurrentCamera
@@ -284,6 +296,38 @@ local function cpDestroyFakeChar()
 
     cpRestoreTracks(cpRealChar)
     cpCleanupFakeChar()
+end
+
+-- NEW: Connects to target's Humanoid.Died so we can react immediately
+local function cpConnectTargetDied(tgtChar)
+    if cpTargetDiedConn then
+        cpTargetDiedConn:Disconnect()
+        cpTargetDiedConn = nil
+    end
+    if not tgtChar then return end
+    local tgtHum = tgtChar:FindFirstChildOfClass("Humanoid")
+    if not tgtHum then return end
+
+    cpTargetDiedConn = tgtHum.Died:Connect(function()
+        if not cpEnabled then return end
+
+        cpTeleportToFake()
+
+        cpEnabled = false
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
+        cpConn       = nil
+        cpTrack      = nil
+        lastChar     = nil
+        cpRespawning = false
+
+        if cpTargetDiedConn then
+            cpTargetDiedConn:Disconnect()
+            cpTargetDiedConn = nil
+        end
+
+        cpDestroyFakeChar()
+    end)
 end
 
 local function cpSpawnFakeChar()
@@ -337,12 +381,10 @@ local function cpSpawnFakeChar()
 
     if cpFakeAnimTracks.Idle then cpFakeAnimTracks.Idle:Play() end
 
-    -- Set camera to fake humanoid
     local camera = workspace.CurrentCamera
     cpSavedCamSubject    = camera.CameraSubject
     camera.CameraSubject = fakeHum
 
-    -- Re-enforce camera subject whenever any game script tries to override it
     cpCamConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
         if not cpFakeChar then return end
         local fHum = cpFakeChar:FindFirstChild("Humanoid")
@@ -441,6 +483,13 @@ Tab:AddToggle({
             cpTrack      = nil
             lastChar     = nil
             cpRespawning = false
+
+            -- NEW: Disconnect died connection on manual toggle-off
+            if cpTargetDiedConn then
+                cpTargetDiedConn:Disconnect()
+                cpTargetDiedConn = nil
+            end
+
             cpDestroyFakeChar()
             return
         end
@@ -455,11 +504,18 @@ Tab:AddToggle({
             cpSpawnFakeChar()
         end
 
+        -- NEW: Hook into target's death immediately on enable
+        local initTgtChar = selectedTarget.Character
+        cpConnectTargetDied(initTgtChar)
+
         cpConn = weldRun.Heartbeat:Connect(function()
             if not cpEnabled then return end
             if cpRespawning then return end
 
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                -- NEW: Teleport to fake char before cleanup when target leaves
+                cpTeleportToFake()
+
                 cpEnabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
                 cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
@@ -467,6 +523,12 @@ Tab:AddToggle({
                 cpTrack      = nil
                 lastChar     = nil
                 cpRespawning = false
+
+                if cpTargetDiedConn then
+                    cpTargetDiedConn:Disconnect()
+                    cpTargetDiedConn = nil
+                end
+
                 cpDestroyFakeChar()
                 return
             end
@@ -496,6 +558,9 @@ Tab:AddToggle({
                     cpTrack = nil
                 end
                 cpSavedTracks = {}
+
+                -- NEW: Reconnect to target's died after your own respawn
+                cpConnectTargetDied(tgtChar)
 
                 task.spawn(function()
                     task.wait(0.5)
