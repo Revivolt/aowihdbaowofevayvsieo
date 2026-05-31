@@ -1,5 +1,5 @@
 
--- test2
+-- test
 
 local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() 
 
@@ -168,7 +168,7 @@ local cpSavedCamSubject   = nil
 local cpRespawning        = false
 local cpSavedTracks       = {}
 local cpTargetDiedConn    = nil
-local cpTargetRespawnConn = nil
+local cpTargetRespawnConn = nil  -- NEW
 
 -- Mobile controls support
 local cpControls = nil
@@ -298,7 +298,8 @@ local function cpDestroyFakeChar()
     cpCleanupFakeChar()
 end
 
--- cpSpawnFakeChar is defined BEFORE cpHandleTargetRespawn so it isn't nil when called
+-- cpSpawnFakeChar is defined BEFORE cpConnectTargetDied so the respawn
+-- callback below can reference it without getting a nil value
 local function cpSpawnFakeChar()
     local char = weldLocal.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
@@ -439,51 +440,8 @@ local function cpSpawnFakeChar()
     end)
 end
 
--- Forward declare so cpHandleTargetRespawn can reference it
-local cpConnectTargetDied
-
-local function cpHandleTargetRespawn()
-    -- Teleport real char to fake before tearing down
-    cpTeleportToFake()
-    cpDestroyFakeChar()
-
-    if cpTrack then
-        cpTrack:Stop()
-        cpTrack:Destroy()
-        cpTrack = nil
-    end
-    cpSavedTracks = {}
-
-    if not selectedTarget then return end
-
-    if cpTargetRespawnConn then
-        cpTargetRespawnConn:Disconnect()
-        cpTargetRespawnConn = nil
-    end
-
-    cpTargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
-        if cpTargetRespawnConn then
-            cpTargetRespawnConn:Disconnect()
-            cpTargetRespawnConn = nil
-        end
-
-        if not cpEnabled then return end
-
-        task.wait(0.8)
-        if not cpEnabled then return end
-
-        local myChar = weldLocal.Character
-        if myChar then
-            lastChar = myChar
-            cpTrack  = cpLoadEmote(myChar)
-            cpSpawnFakeChar()
-        end
-
-        cpConnectTargetDied(newChar)
-    end)
-end
-
-cpConnectTargetDied = function(tgtChar)
+-- Defined AFTER cpSpawnFakeChar so the CharacterAdded callback can safely call it
+local function cpConnectTargetDied(tgtChar)
     if cpTargetDiedConn then
         cpTargetDiedConn:Disconnect()
         cpTargetDiedConn = nil
@@ -495,12 +453,75 @@ cpConnectTargetDied = function(tgtChar)
     cpTargetDiedConn = tgtHum.Died:Connect(function()
         if not cpEnabled then return end
 
+        -- Disconnect immediately so this can't double-fire
         if cpTargetDiedConn then
             cpTargetDiedConn:Disconnect()
             cpTargetDiedConn = nil
         end
 
-        cpHandleTargetRespawn()
+        -- KEY FIX: Pause the heartbeat FIRST before teleporting.
+        -- Without this the heartbeat wins every frame and pushes the real
+        -- char straight back to -300 studs, undoing the teleport instantly.
+        cpRespawning = true
+
+        -- Now nothing is fighting us — move real char to fake char safely
+        cpTeleportToFake()
+        cpDestroyFakeChar()
+
+        if cpTrack then
+            cpTrack:Stop()
+            cpTrack:Destroy()
+            cpTrack = nil
+        end
+        cpSavedTracks = {}
+
+        if not selectedTarget then
+            -- No target to wait for; fully shut down
+            cpEnabled = false
+            activeFlingCount = math.max(0, activeFlingCount - 1)
+            cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
+            cpConn       = nil
+            lastChar     = nil
+            cpRespawning = false
+            return
+        end
+
+        -- Clean up any old respawn watcher before making a new one
+        if cpTargetRespawnConn then
+            cpTargetRespawnConn:Disconnect()
+            cpTargetRespawnConn = nil
+        end
+
+        -- Wait for the target to respawn; DO NOT disable the toggle
+        cpTargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+            if cpTargetRespawnConn then
+                cpTargetRespawnConn:Disconnect()
+                cpTargetRespawnConn = nil
+            end
+
+            if not cpEnabled then
+                cpRespawning = false
+                return
+            end
+
+            -- Give the new character time to fully load
+            task.wait(0.8)
+            if not cpEnabled then
+                cpRespawning = false
+                return
+            end
+
+            local myChar = weldLocal.Character
+            if myChar then
+                lastChar = myChar
+                cpTrack  = cpLoadEmote(myChar)
+                cpSpawnFakeChar()
+            end
+
+            -- Hook death on the brand new character, then unpause
+            cpConnectTargetDied(newChar)
+            cpRespawning = false
+        end)
     end)
 end
 
@@ -550,7 +571,7 @@ Tab:AddToggle({
             if cpRespawning then return end
 
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
-                -- Target fully left the game; disable the toggle
+                -- Target fully left the game; teleport and disable
                 cpTeleportToFake()
 
                 cpEnabled = false
@@ -581,8 +602,6 @@ Tab:AddToggle({
 
             local tgtChar = selectedTarget.Character
             local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
-
-            -- Target is mid-respawn; just wait it out
             if not tgtChar or not tgtRoot then return end
 
             if myChar ~= lastChar then
