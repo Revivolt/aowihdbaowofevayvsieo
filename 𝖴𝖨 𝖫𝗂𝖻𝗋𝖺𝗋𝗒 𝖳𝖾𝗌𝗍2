@@ -1199,6 +1199,7 @@ local cp3TiltY     = 0
 local cp3TiltZ     = 0
 local cp3FaceBack  = false
 local cp3NoCollide = true
+local cp3SpinSpeed = 100
 
 -- Wall toggle fake char state
 local cp3FakeChar          = nil
@@ -1560,8 +1561,6 @@ local function cp3ConnectTargetDied(tgtChar)
     end)
 end
 
-local cp3SpinSpeed = 100
-
 Tab:AddToggle({
     Label   = "Spinning Wall",
     Default = false,
@@ -1608,6 +1607,7 @@ Tab:AddToggle({
             if cp3Respawning then return end
 
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                -- Target fully left the game; teleport and disable
                 cp3TeleportToFake()
 
                 cp3Enabled = false
@@ -1689,7 +1689,7 @@ Tab:AddToggle({
                 end
 
                 local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
-                local yaw = cp3FaceBack and (tgtYaw + math.pi) or tgtYaw
+                local yaw       = cp3FaceBack and (tgtYaw + math.pi) or tgtYaw
                 local spinAngle = os.clock() * cp3SpinSpeed
                 myRoot.CFrame =
                     CFrame.new(tgtRoot.Position)
