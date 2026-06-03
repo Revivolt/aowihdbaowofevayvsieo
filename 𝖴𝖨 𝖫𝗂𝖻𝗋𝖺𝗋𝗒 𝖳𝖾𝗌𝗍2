@@ -1199,7 +1199,7 @@ local cp3TiltY     = 0
 local cp3TiltZ     = 0
 local cp3FaceBack  = false
 local cp3NoCollide = true
-local cp3SpinSpeed = 40
+local cp3SpinSpeed = 42
 
 -- Wall toggle fake char state
 local cp3FakeChar          = nil
@@ -1213,6 +1213,7 @@ local cp3Respawning        = false
 local cp3SavedTracks       = {}
 local cp3TargetDiedConn    = nil
 local cp3TargetRespawnConn = nil
+local cp3LastFakeCFrame    = nil
 
 -- Mobile controls support
 local cp3Controls = nil
@@ -1309,11 +1310,23 @@ end
 local function cp3TeleportToFake()
     local myChar = weldLocal.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if cp3FakeChar and myRoot then
+    if not myRoot then return end
+
+    local targetCFrame = nil
+
+    if cp3FakeChar then
         local fakeRoot = cp3FakeChar:FindFirstChild("HumanoidRootPart")
         if fakeRoot then
-            myRoot.CFrame = fakeRoot.CFrame
+            targetCFrame = fakeRoot.CFrame
         end
+    end
+
+    if not targetCFrame and cp3LastFakeCFrame then
+        targetCFrame = cp3LastFakeCFrame
+    end
+
+    if targetCFrame then
+        myRoot.CFrame = targetCFrame
     end
 end
 
@@ -1480,6 +1493,11 @@ local function cp3SpawnFakeChar()
                 end
             end
         end
+
+        -- Cache the fake char's position every frame as a teleport fallback
+        if fakeRoot then
+            cp3LastFakeCFrame = fakeRoot.CFrame
+        end
     end)
 end
 
@@ -1518,10 +1536,11 @@ local function cp3ConnectTargetDied(tgtChar)
         if not selectedTarget then
             cp3Enabled = false
             activeFlingCount = math.max(0, activeFlingCount - 1)
-            cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Epilepsy (Layered Clothing)")
-            cp3Conn       = nil
-            last2Char     = nil
-            cp3Respawning = false
+            cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
+            cp3Conn           = nil
+            last2Char         = nil
+            cp3Respawning     = false
+            cp3LastFakeCFrame = nil
             return
         end
 
@@ -1562,7 +1581,7 @@ local function cp3ConnectTargetDied(tgtChar)
 end
 
 Tab:AddToggle({
-    Label   = "Epilepsy (Layered Clothing)",
+    Label   = "Spinning Wall",
     Default = false,
     Callback = function(state)
         cp3Enabled = state
@@ -1570,10 +1589,11 @@ Tab:AddToggle({
         if not cp3Enabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
             cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, nil)
-            cp3Conn       = nil
-            cp3Track      = nil
-            last2Char     = nil
-            cp3Respawning = false
+            cp3Conn           = nil
+            cp3Track          = nil
+            last2Char         = nil
+            cp3Respawning     = false
+            cp3LastFakeCFrame = nil
 
             if cp3TargetDiedConn then
                 cp3TargetDiedConn:Disconnect()
@@ -1612,11 +1632,12 @@ Tab:AddToggle({
 
                 cp3Enabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Epilepsy (Layered Clothing)")
-                cp3Conn       = nil
-                cp3Track      = nil
-                last2Char     = nil
-                cp3Respawning = false
+                cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
+                cp3Conn           = nil
+                cp3Track          = nil
+                last2Char         = nil
+                cp3Respawning     = false
+                cp3LastFakeCFrame = nil
 
                 if cp3TargetDiedConn then
                     cp3TargetDiedConn:Disconnect()
