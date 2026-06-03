@@ -168,7 +168,10 @@ local cpSavedCamSubject   = nil
 local cpRespawning        = false
 local cpSavedTracks       = {}
 local cpTargetDiedConn    = nil
-local cpTargetRespawnConn = nil  -- NEW
+local cpTargetRemovedConn = nil
+local cpTargetRespawnConn = nil
+local cpLastFakeCFrame    = nil
+local cpDeathHandled      = false
 
 -- Mobile controls support
 local cpControls = nil
@@ -262,15 +265,39 @@ local function cpCleanupFakeChar()
     cpRealChar = nil
 end
 
-local function cpTeleportToFake()
-    local myChar = weldLocal.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if cpFakeChar and myRoot then
+local function cpTeleportToFake(onDone)
+    local targetCFrame = nil
+
+    if cpFakeChar then
         local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
         if fakeRoot then
-            myRoot.CFrame = fakeRoot.CFrame
+            targetCFrame = fakeRoot.CFrame
         end
     end
+
+    if not targetCFrame and cpLastFakeCFrame then
+        targetCFrame = cpLastFakeCFrame
+    end
+
+    if not targetCFrame then
+        if onDone then onDone() end
+        return
+    end
+
+    task.spawn(function()
+        for _ = 1, 5 do
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                myRoot.CFrame = targetCFrame
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                break
+            end
+            task.wait(0.05)
+        end
+        if onDone then onDone() end
+    end)
 end
 
 local function cpDestroyFakeChar()
@@ -437,6 +464,11 @@ local function cpSpawnFakeChar()
                 end
             end
         end
+
+        -- Cache the fake char's position every frame as a teleport fallback
+        if fakeRoot then
+            cpLastFakeCFrame = fakeRoot.CFrame
+        end
     end)
 end
 
@@ -446,82 +478,107 @@ local function cpConnectTargetDied(tgtChar)
         cpTargetDiedConn:Disconnect()
         cpTargetDiedConn = nil
     end
+    if cpTargetRemovedConn then
+        cpTargetRemovedConn:Disconnect()
+        cpTargetRemovedConn = nil
+    end
     if not tgtChar then return end
     local tgtHum = tgtChar:FindFirstChildOfClass("Humanoid")
     if not tgtHum then return end
 
-    cpTargetDiedConn = tgtHum.Died:Connect(function()
-        if not cpEnabled then return end
+    cpDeathHandled = false
 
-        -- Disconnect immediately so this can't double-fire
+    local function handleDeath()
+        if not cpEnabled then return end
+        if cpDeathHandled then return end
+        cpDeathHandled = true
+
         if cpTargetDiedConn then
             cpTargetDiedConn:Disconnect()
             cpTargetDiedConn = nil
         end
+        if cpTargetRemovedConn then
+            cpTargetRemovedConn:Disconnect()
+            cpTargetRemovedConn = nil
+        end
 
-        -- KEY FIX: Pause the heartbeat FIRST before teleporting.
-        -- Without this the heartbeat wins every frame and pushes the real
-        -- char straight back to -300 studs, undoing the teleport instantly.
         cpRespawning = true
 
-        -- Now nothing is fighting us — move real char to fake char safely
-        cpTeleportToFake()
-        cpDestroyFakeChar()
-
-        if cpTrack then
-            cpTrack:Stop()
-            cpTrack:Destroy()
-            cpTrack = nil
-        end
-        cpSavedTracks = {}
-
-        if not selectedTarget then
-            -- No target to wait for; fully shut down
-            cpEnabled = false
-            activeFlingCount = math.max(0, activeFlingCount - 1)
-            cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
-            cpConn       = nil
-            lastChar     = nil
-            cpRespawning = false
-            return
+        -- Snapshot immediately before anything gets destroyed
+        if cpFakeChar then
+            local fakeRoot = cpFakeChar:FindFirstChild("HumanoidRootPart")
+            if fakeRoot then
+                cpLastFakeCFrame = fakeRoot.CFrame
+            end
         end
 
-        -- Clean up any old respawn watcher before making a new one
-        if cpTargetRespawnConn then
-            cpTargetRespawnConn:Disconnect()
-            cpTargetRespawnConn = nil
-        end
+        cpTeleportToFake(function()
+            cpDestroyFakeChar()
 
-        -- Wait for the target to respawn; DO NOT disable the toggle
-        cpTargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+            if cpTrack then
+                cpTrack:Stop()
+                cpTrack:Destroy()
+                cpTrack = nil
+            end
+            cpSavedTracks = {}
+
+            if not selectedTarget then
+                cpEnabled = false
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
+                cpConn           = nil
+                lastChar         = nil
+                cpRespawning     = false
+                cpLastFakeCFrame = nil
+                return
+            end
+
             if cpTargetRespawnConn then
                 cpTargetRespawnConn:Disconnect()
                 cpTargetRespawnConn = nil
             end
 
-            if not cpEnabled then
+            -- Wait for the target to respawn; DO NOT disable the toggle
+            cpTargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+                if cpTargetRespawnConn then
+                    cpTargetRespawnConn:Disconnect()
+                    cpTargetRespawnConn = nil
+                end
+
+                if not cpEnabled then
+                    cpRespawning = false
+                    return
+                end
+
+                task.wait(0.8)
+                if not cpEnabled then
+                    cpRespawning = false
+                    return
+                end
+
+                local myChar = weldLocal.Character
+                if myChar then
+                    lastChar = myChar
+                    cpTrack  = cpLoadEmote(myChar)
+                    cpSpawnFakeChar()
+                end
+
+                cpConnectTargetDied(newChar)
                 cpRespawning = false
-                return
-            end
-
-            -- Give the new character time to fully load
-            task.wait(0.8)
-            if not cpEnabled then
-                cpRespawning = false
-                return
-            end
-
-            local myChar = weldLocal.Character
-            if myChar then
-                lastChar = myChar
-                cpTrack  = cpLoadEmote(myChar)
-                cpSpawnFakeChar()
-            end
-
-            -- Hook death on the brand new character, then unpause
-            cpConnectTargetDied(newChar)
-            cpRespawning = false
+            end)
         end)
+    end
+
+    -- Primary: Humanoid Died event
+    cpTargetDiedConn = tgtHum.Died:Connect(handleDeath)
+
+    -- Backup: AncestryChanged fires the moment the character is removed from
+    -- the game, catching custom death systems like MM2's sheriff kill that may
+    -- bypass or delay the normal Died event
+    cpTargetRemovedConn = tgtChar.AncestryChanged:Connect(function(_, newParent)
+        if newParent == nil then
+            handleDeath()
+        end
     end)
 end
 
@@ -534,14 +591,21 @@ Tab:AddToggle({
         if not cpEnabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
             cleanupToggle(cpConn, cpTrack, cpNoCollide, nil)
-            cpConn       = nil
-            cpTrack      = nil
-            lastChar     = nil
-            cpRespawning = false
+            cpConn           = nil
+            cpTrack          = nil
+            lastChar         = nil
+            cpRespawning     = false
+            cpLastFakeCFrame = nil
+            cpDeathHandled   = false
 
             if cpTargetDiedConn then
                 cpTargetDiedConn:Disconnect()
                 cpTargetDiedConn = nil
+            end
+
+            if cpTargetRemovedConn then
+                cpTargetRemovedConn:Disconnect()
+                cpTargetRemovedConn = nil
             end
 
             if cpTargetRespawnConn then
@@ -572,27 +636,34 @@ Tab:AddToggle({
 
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 -- Target fully left the game; teleport and disable
-                cpTeleportToFake()
+                cpTeleportToFake(function()
+                    cpEnabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
+                    cpConn           = nil
+                    cpTrack          = nil
+                    lastChar         = nil
+                    cpRespawning     = false
+                    cpLastFakeCFrame = nil
+                    cpDeathHandled   = false
 
-                cpEnabled = false
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cpConn, cpTrack, cpNoCollide, "Wall (Layered Clothing)")
-                cpConn       = nil
-                cpTrack      = nil
-                lastChar     = nil
-                cpRespawning = false
+                    if cpTargetDiedConn then
+                        cpTargetDiedConn:Disconnect()
+                        cpTargetDiedConn = nil
+                    end
 
-                if cpTargetDiedConn then
-                    cpTargetDiedConn:Disconnect()
-                    cpTargetDiedConn = nil
-                end
+                    if cpTargetRemovedConn then
+                        cpTargetRemovedConn:Disconnect()
+                        cpTargetRemovedConn = nil
+                    end
 
-                if cpTargetRespawnConn then
-                    cpTargetRespawnConn:Disconnect()
-                    cpTargetRespawnConn = nil
-                end
+                    if cpTargetRespawnConn then
+                        cpTargetRespawnConn:Disconnect()
+                        cpTargetRespawnConn = nil
+                    end
 
-                cpDestroyFakeChar()
+                    cpDestroyFakeChar()
+                end)
                 return
             end
 
@@ -693,7 +764,10 @@ local cp2SavedCamSubject   = nil
 local cp2Respawning        = false
 local cp2SavedTracks       = {}
 local cp2TargetDiedConn    = nil
+local cp2TargetRemovedConn = nil
 local cp2TargetRespawnConn = nil
+local cp2LastFakeCFrame    = nil
+local cp2DeathHandled      = false
 
 -- Mobile controls support
 local cp2Controls = nil
@@ -787,15 +861,39 @@ local function cp2CleanupFakeChar()
     cp2RealChar = nil
 end
 
-local function cp2TeleportToFake()
-    local myChar = weldLocal.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if cp2FakeChar and myRoot then
+local function cp2TeleportToFake(onDone)
+    local targetCFrame = nil
+
+    if cp2FakeChar then
         local fakeRoot = cp2FakeChar:FindFirstChild("HumanoidRootPart")
         if fakeRoot then
-            myRoot.CFrame = fakeRoot.CFrame
+            targetCFrame = fakeRoot.CFrame
         end
     end
+
+    if not targetCFrame and cp2LastFakeCFrame then
+        targetCFrame = cp2LastFakeCFrame
+    end
+
+    if not targetCFrame then
+        if onDone then onDone() end
+        return
+    end
+
+    task.spawn(function()
+        for _ = 1, 5 do
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                myRoot.CFrame = targetCFrame
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                break
+            end
+            task.wait(0.05)
+        end
+        if onDone then onDone() end
+    end)
 end
 
 local function cp2DestroyFakeChar()
@@ -961,6 +1059,11 @@ local function cp2SpawnFakeChar()
                 end
             end
         end
+
+        -- Cache the fake char's position every frame as a teleport fallback
+        if fakeRoot then
+            cp2LastFakeCFrame = fakeRoot.CFrame
+        end
     end)
 end
 
@@ -970,75 +1073,107 @@ local function cp2ConnectTargetDied(tgtChar)
         cp2TargetDiedConn:Disconnect()
         cp2TargetDiedConn = nil
     end
+    if cp2TargetRemovedConn then
+        cp2TargetRemovedConn:Disconnect()
+        cp2TargetRemovedConn = nil
+    end
     if not tgtChar then return end
     local tgtHum = tgtChar:FindFirstChildOfClass("Humanoid")
     if not tgtHum then return end
 
-    cp2TargetDiedConn = tgtHum.Died:Connect(function()
-        if not cp2Enabled then return end
+    cp2DeathHandled = false
 
-        -- Disconnect immediately so this can't double-fire
+    local function handleDeath()
+        if not cp2Enabled then return end
+        if cp2DeathHandled then return end
+        cp2DeathHandled = true
+
         if cp2TargetDiedConn then
             cp2TargetDiedConn:Disconnect()
             cp2TargetDiedConn = nil
         end
+        if cp2TargetRemovedConn then
+            cp2TargetRemovedConn:Disconnect()
+            cp2TargetRemovedConn = nil
+        end
 
-        -- Pause the heartbeat FIRST so it can't fight the teleport
         cp2Respawning = true
 
-        cp2TeleportToFake()
-        cp2DestroyFakeChar()
-
-        if cp2Track then
-            cp2Track:Stop()
-            cp2Track:Destroy()
-            cp2Track = nil
-        end
-        cp2SavedTracks = {}
-
-        if not selectedTarget then
-            cp2Enabled = false
-            activeFlingCount = math.max(0, activeFlingCount - 1)
-            cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, "Floor (Layered Clothing)")
-            cp2Conn       = nil
-            last2Char     = nil
-            cp2Respawning = false
-            return
+        -- Snapshot immediately before anything gets destroyed
+        if cp2FakeChar then
+            local fakeRoot = cp2FakeChar:FindFirstChild("HumanoidRootPart")
+            if fakeRoot then
+                cp2LastFakeCFrame = fakeRoot.CFrame
+            end
         end
 
-        if cp2TargetRespawnConn then
-            cp2TargetRespawnConn:Disconnect()
-            cp2TargetRespawnConn = nil
-        end
+        cp2TeleportToFake(function()
+            cp2DestroyFakeChar()
 
-        -- Wait for target to respawn; do NOT disable the toggle
-        cp2TargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+            if cp2Track then
+                cp2Track:Stop()
+                cp2Track:Destroy()
+                cp2Track = nil
+            end
+            cp2SavedTracks = {}
+
+            if not selectedTarget then
+                cp2Enabled = false
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, "Floor (Layered Clothing)")
+                cp2Conn           = nil
+                last2Char         = nil
+                cp2Respawning     = false
+                cp2LastFakeCFrame = nil
+                return
+            end
+
             if cp2TargetRespawnConn then
                 cp2TargetRespawnConn:Disconnect()
                 cp2TargetRespawnConn = nil
             end
 
-            if not cp2Enabled then
+            -- Wait for target to respawn; do NOT disable the toggle
+            cp2TargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+                if cp2TargetRespawnConn then
+                    cp2TargetRespawnConn:Disconnect()
+                    cp2TargetRespawnConn = nil
+                end
+
+                if not cp2Enabled then
+                    cp2Respawning = false
+                    return
+                end
+
+                task.wait(0.8)
+                if not cp2Enabled then
+                    cp2Respawning = false
+                    return
+                end
+
+                local myChar = weldLocal.Character
+                if myChar then
+                    last2Char = myChar
+                    cp2Track  = cp2LoadEmote(myChar)
+                    cp2SpawnFakeChar()
+                end
+
+                cp2ConnectTargetDied(newChar)
                 cp2Respawning = false
-                return
-            end
-
-            task.wait(0.8)
-            if not cp2Enabled then
-                cp2Respawning = false
-                return
-            end
-
-            local myChar = weldLocal.Character
-            if myChar then
-                last2Char = myChar
-                cp2Track  = cp2LoadEmote(myChar)
-                cp2SpawnFakeChar()
-            end
-
-            cp2ConnectTargetDied(newChar)
-            cp2Respawning = false
+            end)
         end)
+    end
+
+    -- Primary: Humanoid Died event
+    cp2TargetDiedConn = tgtHum.Died:Connect(handleDeath)
+
+    -- Backup: AncestryChanged fires the moment the character is removed from
+    -- the game, catching custom death systems like MM2's sheriff kill that may
+    -- bypass or delay the normal Died event
+    cp2TargetRemovedConn = tgtChar.AncestryChanged:Connect(function(_, newParent)
+        if newParent == nil then
+            handleDeath()
+        end
     end)
 end
 
@@ -1051,14 +1186,21 @@ Tab:AddToggle({
         if not cp2Enabled then
             activeFlingCount = math.max(0, activeFlingCount - 1)
             cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, nil)
-            cp2Conn       = nil
-            cp2Track      = nil
-            last2Char     = nil
-            cp2Respawning = false
+            cp2Conn           = nil
+            cp2Track          = nil
+            last2Char         = nil
+            cp2Respawning     = false
+            cp2LastFakeCFrame = nil
+            cp2DeathHandled   = false
 
             if cp2TargetDiedConn then
                 cp2TargetDiedConn:Disconnect()
                 cp2TargetDiedConn = nil
+            end
+
+            if cp2TargetRemovedConn then
+                cp2TargetRemovedConn:Disconnect()
+                cp2TargetRemovedConn = nil
             end
 
             if cp2TargetRespawnConn then
@@ -1089,27 +1231,34 @@ Tab:AddToggle({
 
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 -- Target fully left the game; teleport and disable
-                cp2TeleportToFake()
+                cp2TeleportToFake(function()
+                    cp2Enabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, "Floor (Layered Clothing)")
+                    cp2Conn           = nil
+                    cp2Track          = nil
+                    last2Char         = nil
+                    cp2Respawning     = false
+                    cp2LastFakeCFrame = nil
+                    cp2DeathHandled   = false
 
-                cp2Enabled = false
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cp2Conn, cp2Track, cp2NoCollide, "Floor (Layered Clothing)")
-                cp2Conn       = nil
-                cp2Track      = nil
-                last2Char     = nil
-                cp2Respawning = false
+                    if cp2TargetDiedConn then
+                        cp2TargetDiedConn:Disconnect()
+                        cp2TargetDiedConn = nil
+                    end
 
-                if cp2TargetDiedConn then
-                    cp2TargetDiedConn:Disconnect()
-                    cp2TargetDiedConn = nil
-                end
+                    if cp2TargetRemovedConn then
+                        cp2TargetRemovedConn:Disconnect()
+                        cp2TargetRemovedConn = nil
+                    end
 
-                if cp2TargetRespawnConn then
-                    cp2TargetRespawnConn:Disconnect()
-                    cp2TargetRespawnConn = nil
-                end
+                    if cp2TargetRespawnConn then
+                        cp2TargetRespawnConn:Disconnect()
+                        cp2TargetRespawnConn = nil
+                    end
 
-                cp2DestroyFakeChar()
+                    cp2DestroyFakeChar()
+                end)
                 return
             end
 
@@ -1202,18 +1351,20 @@ local cp3NoCollide = true
 local cp3SpinSpeed = 42
 
 -- Wall toggle fake char state
-local cp3FakeChar          = nil
-local cp3FakeAnimTracks    = {}
-local cp3RenderConn        = nil
-local cp3TransparencyConn  = nil
-local cp3CamConn           = nil
-local cp3RealChar          = nil
-local cp3SavedCamSubject   = nil
-local cp3Respawning        = false
-local cp3SavedTracks       = {}
-local cp3TargetDiedConn    = nil
-local cp3TargetRespawnConn = nil
-local cp3LastFakeCFrame    = nil
+local cp3FakeChar            = nil
+local cp3FakeAnimTracks      = {}
+local cp3RenderConn          = nil
+local cp3TransparencyConn    = nil
+local cp3CamConn             = nil
+local cp3RealChar            = nil
+local cp3SavedCamSubject     = nil
+local cp3Respawning          = false
+local cp3SavedTracks         = {}
+local cp3TargetDiedConn      = nil
+local cp3TargetRemovedConn   = nil
+local cp3TargetRespawnConn   = nil
+local cp3LastFakeCFrame      = nil
+local cp3DeathHandled        = false
 
 -- Mobile controls support
 local cp3Controls = nil
@@ -1307,11 +1458,7 @@ local function cp3CleanupFakeChar()
     cp3RealChar = nil
 end
 
-local function cp3TeleportToFake()
-    local myChar = weldLocal.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return end
-
+local function cp3TeleportToFake(onDone)
     local targetCFrame = nil
 
     if cp3FakeChar then
@@ -1325,9 +1472,25 @@ local function cp3TeleportToFake()
         targetCFrame = cp3LastFakeCFrame
     end
 
-    if targetCFrame then
-        myRoot.CFrame = targetCFrame
+    if not targetCFrame then
+        if onDone then onDone() end
+        return
     end
+
+    task.spawn(function()
+        for _ = 1, 5 do
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                myRoot.CFrame = targetCFrame
+                myRoot.AssemblyLinearVelocity  = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                break
+            end
+            task.wait(0.05)
+        end
+        if onDone then onDone() end
+    end)
 end
 
 local function cp3DestroyFakeChar()
@@ -1507,76 +1670,107 @@ local function cp3ConnectTargetDied(tgtChar)
         cp3TargetDiedConn:Disconnect()
         cp3TargetDiedConn = nil
     end
+    if cp3TargetRemovedConn then
+        cp3TargetRemovedConn:Disconnect()
+        cp3TargetRemovedConn = nil
+    end
     if not tgtChar then return end
     local tgtHum = tgtChar:FindFirstChildOfClass("Humanoid")
     if not tgtHum then return end
 
-    cp3TargetDiedConn = tgtHum.Died:Connect(function()
-        if not cp3Enabled then return end
+    cp3DeathHandled = false
 
-        -- Disconnect immediately so this can't double-fire
+    local function handleDeath()
+        if not cp3Enabled then return end
+        if cp3DeathHandled then return end
+        cp3DeathHandled = true
+
         if cp3TargetDiedConn then
             cp3TargetDiedConn:Disconnect()
             cp3TargetDiedConn = nil
         end
+        if cp3TargetRemovedConn then
+            cp3TargetRemovedConn:Disconnect()
+            cp3TargetRemovedConn = nil
+        end
 
-        -- Pause the heartbeat FIRST so it can't fight the teleport
         cp3Respawning = true
 
-        cp3TeleportToFake()
-        cp3DestroyFakeChar()
-
-        if cp3Track then
-            cp3Track:Stop()
-            cp3Track:Destroy()
-            cp3Track = nil
-        end
-        cp3SavedTracks = {}
-
-        if not selectedTarget then
-            cp3Enabled = false
-            activeFlingCount = math.max(0, activeFlingCount - 1)
-            cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
-            cp3Conn           = nil
-            last2Char         = nil
-            cp3Respawning     = false
-            cp3LastFakeCFrame = nil
-            return
+        -- Snapshot immediately before anything gets destroyed
+        if cp3FakeChar then
+            local fakeRoot = cp3FakeChar:FindFirstChild("HumanoidRootPart")
+            if fakeRoot then
+                cp3LastFakeCFrame = fakeRoot.CFrame
+            end
         end
 
-        if cp3TargetRespawnConn then
-            cp3TargetRespawnConn:Disconnect()
-            cp3TargetRespawnConn = nil
-        end
+        cp3TeleportToFake(function()
+            cp3DestroyFakeChar()
 
-        -- Wait for target to respawn; do NOT disable the toggle
-        cp3TargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+            if cp3Track then
+                cp3Track:Stop()
+                cp3Track:Destroy()
+                cp3Track = nil
+            end
+            cp3SavedTracks = {}
+
+            if not selectedTarget then
+                cp3Enabled = false
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
+                cp3Conn           = nil
+                last2Char         = nil
+                cp3Respawning     = false
+                cp3LastFakeCFrame = nil
+                return
+            end
+
             if cp3TargetRespawnConn then
                 cp3TargetRespawnConn:Disconnect()
                 cp3TargetRespawnConn = nil
             end
 
-            if not cp3Enabled then
+            -- Wait for target to respawn; do NOT disable the toggle
+            cp3TargetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+                if cp3TargetRespawnConn then
+                    cp3TargetRespawnConn:Disconnect()
+                    cp3TargetRespawnConn = nil
+                end
+
+                if not cp3Enabled then
+                    cp3Respawning = false
+                    return
+                end
+
+                task.wait(0.8)
+                if not cp3Enabled then
+                    cp3Respawning = false
+                    return
+                end
+
+                local myChar = weldLocal.Character
+                if myChar then
+                    last2Char = myChar
+                    cp3Track  = cp3LoadEmote(myChar)
+                    cp3SpawnFakeChar()
+                end
+
+                cp3ConnectTargetDied(newChar)
                 cp3Respawning = false
-                return
-            end
-
-            task.wait(0.8)
-            if not cp3Enabled then
-                cp3Respawning = false
-                return
-            end
-
-            local myChar = weldLocal.Character
-            if myChar then
-                last2Char = myChar
-                cp3Track  = cp3LoadEmote(myChar)
-                cp3SpawnFakeChar()
-            end
-
-            cp3ConnectTargetDied(newChar)
-            cp3Respawning = false
+            end)
         end)
+    end
+
+    -- Primary: Humanoid Died event
+    cp3TargetDiedConn = tgtHum.Died:Connect(handleDeath)
+
+    -- Backup: AncestryChanged fires the moment the character is removed from
+    -- the game, catching custom death systems like MM2's sheriff kill that may
+    -- bypass or delay the normal Died event
+    cp3TargetRemovedConn = tgtChar.AncestryChanged:Connect(function(_, newParent)
+        if newParent == nil then
+            handleDeath()
+        end
     end)
 end
 
@@ -1594,10 +1788,16 @@ Tab:AddToggle({
             last2Char         = nil
             cp3Respawning     = false
             cp3LastFakeCFrame = nil
+            cp3DeathHandled   = false
 
             if cp3TargetDiedConn then
                 cp3TargetDiedConn:Disconnect()
                 cp3TargetDiedConn = nil
+            end
+
+            if cp3TargetRemovedConn then
+                cp3TargetRemovedConn:Disconnect()
+                cp3TargetRemovedConn = nil
             end
 
             if cp3TargetRespawnConn then
@@ -1628,28 +1828,34 @@ Tab:AddToggle({
 
             if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
                 -- Target fully left the game; teleport and disable
-                cp3TeleportToFake()
+                cp3TeleportToFake(function()
+                    cp3Enabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
+                    cp3Conn           = nil
+                    cp3Track          = nil
+                    last2Char         = nil
+                    cp3Respawning     = false
+                    cp3LastFakeCFrame = nil
+                    cp3DeathHandled   = false
 
-                cp3Enabled = false
-                activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
-                cp3Conn           = nil
-                cp3Track          = nil
-                last2Char         = nil
-                cp3Respawning     = false
-                cp3LastFakeCFrame = nil
+                    if cp3TargetDiedConn then
+                        cp3TargetDiedConn:Disconnect()
+                        cp3TargetDiedConn = nil
+                    end
 
-                if cp3TargetDiedConn then
-                    cp3TargetDiedConn:Disconnect()
-                    cp3TargetDiedConn = nil
-                end
+                    if cp3TargetRemovedConn then
+                        cp3TargetRemovedConn:Disconnect()
+                        cp3TargetRemovedConn = nil
+                    end
 
-                if cp3TargetRespawnConn then
-                    cp3TargetRespawnConn:Disconnect()
-                    cp3TargetRespawnConn = nil
-                end
+                    if cp3TargetRespawnConn then
+                        cp3TargetRespawnConn:Disconnect()
+                        cp3TargetRespawnConn = nil
+                    end
 
-                cp3DestroyFakeChar()
+                    cp3DestroyFakeChar()
+                end)
                 return
             end
 
