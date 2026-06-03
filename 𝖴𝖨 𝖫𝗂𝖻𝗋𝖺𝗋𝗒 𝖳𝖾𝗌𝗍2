@@ -1717,7 +1717,7 @@ local function cp3ConnectTargetDied(tgtChar)
             if not selectedTarget then
                 cp3Enabled = false
                 activeFlingCount = math.max(0, activeFlingCount - 1)
-                cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
+                cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Epilepsy (Layered Clothing)")
                 cp3Conn           = nil
                 last2Char         = nil
                 cp3Respawning     = false
@@ -1775,7 +1775,7 @@ local function cp3ConnectTargetDied(tgtChar)
 end
 
 Tab:AddToggle({
-    Label   = "Spinning Wall",
+    Label   = "Epilepsy (Layered Clothing)",
     Default = false,
     Callback = function(state)
         cp3Enabled = state
@@ -1831,7 +1831,7 @@ Tab:AddToggle({
                 cp3TeleportToFake(function()
                     cp3Enabled = false
                     activeFlingCount = math.max(0, activeFlingCount - 1)
-                    cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Spinning Wall")
+                    cleanupToggle(cp3Conn, cp3Track, cp3NoCollide, "Epilepsy (Layered Clothing)")
                     cp3Conn           = nil
                     cp3Track          = nil
                     last2Char         = nil
