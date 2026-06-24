@@ -839,14 +839,17 @@ function NovaUI:CreateWindow(cfg)
             local open     = false
 
             local Wrapper = New("Frame", {
-                Size                   = UDim2.new(1, 0, 0, 36),
-                BackgroundTransparency = 1,
-                ClipsDescendants       = false,
-                LayoutOrder            = Tab._order,
-                ZIndex                 = 5,
-                Parent                 = TContent,
-            })
-            Tab._order += 1
+                  Size                   = UDim2.new(1, 0, 0, 36),
+                  BackgroundTransparency = 1,
+                  ClipsDescendants       = false,
+                  LayoutOrder            = Tab._order,
+                  ZIndex                 = 5,
+                  Parent                 = TContent,
+              })
+              Tab._order += 1
+        
+          local BASE_Z   = 5      -- wrapper's resting ZIndex
+          local OPEN_Z   = 1000   -- raised above all sibling rows while open
 
             local Header = New("TextButton", {
                 Text                   = "",
@@ -955,26 +958,33 @@ function NovaUI:CreateWindow(cfg)
                     end
                     Tween(OBtn, { TextColor3 = Theme.Accent })
                     open = false
-                    Tween(Panel, { Size = UDim2.new(1, 0, 0, 0) }, 0.14)
-                    Tween(Arrow, { Rotation = 0 })
-                    task.delay(0.15, function() PanelStroke.Enabled = false end)
-                    task.spawn(callback, opt)
+                      Tween(Panel, { Size = UDim2.new(1, 0, 0, 0) }, 0.14)
+                      Tween(Arrow, { Rotation = 0 })
+                      task.delay(0.15, function()
+                          PanelStroke.Enabled = false
+                          Wrapper.ZIndex = BASE_Z
+                      end)
+                      task.spawn(callback, opt)
                 end)
             end
 
             -- FIX: Activated instead of MouseButton1Click for header
             Header.Activated:Connect(function()
-                open = not open
-                if open then
-                    PanelStroke.Enabled = true
-                    Tween(Panel, { Size = UDim2.new(1, 0, 0, panelH) }, 0.16)
-                    Tween(Arrow, { Rotation = 180 })
-                else
-                    Tween(Panel, { Size = UDim2.new(1, 0, 0, 0) }, 0.14)
-                    Tween(Arrow, { Rotation = 0 })
-                    task.delay(0.15, function() PanelStroke.Enabled = false end)
-                end
-            end)
+                  open = not open
+                  if open then
+                      Wrapper.ZIndex = OPEN_Z
+                      PanelStroke.Enabled = true
+                      Tween(Panel, { Size = UDim2.new(1, 0, 0, panelH) }, 0.16)
+                      Tween(Arrow, { Rotation = 180 })
+                  else
+                      Tween(Panel, { Size = UDim2.new(1, 0, 0, 0) }, 0.14)
+                      Tween(Arrow, { Rotation = 0 })
+                      task.delay(0.15, function()
+                          PanelStroke.Enabled = false
+                          Wrapper.ZIndex = BASE_Z
+                      end)
+                  end
+              end)
 
             Header.MouseEnter:Connect(function()
                 Tween(Header, { BackgroundColor3 = Theme.SurfaceHover })
