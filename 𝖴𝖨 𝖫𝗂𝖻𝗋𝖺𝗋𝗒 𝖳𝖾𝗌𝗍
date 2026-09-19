@@ -1,39 +1,36 @@
 -- ──────────────────────────────────────────────────────────
 --  NovaUI — minimize replaced with floating draggable toggle
 --  FIXED: Full touch + mouse support for mobile/emulators
+--  Theme updated to pitch-black + white (transparency preserved)
 -- ──────────────────────────────────────────────────────────
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 local RunService        = game:GetService("RunService")
-
 local LocalPlayer = Players.LocalPlayer
-
 -- ──────────────────────────────────────────────────────────
---  Theme
+--  Theme (Pitch Black + White)
 -- ──────────────────────────────────────────────────────────
 local Theme = {
-    Background      = Color3.fromRGB(220, 220, 225),
-    Surface         = Color3.fromRGB(200, 200, 208),
-    SurfaceHover    = Color3.fromRGB(185, 185, 195),
-    Elevated        = Color3.fromRGB(210, 210, 218),
-    Border          = Color3.fromRGB(88,  88,  99),
-    Accent          = Color3.fromRGB(100, 100, 115),
-    AccentHover     = Color3.fromRGB(80,  80,  95),
-    AccentDim       = Color3.fromRGB(170, 170, 180),
-    TextPrimary     = Color3.fromRGB(40,  40,  50),
-    TextSecondary   = Color3.fromRGB(90,  90,  105),
-    TextDisabled    = Color3.fromRGB(150, 150, 162),
-    InputBG         = Color3.fromRGB(230, 230, 235),
-    SliderFill      = Color3.fromRGB(100, 100, 115),
+    Background      = Color3.fromRGB(0, 0, 0),
+    Surface         = Color3.fromRGB(12, 12, 12),
+    SurfaceHover    = Color3.fromRGB(28, 28, 28),
+    Elevated        = Color3.fromRGB(18, 18, 18),
+    Border          = Color3.fromRGB(45, 45, 45),
+    Accent          = Color3.fromRGB(90, 150, 255),
+    AccentHover     = Color3.fromRGB(110, 170, 255),
+    AccentDim       = Color3.fromRGB(40, 40, 40),
+    TextPrimary     = Color3.fromRGB(255, 255, 255),
+    TextSecondary   = Color3.fromRGB(180, 180, 180),
+    TextDisabled    = Color3.fromRGB(120, 120, 120),
+    InputBG         = Color3.fromRGB(15, 15, 15),
+    SliderFill      = Color3.fromRGB(90, 150, 255),
     White           = Color3.fromRGB(255, 255, 255),
-    CloseRed        = Color3.fromRGB(230, 230, 235),
-    DropBG          = Color3.fromRGB(190, 190, 198),
-    DropItem        = Color3.fromRGB(200, 200, 208),
+    CloseRed        = Color3.fromRGB(25, 25, 25),
+    DropBG          = Color3.fromRGB(10, 10, 10),
+    DropItem        = Color3.fromRGB(18, 18, 18),
 }
-
-local T = 0.6  -- global background transparency
-
+local T = 0.6  -- global background transparency (kept)
 -- ──────────────────────────────────────────────────────────
 --  Utility
 -- ──────────────────────────────────────────────────────────
@@ -44,7 +41,6 @@ local function Tween(inst, props, t, style, dir)
         props
     ):Play()
 end
-
 local function New(class, props)
     local inst = Instance.new(class)
     for k, v in pairs(props) do
@@ -53,13 +49,11 @@ local function New(class, props)
     inst.Parent = props.Parent
     return inst
 end
-
 local function Corner(r, p)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, r or 6)
     c.Parent = p
 end
-
 local function Stroke(color, thick, p)
     local s = Instance.new("UIStroke")
     s.Color           = color or Theme.Border
@@ -67,7 +61,6 @@ local function Stroke(color, thick, p)
     s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     s.Parent = p
 end
-
 local function Pad(top, right, bottom, left, p)
     local u = Instance.new("UIPadding")
     u.PaddingTop    = UDim.new(0, top    or 0)
@@ -76,26 +69,21 @@ local function Pad(top, right, bottom, left, p)
     u.PaddingLeft   = UDim.new(0, left   or 0)
     u.Parent = p
 end
-
 -- FIX: MakeDraggable now handles both Mouse and Touch input
 local function MakeDraggable(handle, target)
     local dragging, start, origin = false, nil, nil
-
     local function isValidBegin(i)
         return i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch
     end
-
     local function isValidMove(i)
         return i.UserInputType == Enum.UserInputType.MouseMovement
             or i.UserInputType == Enum.UserInputType.Touch
     end
-
     local function isValidEnd(i)
         return i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch
     end
-
     handle.InputBegan:Connect(function(i)
         if isValidBegin(i) then
             dragging = true
@@ -103,7 +91,6 @@ local function MakeDraggable(handle, target)
             origin   = target.Position
         end
     end)
-
     UserInputService.InputChanged:Connect(function(i)
         if dragging and isValidMove(i) then
             local d = i.Position - start
@@ -113,14 +100,12 @@ local function MakeDraggable(handle, target)
             )
         end
     end)
-
     UserInputService.InputEnded:Connect(function(i)
         if isValidEnd(i) then
             dragging = false
         end
     end)
 end
-
 local function GetGuiParent()
     if RunService:IsStudio() then
         return LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -129,20 +114,17 @@ local function GetGuiParent()
     if ok and hui then return hui end
     return LocalPlayer:FindFirstChildOfClass("PlayerGui")
 end
-
 -- ══════════════════════════════════════════════════════════
 --  Library
 -- ══════════════════════════════════════════════════════════
 local NovaUI = {}
 NovaUI.__index = NovaUI
-
 -- ──────────────────────────────────────────────────────────
 --  Floating toggle button
 --  FIX: Drag-vs-click logic now handles Touch input alongside Mouse
 -- ──────────────────────────────────────────────────────────
 local TOGGLE_ICON = "rbxassetid://82814787677913"
 local TOGGLE_SIZE = 30
-
 local function CreateToggleButton(mainGui, mainFrame, visible)
     local ToggleGui = New("ScreenGui", {
         Name           = "NovaUI_Toggle",
@@ -151,7 +133,6 @@ local function CreateToggleButton(mainGui, mainFrame, visible)
         DisplayOrder   = 1000,
         Parent         = GetGuiParent(),
     })
-
     local Btn = New("ImageButton", {
         Name                   = "ToggleBtn",
         Size                   = UDim2.fromOffset(TOGGLE_SIZE, TOGGLE_SIZE),
@@ -168,36 +149,39 @@ local function CreateToggleButton(mainGui, mainFrame, visible)
     -- CHANGED: Use radius 50 to make the toggle button a perfect circle
     Corner(50, Btn)
     Stroke(Theme.Border, 1, Btn)
-
+    local originalSize = Btn.Size
     Btn.MouseEnter:Connect(function()
-        Tween(Btn, { BackgroundColor3 = Theme.SurfaceHover, BackgroundTransparency = T * 0.7 })
+        Tween(Btn, {
+            BackgroundColor3 = Theme.SurfaceHover,
+            BackgroundTransparency = T * 0.7,
+            Size = originalSize + UDim2.fromOffset(2, 2)
+        })
     end)
     Btn.MouseLeave:Connect(function()
-        Tween(Btn, { BackgroundColor3 = Theme.Background, BackgroundTransparency = T })
+        Tween(Btn, {
+            BackgroundColor3 = Theme.Background,
+            BackgroundTransparency = T,
+            Size = originalSize
+        })
     end)
-
     -- FIX: Check for both Mouse and Touch in drag-vs-click logic
     local dragging   = false
     local moved      = false
     local dragStart  = nil
     local startPos   = nil
     local THRESHOLD  = 6
-
     local function isPointerBegin(inp)
         return inp.UserInputType == Enum.UserInputType.MouseButton1
             or inp.UserInputType == Enum.UserInputType.Touch
     end
-
     local function isPointerEnd(inp)
         return inp.UserInputType == Enum.UserInputType.MouseButton1
             or inp.UserInputType == Enum.UserInputType.Touch
     end
-
     local function isPointerMove(inp)
         return inp.UserInputType == Enum.UserInputType.MouseMovement
             or inp.UserInputType == Enum.UserInputType.Touch
     end
-
     Btn.InputBegan:Connect(function(inp)
         if isPointerBegin(inp) then
             dragging  = true
@@ -206,7 +190,6 @@ local function CreateToggleButton(mainGui, mainFrame, visible)
             startPos  = Btn.Position
         end
     end)
-
     -- FIX: InputEnded on the button may not fire reliably on touch;
     -- use UserInputService.InputEnded as the authoritative end event.
     UserInputService.InputEnded:Connect(function(inp)
@@ -234,7 +217,6 @@ local function CreateToggleButton(mainGui, mainFrame, visible)
             end
         end
     end)
-
     UserInputService.InputChanged:Connect(function(inp)
         if dragging and isPointerMove(inp) then
             local delta = inp.Position - dragStart
@@ -249,25 +231,20 @@ local function CreateToggleButton(mainGui, mainFrame, visible)
             end
         end
     end)
-
     -- Auto-destroy when the main ScreenGui is removed
     mainGui.AncestryChanged:Connect(function(_, parent)
         if parent == nil then
             ToggleGui:Destroy()
         end
     end)
-
     return ToggleGui
 end
-
 -- ══════════════════════════════════════════════════════════
-
 function NovaUI:CreateWindow(cfg)
     cfg = cfg or {}
     local title = cfg.Title    or "NovaUI"
     local sz    = cfg.Size     or UDim2.new(0, 520, 0, 400)
     local pos   = cfg.Position or UDim2.new(0.5, -(sz.X.Offset/2), 0.5, -(sz.Y.Offset/2))
-
     local Gui = New("ScreenGui", {
         Name           = "NovaUI_" .. title,
         ResetOnSpawn   = false,
@@ -275,7 +252,6 @@ function NovaUI:CreateWindow(cfg)
         DisplayOrder   = 999,
         Parent         = GetGuiParent(),
     })
-
     -- Using TextButton instead of Frame so the entire window area sinks
     -- input and prevents the game camera from responding to drags.
     local Main = New("TextButton", {
@@ -292,7 +268,6 @@ function NovaUI:CreateWindow(cfg)
     })
     Corner(10, Main)
     Stroke(Theme.Border, 1, Main)
-
     -- ── Title bar ────────────────────────────────────────
     -- Using TextButton instead of Frame so that mouse/touch inputs are
     -- consumed by the GUI and never reach the game's camera controller.
@@ -306,7 +281,6 @@ function NovaUI:CreateWindow(cfg)
         BorderSizePixel        = 0,
         Parent                 = Main,
     })
-
     New("Frame", {
         Size                   = UDim2.new(1, 0, 0, 1),
         Position               = UDim2.new(0, 0, 1, -1),
@@ -315,7 +289,6 @@ function NovaUI:CreateWindow(cfg)
         BorderSizePixel        = 0,
         Parent                 = TitleBar,
     })
-
     -- CHANGED: Replaced the grey stripe Frame with an ImageLabel using the
     -- same icon and color as the toggle button (TOGGLE_ICON / Theme.Accent)
     New("ImageLabel", {
@@ -329,7 +302,6 @@ function NovaUI:CreateWindow(cfg)
         ImageColor3            = Theme.Accent,
         Parent                 = TitleBar,
     })
-
     New("TextLabel", {
         Text                   = title,
         Font                   = Enum.Font.GothamBold,
@@ -341,7 +313,6 @@ function NovaUI:CreateWindow(cfg)
         Position               = UDim2.new(0, 36, 0, 0),
         Parent                 = TitleBar,
     })
-
     -- ── Close button ─────────────────────────────────────
     local CloseBtn = New("TextButton", {
         Text                   = "✖",
@@ -356,24 +327,29 @@ function NovaUI:CreateWindow(cfg)
         Parent                 = TitleBar,
     })
     Corner(6, CloseBtn)
-
+    local closeOriginalSize = CloseBtn.Size
     CloseBtn.MouseEnter:Connect(function()
-        Tween(CloseBtn, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
+        Tween(CloseBtn, {
+            BackgroundTransparency = T,
+            TextColor3 = Theme.TextPrimary,
+            Size = closeOriginalSize + UDim2.fromOffset(2, 2)
+        })
     end)
     CloseBtn.MouseLeave:Connect(function()
-        Tween(CloseBtn, { BackgroundTransparency = 1, TextColor3 = Theme.TextSecondary })
+        Tween(CloseBtn, {
+            BackgroundTransparency = 1,
+            TextColor3 = Theme.TextSecondary,
+            Size = closeOriginalSize
+        })
     end)
     CloseBtn.MouseButton1Click:Connect(function()
         local scale = Instance.new("UIScale")
         scale.Scale  = 1
         scale.Parent = Main
-
         local CLOSE_T    = 0.22
         local CLOSE_INFO = TweenInfo.new(CLOSE_T, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-
         TweenService:Create(scale, CLOSE_INFO, { Scale = 0.92 }):Play()
         TweenService:Create(Main,  CLOSE_INFO, { BackgroundTransparency = 1 }):Play()
-
         for _, desc in ipairs(Main:GetDescendants()) do
             if desc:IsA("Frame") or desc:IsA("TextLabel") or desc:IsA("TextButton")
             or desc:IsA("ScrollingFrame") or desc:IsA("ImageLabel") then
@@ -382,23 +358,17 @@ function NovaUI:CreateWindow(cfg)
                 end)
             end
         end
-
         task.delay(CLOSE_T + 0.05, function() Gui:Destroy() end)
     end)
-
     -- FIX: CloseBtn also needs touch support (Activated fires for both)
     CloseBtn.Activated:Connect(function()
         -- Activated fires for mouse clicks AND touch taps, so we handle close here
         -- and leave the MouseButton1Click above for backwards compat (it fires first on mouse)
     end)
-
     MakeDraggable(TitleBar, Main)
-
     CreateToggleButton(Gui, Main, true)
-
     -- ── Left tab bar ─────────────────────────────────────
     local TAB_W = 120
-
     local TabBar = New("Frame", {
         Name                   = "TabBar",
         Size                   = UDim2.new(0, TAB_W, 1, -44),
@@ -407,7 +377,6 @@ function NovaUI:CreateWindow(cfg)
         BorderSizePixel        = 0,
         Parent                 = Main,
     })
-
     New("Frame", {
         Size                   = UDim2.new(0, 1, 1, 0),
         Position               = UDim2.new(1, 0, 0, 0),
@@ -416,7 +385,6 @@ function NovaUI:CreateWindow(cfg)
         BorderSizePixel        = 0,
         Parent                 = TabBar,
     })
-
     local TabBtnList = New("Frame", {
         Size                   = UDim2.new(1, -10, 1, -10),
         Position               = UDim2.new(0, 5, 0, 6),
@@ -428,10 +396,8 @@ function NovaUI:CreateWindow(cfg)
         Padding   = UDim.new(0, 3),
         Parent    = TabBtnList,
     })
-
     -- ── Content area ─────────────────────────────────────
     local CONTENT_X = TAB_W + 1
-
     local ContentArea = New("Frame", {
         Name                   = "ContentArea",
         Size                   = UDim2.new(1, -CONTENT_X - 8, 1, -52),
@@ -440,19 +406,15 @@ function NovaUI:CreateWindow(cfg)
         BorderSizePixel        = 0,
         Parent                 = Main,
     })
-
     -- ── Window API ───────────────────────────────────────
     local Window = { _tabs = {}, _activeTab = nil, Gui = Gui }
-
     function Window:SetVisible(v) Main.Visible = v end
     function Window:Destroy() Gui:Destroy() end
-
     -- ──────────────────────────────────────────────────────
     --  AddTab
     -- ──────────────────────────────────────────────────────
     function Window:AddTab(tabName)
         local isFirst = #self._tabs == 0
-
         local TBtn = New("TextButton", {
             Name                   = tabName .. "_Btn",
             Text                   = "  " .. tabName,
@@ -467,7 +429,6 @@ function NovaUI:CreateWindow(cfg)
             Parent                 = TabBtnList,
         })
         Corner(6, TBtn)
-
         local TBar = New("Frame", {
             Name                   = "ActiveBar",
             Size                   = UDim2.new(0, 3, 0, 14),
@@ -478,7 +439,6 @@ function NovaUI:CreateWindow(cfg)
             Parent                 = TBtn,
         })
         Corner(3, TBar)
-
         local TContent = New("ScrollingFrame", {
             Name                   = tabName .. "_Content",
             Size                   = UDim2.new(1, 0, 1, 0),
@@ -497,9 +457,7 @@ function NovaUI:CreateWindow(cfg)
             Parent    = TContent,
         })
         Pad(4, 4, 8, 0, TContent)
-
         local Tab = { _order = 0, _content = TContent, _btn = TBtn, _window = self }
-
         local function Activate()
             for _, t in ipairs(self._tabs) do
                 t._content.Visible = false
@@ -512,11 +470,9 @@ function NovaUI:CreateWindow(cfg)
             Tween(TBar, { BackgroundTransparency = 0 })
             self._activeTab = Tab
         end
-
         -- FIX: Use Activated instead of MouseButton1Click for tab buttons
         -- Activated fires reliably for both mouse clicks and touch taps
         TBtn.Activated:Connect(Activate)
-
         TBtn.MouseEnter:Connect(function()
             if self._activeTab ~= Tab then
                 Tween(TBtn, { BackgroundTransparency = 0.78, TextColor3 = Theme.TextPrimary })
@@ -527,10 +483,8 @@ function NovaUI:CreateWindow(cfg)
                 Tween(TBtn, { BackgroundTransparency = 1, TextColor3 = Theme.TextSecondary })
             end
         end)
-
         table.insert(self._tabs, Tab)
         if isFirst then Activate() end
-
         local function Row(h)
             local r = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, h or 36),
@@ -544,7 +498,6 @@ function NovaUI:CreateWindow(cfg)
             Corner(7, r)
             return r
         end
-
         local function RowLabel(text, parent)
             New("TextLabel", {
                 Text                   = text,
@@ -558,7 +511,6 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = parent,
             })
         end
-
         -- ────────────────────────────────────────────────────
         --  BUTTON
         --  FIX: Use Activated for reliable touch + mouse support
@@ -566,7 +518,6 @@ function NovaUI:CreateWindow(cfg)
         function Tab:AddButton(cfg)
             cfg = cfg or {}
             local callback = cfg.Callback or function() end
-
             local btn = New("TextButton", {
                 Text                   = "",
                 AutoButtonColor        = false,
@@ -579,7 +530,7 @@ function NovaUI:CreateWindow(cfg)
             })
             Tab._order += 1
             Corner(7, btn)
-
+            local originalSize = btn.Size
             New("TextLabel", {
                 Text                   = cfg.Label or "Button",
                 Font                   = Enum.Font.GothamSemibold,
@@ -591,7 +542,6 @@ function NovaUI:CreateWindow(cfg)
                 Position               = UDim2.new(0, 12, 0, 0),
                 Parent                 = btn,
             })
-
             New("TextLabel", {
                 Text                   = "›",
                 Font                   = Enum.Font.GothamBold,
@@ -602,12 +552,19 @@ function NovaUI:CreateWindow(cfg)
                 Position               = UDim2.new(1, -28, 0, 0),
                 Parent                 = btn,
             })
-
             btn.MouseEnter:Connect(function()
-                Tween(btn, { BackgroundColor3 = Theme.SurfaceHover, BackgroundTransparency = T })
+                Tween(btn, {
+                    BackgroundColor3 = Theme.SurfaceHover,
+                    BackgroundTransparency = T,
+                    Size = originalSize + UDim2.fromOffset(2, 0)
+                })
             end)
             btn.MouseLeave:Connect(function()
-                Tween(btn, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = T })
+                Tween(btn, {
+                    BackgroundColor3 = Theme.Elevated,
+                    BackgroundTransparency = T,
+                    Size = originalSize
+                })
             end)
             -- FIX: Activated fires for both mouse and touch
             btn.Activated:Connect(function()
@@ -617,12 +574,10 @@ function NovaUI:CreateWindow(cfg)
                 end)
                 task.spawn(callback)
             end)
-
             local api = {}
             function api:SetLabel(t) btn:FindFirstChildWhichIsA("TextLabel").Text = t end
             return api
         end
-
         -- ────────────────────────────────────────────────────
         --  TOGGLE
         --  FIX: Use Activated for the invisible overlay button
@@ -631,10 +586,8 @@ function NovaUI:CreateWindow(cfg)
             cfg = cfg or {}
             local state    = cfg.Default  == true
             local callback = cfg.Callback or function() end
-
             local row = Row(36)
             RowLabel(cfg.Label or "Toggle", row)
-
             local Pill = New("Frame", {
                 Size                   = UDim2.new(0, 44, 0, 22),
                 Position               = UDim2.new(1, -54, 0.5, -11),
@@ -644,7 +597,6 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = row,
             })
             Corner(11, Pill)
-
             local Knob = New("Frame", {
                 Size                   = UDim2.new(0, 16, 0, 16),
                 Position               = state and UDim2.new(0, 24, 0.5, -8) or UDim2.new(0, 4, 0.5, -8),
@@ -654,14 +606,12 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = Pill,
             })
             Corner(8, Knob)
-
             local function Set(v)
                 state = v
                 Tween(Pill, { BackgroundColor3 = v and Theme.Accent or Theme.Border })
                 Tween(Knob, { Position = v and UDim2.new(0, 24, 0.5, -8) or UDim2.new(0, 4, 0.5, -8) })
                 task.spawn(callback, v)
             end
-
             -- FIX: Activated works for touch and mouse on the overlay button
             local overlayBtn = New("TextButton", {
                 Text                   = "",
@@ -670,16 +620,13 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = row,
             })
             overlayBtn.Activated:Connect(function() Set(not state) end)
-
             row.MouseEnter:Connect(function() Tween(row, { BackgroundColor3 = Theme.SurfaceHover }) end)
             row.MouseLeave:Connect(function() Tween(row, { BackgroundColor3 = Theme.Elevated }) end)
-
             local api = {}
             function api:Set(v) Set(v) end
             function api:Get() return state end
             return api
         end
-
         -- ────────────────────────────────────────────────────
         --  SLIDER
         --  FIX: Touch input added to all three drag events
@@ -692,9 +639,7 @@ function NovaUI:CreateWindow(cfg)
             local suffix   = cfg.Suffix   or ""
             local value    = math.clamp(cfg.Default or min, min, max)
             local callback = cfg.Callback or function() end
-
             local row = Row(52)
-
             New("TextLabel", {
                 Text                   = cfg.Label or "Slider",
                 Font                   = Enum.Font.GothamSemibold,
@@ -706,7 +651,6 @@ function NovaUI:CreateWindow(cfg)
                 Position               = UDim2.new(0, 12, 0, 6),
                 Parent                 = row,
             })
-
             local ValLbl = New("TextBox", {
                 Text                   = tostring(value) .. suffix,
                 PlaceholderText        = tostring(value),
@@ -731,7 +675,6 @@ function NovaUI:CreateWindow(cfg)
             ValStroke.Enabled         = false
             ValStroke.Parent          = ValLbl
             Pad(0, 4, 0, 4, ValLbl)
-
             local Track = New("Frame", {
                 Size                   = UDim2.new(1, -24, 0, 4),
                 Position               = UDim2.new(0, 12, 0, 38),
@@ -741,9 +684,7 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = row,
             })
             Corner(4, Track)
-
             local pct0 = (value - min) / (max - min)
-
             local Fill = New("Frame", {
                 Size                   = UDim2.new(pct0, 0, 1, 0),
                 BackgroundColor3       = Theme.SliderFill,
@@ -752,7 +693,6 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = Track,
             })
             Corner(4, Fill)
-
             local Thumb = New("Frame", {
                 Size                   = UDim2.new(0, 14, 0, 14),
                 Position               = UDim2.new(pct0, -7, 0.5, -7),
@@ -763,7 +703,6 @@ function NovaUI:CreateWindow(cfg)
             })
             Corner(7, Thumb)
             Stroke(Theme.Accent, 2, Thumb)
-
             local function SetValue(v)
                 v = math.clamp(math.round(v / step) * step, min, max)
                 value = v
@@ -773,13 +712,11 @@ function NovaUI:CreateWindow(cfg)
                 ValLbl.Text = tostring(v) .. suffix
                 task.spawn(callback, v)
             end
-
             ValLbl.Focused:Connect(function()
                 ValLbl.Text = tostring(value)
                 Tween(ValLbl, { BackgroundTransparency = T, TextColor3 = Theme.TextPrimary })
                 ValStroke.Enabled = true
             end)
-
             ValLbl.FocusLost:Connect(function()
                 ValStroke.Enabled = false
                 Tween(ValLbl, { BackgroundTransparency = 1, TextColor3 = Theme.Accent })
@@ -787,15 +724,12 @@ function NovaUI:CreateWindow(cfg)
                 if num then SetValue(num) end
                 ValLbl.Text = tostring(value) .. suffix
             end)
-
             local dragging = false
-
             local function Calc(inp)
                 local ap = Track.AbsolutePosition
                 local as = Track.AbsoluteSize
                 SetValue(min + (max - min) * math.clamp((inp.Position.X - ap.X) / as.X, 0, 1))
             end
-
             -- FIX: Accept Touch alongside MouseButton1 for slider interaction
             Track.InputBegan:Connect(function(i)
                 if i.UserInputType == Enum.UserInputType.MouseButton1
@@ -804,7 +738,6 @@ function NovaUI:CreateWindow(cfg)
                     Calc(i)
                 end
             end)
-
             UserInputService.InputChanged:Connect(function(i)
                 if dragging and (
                     i.UserInputType == Enum.UserInputType.MouseMovement or
@@ -813,20 +746,17 @@ function NovaUI:CreateWindow(cfg)
                     Calc(i)
                 end
             end)
-
             UserInputService.InputEnded:Connect(function(i)
                 if i.UserInputType == Enum.UserInputType.MouseButton1
                 or i.UserInputType == Enum.UserInputType.Touch then
                     dragging = false
                 end
             end)
-
             local api = {}
             function api:Set(v) SetValue(v) end
             function api:Get() return value end
             return api
         end
-
         -- ────────────────────────────────────────────────────
         --  DROPDOWN
         --  FIX: Use Activated for header and option buttons
@@ -837,7 +767,6 @@ function NovaUI:CreateWindow(cfg)
             local selected = cfg.Default  or (options[1] or "None")
             local callback = cfg.Callback or function() end
             local open     = false
-
             local Wrapper = New("Frame", {
                   Size                   = UDim2.new(1, 0, 0, 36),
                   BackgroundTransparency = 1,
@@ -850,7 +779,6 @@ function NovaUI:CreateWindow(cfg)
         
           local BASE_Z   = 5      -- wrapper's resting ZIndex
           local OPEN_Z   = 1000   -- raised above all sibling rows while open
-
             local Header = New("TextButton", {
                 Text                   = "",
                 AutoButtonColor        = false,
@@ -862,9 +790,7 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = Wrapper,
             })
             Corner(7, Header)
-
             RowLabel(cfg.Label or "Dropdown", Header)
-
             local SelLbl = New("TextLabel", {
                 Text                   = selected,
                 Font                   = Enum.Font.Gotham,
@@ -877,7 +803,6 @@ function NovaUI:CreateWindow(cfg)
                 ZIndex                 = 5,
                 Parent                 = Header,
             })
-
             local Arrow = New("TextLabel", {
                 Text                   = "⇌",
                 Font                   = Enum.Font.GothamBold,
@@ -889,9 +814,7 @@ function NovaUI:CreateWindow(cfg)
                 ZIndex                 = 5,
                 Parent                 = Header,
             })
-
             local panelH = #options * 30 + 8
-
             local Panel = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, 0),
                 Position               = UDim2.new(0, 0, 0, 39),
@@ -903,14 +826,12 @@ function NovaUI:CreateWindow(cfg)
                 Parent                 = Wrapper,
             })
             Corner(7, Panel)
-
             local PanelStroke = Instance.new("UIStroke")
             PanelStroke.Color           = Theme.Border
             PanelStroke.Thickness       = 1
             PanelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
             PanelStroke.Enabled         = false
             PanelStroke.Parent          = Panel
-
             local ItemList = New("Frame", {
                 Size                   = UDim2.new(1, 0, 0, panelH),
                 BackgroundTransparency = 1,
@@ -924,7 +845,6 @@ function NovaUI:CreateWindow(cfg)
                 Parent    = ItemList,
             })
             Pad(4, 4, 4, 4, ItemList)
-
             for i, opt in ipairs(options) do
                 local OBtn = New("TextButton", {
                     Text                   = opt,
@@ -942,7 +862,6 @@ function NovaUI:CreateWindow(cfg)
                 })
                 Corner(5, OBtn)
                 Pad(0, 0, 0, 8, OBtn)
-
                 OBtn.MouseEnter:Connect(function()
                     Tween(OBtn, { BackgroundColor3 = Theme.SurfaceHover })
                 end)
@@ -967,7 +886,6 @@ function NovaUI:CreateWindow(cfg)
                       task.spawn(callback, opt)
                 end)
             end
-
             -- FIX: Activated instead of MouseButton1Click for header
             Header.Activated:Connect(function()
                   open = not open
@@ -985,14 +903,12 @@ function NovaUI:CreateWindow(cfg)
                       end)
                   end
               end)
-
             Header.MouseEnter:Connect(function()
                 Tween(Header, { BackgroundColor3 = Theme.SurfaceHover })
             end)
             Header.MouseLeave:Connect(function()
                 Tween(Header, { BackgroundColor3 = Theme.Elevated })
             end)
-
             local api = {}
             function api:Set(v)
                 selected    = v
@@ -1002,17 +918,14 @@ function NovaUI:CreateWindow(cfg)
             function api:Get() return selected end
             return api
         end
-
         -- ────────────────────────────────────────────────────
         --  TEXT INPUT
         -- ────────────────────────────────────────────────────
         function Tab:AddTextInput(cfg)
             cfg = cfg or {}
             local callback = cfg.Callback or function() end
-
             local row = Row(36)
             RowLabel(cfg.Label or "Input", row)
-
             local Box = New("TextBox", {
                 Text                   = cfg.Default     or "",
                 PlaceholderText        = cfg.Placeholder or "Type here...",
@@ -1033,7 +946,6 @@ function NovaUI:CreateWindow(cfg)
             Corner(5, Box)
             Stroke(Theme.Border, 1, Box)
             Pad(0, 6, 0, 6, Box)
-
             Box.Focused:Connect(function()
                 Tween(Box, { BackgroundColor3 = Theme.Elevated, BackgroundTransparency = T })
             end)
@@ -1044,13 +956,11 @@ function NovaUI:CreateWindow(cfg)
             Box:GetPropertyChangedSignal("Text"):Connect(function()
                 task.spawn(callback, Box.Text)
             end)
-
             local api = {}
             function api:Set(v) Box.Text = v end
             function api:Get() return Box.Text end
             return api
         end
-
         -- ────────────────────────────────────────────────────
         --  KEYBIND
         --  FIX: Exclude Touch from keybind listening to prevent
@@ -1061,10 +971,8 @@ function NovaUI:CreateWindow(cfg)
             local currentKey = cfg.Default  or Enum.KeyCode.Unknown
             local callback   = cfg.Callback or function() end
             local listening  = false
-
             local row = Row(36)
             RowLabel(cfg.Label or "Keybind", row)
-
             local KBtn = New("TextButton", {
                 Text                   = "[" .. currentKey.Name .. "]",
                 Font                   = Enum.Font.GothamBold,
@@ -1080,7 +988,6 @@ function NovaUI:CreateWindow(cfg)
             })
             Corner(5, KBtn)
             Stroke(Theme.Border, 1, KBtn)
-
             local function StopListen()
                 listening = false
                 KBtn.Text = "[" .. currentKey.Name .. "]"
@@ -1090,7 +997,6 @@ function NovaUI:CreateWindow(cfg)
                     BackgroundTransparency = T,
                 })
             end
-
             -- FIX: Activated works on touch and mouse for the keybind toggle button
             KBtn.Activated:Connect(function()
                 if listening then StopListen(); return end
@@ -1102,7 +1008,6 @@ function NovaUI:CreateWindow(cfg)
                     BackgroundTransparency = T,
                 })
             end)
-
             UserInputService.InputBegan:Connect(function(inp)
                 -- FIX: Only accept Keyboard input; ignore Touch so a tap doesn't
                 -- accidentally get recorded as a keybind on mobile
@@ -1112,13 +1017,11 @@ function NovaUI:CreateWindow(cfg)
                     task.spawn(callback, currentKey)
                 end
             end)
-
             local api = {}
             function api:Set(key) currentKey = key; StopListen() end
             function api:Get() return currentKey end
             return api
         end
-
         -- ────────────────────────────────────────────────────
         --  LABEL
         -- ────────────────────────────────────────────────────
@@ -1139,7 +1042,6 @@ function NovaUI:CreateWindow(cfg)
             Pad(0, 0, 0, 4, lbl)
             return lbl
         end
-
         -- ────────────────────────────────────────────────────
         --  SEPARATOR
         -- ────────────────────────────────────────────────────
@@ -1155,12 +1057,9 @@ function NovaUI:CreateWindow(cfg)
             Tab._order += 1
             return sep
         end
-
         return Tab
     end -- AddTab
-
     return Window
 end -- CreateWindow
-
 NovaUI.Theme = Theme
 return NovaUI
