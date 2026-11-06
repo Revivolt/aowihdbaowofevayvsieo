@@ -1,0 +1,757 @@
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
+
+local T = 0.6 -- same transparency as NovaUI
+
+-- ================================
+-- WATCHLIST (edit these)
+-- ================================
+local watchedUsernames = {
+    "dArK_fR4nCy",
+    "muxhny",
+    "discreetings",
+    "grusomelyness",
+    "Hana_playz22",
+    "500reasons_x",
+    "Trxhgix",
+    "Yirikane_2",
+    "allyisurmom",
+    "goter12340",
+    "idk02595",
+    "paul_a3c",
+    "KARTOFELMARKIZ",
+    "524425u22k",
+    "maria_1287060",
+    "Tm_MANU987",
+    "leonanthoy67",
+    "hscyhfe",
+    "jas_mil",
+    "Gabriel_115618",
+    "LoL_MM29878",
+    "Shanezhka7",
+    "MerlynSinh",
+    "Daizzy30",
+    "cxrvettezz",
+    "AnaAzuri",
+    "aevrsiie",
+    "fofinho_568",
+    "SWEET_CHERRY6663",
+    "zy4wrr",
+    "cokroch_life3",
+    "0PeppaPig06",
+    "7XxmilaxX7",
+	"baconzin_batata",
+	"FIRSTEVER48",
+	"MM2gramba",
+	"zaid820409",
+	"El_pop21",
+	"allay_20110",
+	"dhsuehidwh_83747",
+	"classicaloasis",
+	"Abigail_99802",
+	"5gywu",
+	"leylacutecore2",
+	"primo_w10",
+	"not_agirl120",
+	"Plinfiry",
+	"yangmoon20286",
+	"Emily24681097",
+	"hgdhdrdbcbcglvy",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+	"example",
+}
+
+local watchSet = {}
+for _, name in ipairs(watchedUsernames) do
+	watchSet[string.lower(name)] = true
+end
+
+-- ================================
+-- Theme (matching NovaUI)
+-- ================================
+local Theme = {
+	Background = Color3.fromRGB(0, 0, 0),
+	Surface = Color3.fromRGB(12, 12, 12),
+	SurfaceHover = Color3.fromRGB(28, 28, 28),
+	Elevated = Color3.fromRGB(18, 18, 18),
+	Border = Color3.fromRGB(45, 45, 45),
+	Accent = Color3.fromRGB(90, 150, 255),
+	TextPrimary = Color3.fromRGB(255, 255, 255),
+	TextSecondary = Color3.fromRGB(180, 180, 180),
+	CloseRed = Color3.fromRGB(160, 40, 40),
+}
+
+local function Tween(obj, props, duration)
+	TweenService:Create(obj, TweenInfo.new(duration or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function setupButtonAnimations(button, normalColor, hoverColor, pressColor)
+	local originalSize = button.Size
+
+	button.MouseEnter:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.12)
+	end)
+
+	button.MouseLeave:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = normalColor,
+			Size = originalSize
+		}, 0.12)
+	end)
+
+	button.MouseButton1Down:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = pressColor,
+			Size = originalSize - UDim2.new(0, 1, 0, 1)
+		}, 0.08)
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.08)
+	end)
+end
+
+-- ================================
+-- Notification + Clipboard
+-- ================================
+local function sendNotification(title, text, duration)
+	duration = duration or 8
+	task.spawn(function()
+		for _ = 1, 40 do
+			local success = pcall(function()
+				StarterGui:SetCore("SendNotification", {
+					Title = title,
+					Text = text,
+					Duration = duration,
+				})
+			end)
+			if success then return end
+			task.wait(0.1)
+		end
+	end)
+end
+
+local function copyToClipboard(text)
+	local success = pcall(function()
+		if setclipboard then
+			setclipboard(text)
+		elseif toclipboard then
+			toclipboard(text)
+		else
+			error("No clipboard function")
+		end
+	end)
+
+	if success then
+		sendNotification("Copied!", text, 3)
+	else
+		sendNotification("Clipboard Error", "Could not copy username", 4)
+	end
+end
+
+-- ================================
+-- Create GUI
+-- ================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "PlayerWatcherGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Main"
+mainFrame.Size = UDim2.new(0, 260, 0, 340)
+mainFrame.Position = UDim2.new(0, 16, 0.5, -170)
+mainFrame.BackgroundColor3 = Theme.Background
+mainFrame.BackgroundTransparency = T
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Theme.Border
+stroke.Thickness = 1
+stroke.Parent = mainFrame
+
+-- ====================== TITLE BAR (Top corners only) ======================
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 36)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Theme.Background
+titleBar.BackgroundTransparency = T
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+-- Rounded corners (will be partially covered)
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+-- Title text
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -70, 1, 0)
+titleLabel.Position = UDim2.new(0, 12, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Player Logger" -- Change to "Bring Players" in the other script
+titleLabel.TextColor3 = Theme.TextPrimary
+titleLabel.TextSize = 14
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- Minimize Button
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 24, 0, 24)
+minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+minimizeBtn.BackgroundColor3 = Theme.Elevated
+minimizeBtn.BackgroundTransparency = T
+minimizeBtn.Text = "–"
+minimizeBtn.TextColor3 = Theme.TextPrimary
+minimizeBtn.TextSize = 16
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.AutoButtonColor = false
+minimizeBtn.Parent = titleBar
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 5)
+minCorner.Parent = minimizeBtn
+
+-- Close Button
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -28, 0.5, -12)
+closeBtn.BackgroundColor3 = Theme.CloseRed
+closeBtn.BackgroundTransparency = T
+closeBtn.Text = "×"
+closeBtn.TextColor3 = Theme.TextPrimary
+closeBtn.TextSize = 16
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.AutoButtonColor = false
+closeBtn.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 5)
+closeCorner.Parent = closeBtn
+
+setupButtonAnimations(minimizeBtn, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
+setupButtonAnimations(closeBtn, Theme.CloseRed, Color3.fromRGB(190, 50, 50), Color3.fromRGB(120, 25, 25))
+
+-- Status Label
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -16, 0, 18)
+statusLabel.Position = UDim2.new(0, 8, 0, 34)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Loading..."
+statusLabel.TextColor3 = Theme.TextSecondary
+statusLabel.TextSize = 12
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = mainFrame
+
+-- Scrolling Frame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Name = "PlayerList"
+scroll.Size = UDim2.new(1, -16, 1, -62)
+scroll.Position = UDim2.new(0, 8, 0, 54)
+scroll.BackgroundColor3 = Theme.Background
+scroll.BackgroundTransparency = T
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 3
+scroll.ScrollBarImageColor3 = Theme.Accent
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.Parent = mainFrame
+
+local scrollCorner = Instance.new("UICorner")
+scrollCorner.CornerRadius = UDim.new(0, 7)
+scrollCorner.Parent = scroll
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.Name
+listLayout.Padding = UDim.new(0, 3)
+listLayout.Parent = scroll
+
+local listPadding = Instance.new("UIPadding")
+listPadding.PaddingTop = UDim.new(0, 4)
+listPadding.PaddingBottom = UDim.new(0, 4)
+listPadding.PaddingLeft = UDim.new(0, 4)
+listPadding.PaddingRight = UDim.new(0, 4)
+listPadding.Parent = scroll
+
+-- ================================
+-- Profile Popup
+-- ================================
+local popup = Instance.new("Frame")
+popup.Name = "ProfilePopup"
+popup.Size = UDim2.new(0, 220, 0, 310)
+popup.Position = UDim2.new(0, 290, 0.5, -155)
+popup.BackgroundColor3 = Theme.Background
+popup.BackgroundTransparency = T
+popup.BorderSizePixel = 0
+popup.Visible = false
+popup.ZIndex = 10
+popup.Parent = screenGui
+
+local popupCorner = Instance.new("UICorner")
+popupCorner.CornerRadius = UDim.new(0, 10)
+popupCorner.Parent = popup
+
+local popupStroke = Instance.new("UIStroke")
+popupStroke.Color = Theme.Border
+popupStroke.Thickness = 1.2
+popupStroke.Parent = popup
+
+local popupTitle = Instance.new("TextLabel")
+popupTitle.Size = UDim2.new(1, -40, 0, 28)
+popupTitle.Position = UDim2.new(0, 10, 0, 6)
+popupTitle.BackgroundTransparency = 1
+popupTitle.Text = "Player Profile"
+popupTitle.TextColor3 = Theme.TextPrimary
+popupTitle.TextSize = 14
+popupTitle.Font = Enum.Font.GothamBold
+popupTitle.TextXAlignment = Enum.TextXAlignment.Left
+popupTitle.ZIndex = 11
+popupTitle.Parent = popup
+
+local popupClose = Instance.new("TextButton")
+popupClose.Size = UDim2.new(0, 24, 0, 24)
+popupClose.Position = UDim2.new(1, -30, 0, 6)
+popupClose.BackgroundColor3 = Theme.Elevated
+popupClose.BackgroundTransparency = T
+popupClose.Text = "×"
+popupClose.TextColor3 = Theme.TextPrimary
+popupClose.TextSize = 16
+popupClose.Font = Enum.Font.GothamBold
+popupClose.AutoButtonColor = false
+popupClose.ZIndex = 11
+popupClose.Parent = popup
+
+local popupCloseCorner = Instance.new("UICorner")
+popupCloseCorner.CornerRadius = UDim.new(0, 5)
+popupCloseCorner.Parent = popupClose
+
+setupButtonAnimations(popupClose, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
+
+local avatarImage = Instance.new("ImageLabel")
+avatarImage.Name = "Avatar"
+avatarImage.Size = UDim2.new(0, 160, 0, 160)
+avatarImage.Position = UDim2.new(0.5, -80, 0, 40)
+avatarImage.BackgroundColor3 = Theme.Surface
+avatarImage.BackgroundTransparency = T
+avatarImage.BorderSizePixel = 0
+avatarImage.ScaleType = Enum.ScaleType.Fit
+avatarImage.ZIndex = 11
+avatarImage.Parent = popup
+
+local avatarCorner = Instance.new("UICorner")
+avatarCorner.CornerRadius = UDim.new(0, 8)
+avatarCorner.Parent = avatarImage
+
+local avatarStroke = Instance.new("UIStroke")
+avatarStroke.Color = Theme.Border
+avatarStroke.Thickness = 1
+avatarStroke.Parent = avatarImage
+
+local displayNameLabel = Instance.new("TextLabel")
+displayNameLabel.Name = "DisplayName"
+displayNameLabel.Size = UDim2.new(1, -20, 0, 22)
+displayNameLabel.Position = UDim2.new(0, 10, 0, 210)
+displayNameLabel.BackgroundTransparency = 1
+displayNameLabel.Text = "Display Name"
+displayNameLabel.TextColor3 = Theme.TextPrimary
+displayNameLabel.TextSize = 15
+displayNameLabel.Font = Enum.Font.GothamBold
+displayNameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+displayNameLabel.ZIndex = 11
+displayNameLabel.Parent = popup
+
+local usernameLabel = Instance.new("TextLabel")
+usernameLabel.Name = "Username"
+usernameLabel.Size = UDim2.new(1, -20, 0, 18)
+usernameLabel.Position = UDim2.new(0, 10, 0, 232)
+usernameLabel.BackgroundTransparency = 1
+usernameLabel.Text = "@username"
+usernameLabel.TextColor3 = Theme.TextSecondary
+usernameLabel.TextSize = 13
+usernameLabel.Font = Enum.Font.Gotham
+usernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+usernameLabel.ZIndex = 11
+usernameLabel.Parent = popup
+
+local copyBtn = Instance.new("TextButton")
+copyBtn.Name = "CopyButton"
+copyBtn.Size = UDim2.new(1, -24, 0, 32)
+copyBtn.Position = UDim2.new(0, 12, 1, -44)
+copyBtn.BackgroundColor3 = Theme.Accent
+copyBtn.BackgroundTransparency = T
+copyBtn.Text = "Copy Username"
+copyBtn.TextColor3 = Theme.TextPrimary
+copyBtn.TextSize = 13
+copyBtn.Font = Enum.Font.GothamBold
+copyBtn.AutoButtonColor = false
+copyBtn.ZIndex = 11
+copyBtn.Parent = popup
+
+local copyCorner = Instance.new("UICorner")
+copyCorner.CornerRadius = UDim.new(0, 6)
+copyCorner.Parent = copyBtn
+
+setupButtonAnimations(copyBtn, Theme.Accent, Color3.fromRGB(110, 170, 255), Color3.fromRGB(60, 110, 200))
+
+-- Popup logic
+local currentPopupUsername = nil
+local popupOpen = false
+local minimized = false
+local originalSize = UDim2.new(0, 260, 0, 340)
+local minimizedSize = UDim2.new(0, 160, 0, 36)
+
+local function updatePopupPosition()
+	if not popupOpen then return end
+	local mainPos = mainFrame.AbsolutePosition
+	local mainSize = mainFrame.AbsoluteSize
+	local offsetX = 12
+	local newX = mainPos.X + mainSize.X + offsetX
+	local newY = mainPos.Y
+	local viewport = workspace.CurrentCamera.ViewportSize
+	if newX + 220 > viewport.X then
+		newX = mainPos.X - 220 - offsetX
+	end
+	popup.Position = UDim2.new(0, newX, 0, newY)
+end
+
+local function closePopup()
+	if not popupOpen then return end
+	popupOpen = false
+	local tween = TweenService:Create(popup, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = UDim2.new(0, 200, 0, 280),
+		BackgroundTransparency = 1
+	})
+	tween:Play()
+	tween.Completed:Connect(function()
+		popup.Visible = false
+		popup.BackgroundTransparency = T
+		popup.Size = UDim2.new(0, 220, 0, 310)
+	end)
+end
+
+local function openPopup(userId, displayName, username)
+	if minimized then return end
+	currentPopupUsername = username
+	displayNameLabel.Text = displayName
+	usernameLabel.Text = "@" .. username
+	avatarImage.Image = ""
+
+	task.spawn(function()
+		local content = nil
+		local ok1, result1 = pcall(function()
+			return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarFullBody, Enum.ThumbnailSize.Size420x420)
+		end)
+		if ok1 and result1 and result1 ~= "" then content = result1 end
+
+		if not content then
+			local ok2, result2 = pcall(function()
+				return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarBust, Enum.ThumbnailSize.Size420x420)
+			end)
+			if ok2 and result2 and result2 ~= "" then content = result2 end
+		end
+
+		if not content then
+			content = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. userId .. "&width=420&height=420&format=png"
+		end
+
+		if currentPopupUsername == username then
+			avatarImage.Image = content
+		end
+	end)
+
+	popup.Visible = true
+	popup.Size = UDim2.new(0, 200, 0, 280)
+	popup.BackgroundTransparency = 1
+	popupOpen = true
+	updatePopupPosition()
+
+	TweenService:Create(popup, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Size = UDim2.new(0, 220, 0, 310),
+		BackgroundTransparency = T
+	}):Play()
+end
+
+popupClose.MouseButton1Click:Connect(closePopup)
+copyBtn.MouseButton1Click:Connect(function()
+	if currentPopupUsername then
+		copyToClipboard(currentPopupUsername)
+	end
+end)
+
+mainFrame:GetPropertyChangedSignal("Position"):Connect(updatePopupPosition)
+
+-- ================================
+-- Player Entries
+-- ================================
+local playerEntries = {}
+
+local function updateStatus()
+	local total, online = 0, 0
+	for _, data in pairs(playerEntries) do
+		total += 1
+		if data.online then online += 1 end
+	end
+	statusLabel.Text = string.format("Current: %d  •  Logged: %d", online, total)
+end
+
+local function createOrUpdatePlayerEntry(player, isOnline)
+	local username = player.Name
+	local displayName = player.DisplayName
+	local userId = player.UserId
+	local isWatched = watchSet[string.lower(username)]
+
+	if playerEntries[username] then
+		local data = playerEntries[username]
+		data.online = isOnline
+		data.displayName = displayName
+
+		local entry = data.frame
+		local nameLabel = entry:FindFirstChild("NameLabel")
+		local userLabel = entry:FindFirstChild("UserLabel")
+
+		if isOnline then
+			entry.BackgroundColor3 = isWatched and Color3.fromRGB(40, 15, 15) or Theme.Elevated
+			if nameLabel then
+				nameLabel.Text = displayName
+				nameLabel.TextColor3 = Theme.TextPrimary
+			end
+			if userLabel then
+				userLabel.Text = "@" .. username
+				userLabel.TextColor3 = isWatched and Color3.fromRGB(255, 140, 140) or Theme.TextSecondary
+			end
+		else
+			entry.BackgroundColor3 = Theme.Surface
+			if nameLabel then
+				nameLabel.Text = displayName .. " (Left)"
+				nameLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
+			end
+			if userLabel then
+				userLabel.TextColor3 = Color3.fromRGB(100, 100, 100)
+			end
+		end
+		updateStatus()
+		return
+	end
+
+	local entry = Instance.new("Frame")
+	entry.Name = username
+	entry.Size = UDim2.new(1, -2, 0, 32)
+	entry.BackgroundColor3 = isWatched and Color3.fromRGB(40, 15, 15) or Theme.Elevated
+	entry.BackgroundTransparency = T
+	entry.BorderSizePixel = 0
+	entry.Parent = scroll
+
+	local entryCorner = Instance.new("UICorner")
+	entryCorner.CornerRadius = UDim.new(0, 5)
+	entryCorner.Parent = entry
+
+	if isWatched then
+		local watchStroke = Instance.new("UIStroke")
+		watchStroke.Color = Color3.fromRGB(200, 50, 50)
+		watchStroke.Thickness = 1.2
+		watchStroke.Parent = entry
+	end
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "NameLabel"
+	nameLabel.Size = UDim2.new(1, -10, 0, 16)
+	nameLabel.Position = UDim2.new(0, 7, 0, 2)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = displayName
+	nameLabel.TextColor3 = Theme.TextPrimary
+	nameLabel.TextSize = 13
+	nameLabel.Font = Enum.Font.GothamMedium
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.Parent = entry
+
+	local userLabel = Instance.new("TextLabel")
+	userLabel.Name = "UserLabel"
+	userLabel.Size = UDim2.new(1, -10, 0, 12)
+	userLabel.Position = UDim2.new(0, 7, 0, 17)
+	userLabel.BackgroundTransparency = 1
+	userLabel.Text = "@" .. username
+	userLabel.TextColor3 = isWatched and Color3.fromRGB(255, 140, 140) or Theme.TextSecondary
+	userLabel.TextSize = 11
+	userLabel.Font = Enum.Font.Gotham
+	userLabel.TextXAlignment = Enum.TextXAlignment.Left
+	userLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	userLabel.Parent = entry
+
+	local clickButton = Instance.new("TextButton")
+	clickButton.Size = UDim2.new(1, 0, 1, 0)
+	clickButton.BackgroundTransparency = 1
+	clickButton.Text = ""
+	clickButton.Parent = entry
+
+	clickButton.MouseButton1Click:Connect(function()
+		openPopup(userId, displayName, username)
+	end)
+
+	clickButton.MouseEnter:Connect(function()
+		if isOnline then
+			Tween(entry, {
+				BackgroundColor3 = isWatched and Color3.fromRGB(55, 20, 20) or Theme.SurfaceHover
+			}, 0.12)
+		end
+	end)
+
+	clickButton.MouseLeave:Connect(function()
+		if isOnline then
+			Tween(entry, {
+				BackgroundColor3 = isWatched and Color3.fromRGB(40, 15, 15) or Theme.Elevated
+			}, 0.12)
+		end
+	end)
+
+	playerEntries[username] = {
+		frame = entry,
+		online = isOnline,
+		userId = userId,
+		displayName = displayName
+	}
+
+	if isWatched and isOnline then
+		sendNotification("Target Spotted!", string.format("%s (%s) is in the server", displayName, username), 8)
+	end
+
+	updateStatus()
+end
+
+-- ================================
+-- Events + Dragging + Minimize
+-- ================================
+for _, player in ipairs(Players:GetPlayers()) do
+	createOrUpdatePlayerEntry(player, true)
+end
+
+Players.PlayerAdded:Connect(function(player)
+	createOrUpdatePlayerEntry(player, true)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	createOrUpdatePlayerEntry(player, false)
+end)
+
+local dragging = false
+local dragStart, startPos
+
+titleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+	end
+end)
+
+titleBar.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+local function setMinimized(state)
+	minimized = state
+	if minimized then
+		closePopup()
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = minimizedSize
+		}):Play()
+		scroll.Visible = false
+		statusLabel.Visible = false
+		minimizeBtn.Text = "+"
+		titleLabel.Size = UDim2.new(1, -40, 1, 0)
+		closeBtn.Visible = false
+		minimizeBtn.Position = UDim2.new(1, -30, 0.5, -12)
+	else
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = originalSize
+		}):Play()
+		scroll.Visible = true
+		statusLabel.Visible = true
+		minimizeBtn.Text = "–"
+		titleLabel.Size = UDim2.new(1, -70, 1, 0)
+		closeBtn.Visible = true
+		minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+	end
+end
+
+minimizeBtn.MouseButton1Click:Connect(function()
+	setMinimized(not minimized)
+end)
+
+titleBar.InputBegan:Connect(function(input)
+	if minimized and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+		task.delay(0.05, function()
+			if not dragging then
+				setMinimized(false)
+			end
+		end)
+	end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end)
