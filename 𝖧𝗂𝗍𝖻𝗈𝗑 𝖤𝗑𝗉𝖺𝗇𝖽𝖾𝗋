@@ -8,7 +8,7 @@ local T = 0.6
 
 --// SETTINGS
 local HEAD_SIZE = 10
-local ENABLED = true          -- starts enabled by default
+local ENABLED = true
 
 local Theme = {
 	Background = Color3.fromRGB(0, 0, 0),
@@ -61,6 +61,8 @@ local function setupButtonAnimations(button, normalColor, hoverColor, pressColor
 end
 
 -- ====================== CORE LOGIC ======================
+local originalProps = {} -- [player] = {Size, Transparency, Color, Material, CanCollide}
+
 local function isAnyPlayerOnTeam()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Team then
@@ -99,6 +101,34 @@ local function shouldAffect(player)
 	return false
 end
 
+local function restorePlayer(player)
+	local props = originalProps[player]
+	if not props then return end
+
+	local character = player.Character
+	if character then
+		local part = character:FindFirstChild("HumanoidRootPart")
+		if part then
+			pcall(function()
+				part.Size = props.Size
+				part.Transparency = props.Transparency
+				part.Color = props.Color
+				part.Material = props.Material
+				part.CanCollide = props.CanCollide
+			end)
+		end
+	end
+
+	originalProps[player] = nil
+end
+
+local function restoreAll()
+	for player in pairs(originalProps) do
+		restorePlayer(player)
+	end
+	originalProps = {}
+end
+
 RunService.RenderStepped:Connect(function()
 	if not ENABLED then return end
 
@@ -110,6 +140,17 @@ RunService.RenderStepped:Connect(function()
 
 				local part = character:FindFirstChild("HumanoidRootPart")
 				if part then
+					-- Store original properties the first time we touch this player
+					if not originalProps[player] then
+						originalProps[player] = {
+							Size = part.Size,
+							Transparency = part.Transparency,
+							Color = part.Color,
+							Material = part.Material,
+							CanCollide = part.CanCollide
+						}
+					end
+
 					part.Size = Vector3.new(HEAD_SIZE, HEAD_SIZE, HEAD_SIZE)
 					part.Transparency = 0.9
 					part.BrickColor = getOpponentTeamColor(player)
@@ -119,6 +160,11 @@ RunService.RenderStepped:Connect(function()
 			end)
 		end
 	end
+end)
+
+-- Clean up when players leave
+Players.PlayerRemoving:Connect(function(player)
+	originalProps[player] = nil
 end)
 
 -- ====================== GUI ======================
@@ -297,6 +343,10 @@ end)
 toggleBtn.MouseButton1Click:Connect(function()
 	ENABLED = not ENABLED
 	updateToggleVisual()
+
+	if not ENABLED then
+		restoreAll() -- restore everything when disabled
+	end
 end)
 
 -- Minimize / Restore
@@ -337,6 +387,7 @@ end)
 
 closeBtn.MouseButton1Click:Connect(function()
 	ENABLED = false
+	restoreAll() -- restore everything when closing
 	screenGui:Destroy()
 end)
 
