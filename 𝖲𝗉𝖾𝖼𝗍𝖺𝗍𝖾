@@ -178,15 +178,16 @@ local function stopSpectate()
 		characterConnection = nil
 	end
 
-	-- Return camera to local player (prefer Head too for consistency)
+	-- Return camera to local player's Humanoid (normal behavior)
 	if LOCAL_PLAYER.Character then
-		local head = LOCAL_PLAYER.Character:FindFirstChild("Head")
-		if head then
-			Camera.CameraSubject = head
+		local humanoid = LOCAL_PLAYER.Character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			Camera.CameraSubject = humanoid
 		else
-			local hum = LOCAL_PLAYER.Character:FindFirstChildOfClass("Humanoid")
-			if hum then
-				Camera.CameraSubject = hum
+			-- Fallback just in case
+			local hrp = LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				Camera.CameraSubject = hrp
 			end
 		end
 	end
