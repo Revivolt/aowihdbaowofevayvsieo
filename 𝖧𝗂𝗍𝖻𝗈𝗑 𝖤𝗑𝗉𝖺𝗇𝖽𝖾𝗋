@@ -1,0 +1,366 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local T = 0.6
+
+--// SETTINGS
+local HEAD_SIZE = 10
+local ENABLED = true          -- starts enabled by default
+
+local Theme = {
+	Background = Color3.fromRGB(0, 0, 0),
+	Surface = Color3.fromRGB(12, 12, 12),
+	SurfaceHover = Color3.fromRGB(28, 28, 28),
+	Elevated = Color3.fromRGB(18, 18, 18),
+	Border = Color3.fromRGB(45, 45, 45),
+	Accent = Color3.fromRGB(90, 150, 255),
+	TextPrimary = Color3.fromRGB(255, 255, 255),
+	TextSecondary = Color3.fromRGB(180, 180, 180),
+	CloseRed = Color3.fromRGB(160, 40, 40),
+	Success = Color3.fromRGB(40, 140, 70),
+	Danger = Color3.fromRGB(140, 40, 40),
+}
+
+local function Tween(obj, props, duration)
+	TweenService:Create(obj, TweenInfo.new(duration or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function setupButtonAnimations(button, normalColor, hoverColor, pressColor)
+	local originalSize = button.Size
+
+	button.MouseEnter:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.12)
+	end)
+
+	button.MouseLeave:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = normalColor,
+			Size = originalSize
+		}, 0.12)
+	end)
+
+	button.MouseButton1Down:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = pressColor,
+			Size = originalSize - UDim2.new(0, 1, 0, 1)
+		}, 0.08)
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.08)
+	end)
+end
+
+-- ====================== CORE LOGIC ======================
+local function isAnyPlayerOnTeam()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Team then
+			return true
+		end
+	end
+	return false
+end
+
+local function getOpponentTeamColor(player)
+	if player.Team and LocalPlayer.Team and player.Team ~= LocalPlayer.Team then
+		return BrickColor.new(player.Team.TeamColor.Name)
+	end
+	return BrickColor.new("Really white")
+end
+
+local function shouldAffect(player)
+	if player.UserId == LocalPlayer.UserId then
+		return false
+	end
+
+	local teamBased = isAnyPlayerOnTeam()
+
+	if not teamBased then
+		return true
+	end
+
+	if player.Team and LocalPlayer.Team then
+		return player.Team ~= LocalPlayer.Team
+	end
+
+	if not player.Team and not LocalPlayer.Team then
+		return true
+	end
+
+	return false
+end
+
+RunService.RenderStepped:Connect(function()
+	if not ENABLED then return end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if shouldAffect(player) then
+			pcall(function()
+				local character = player.Character
+				if not character or character == LocalPlayer.Character then return end
+
+				local part = character:FindFirstChild("HumanoidRootPart")
+				if part then
+					part.Size = Vector3.new(HEAD_SIZE, HEAD_SIZE, HEAD_SIZE)
+					part.Transparency = 0.9
+					part.BrickColor = getOpponentTeamColor(player)
+					part.Material = Enum.Material.Neon
+					part.CanCollide = false
+				end
+			end)
+		end
+	end
+end)
+
+-- ====================== GUI ======================
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local oldGui = playerGui:FindFirstChild("HitboxGUI")
+if oldGui then oldGui:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HitboxGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Main"
+mainFrame.Size = UDim2.new(0, 260, 0, 180)
+mainFrame.Position = UDim2.new(0, 16, 0.5, -90)
+mainFrame.BackgroundColor3 = Theme.Background
+mainFrame.BackgroundTransparency = T
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Theme.Border
+stroke.Thickness = 1
+stroke.Parent = mainFrame
+
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 36)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Theme.Background
+titleBar.BackgroundTransparency = T
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -70, 1, 0)
+titleLabel.Position = UDim2.new(0, 12, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Hitbox Expander"
+titleLabel.TextColor3 = Theme.TextPrimary
+titleLabel.TextSize = 14
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- Minimize Button
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 24, 0, 24)
+minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+minimizeBtn.BackgroundColor3 = Theme.Elevated
+minimizeBtn.BackgroundTransparency = T
+minimizeBtn.Text = "–"
+minimizeBtn.TextColor3 = Theme.TextPrimary
+minimizeBtn.TextSize = 16
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.AutoButtonColor = false
+minimizeBtn.Parent = titleBar
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 5)
+minCorner.Parent = minimizeBtn
+
+-- Close Button
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -28, 0.5, -12)
+closeBtn.BackgroundColor3 = Theme.CloseRed
+closeBtn.BackgroundTransparency = T
+closeBtn.Text = "×"
+closeBtn.TextColor3 = Theme.TextPrimary
+closeBtn.TextSize = 16
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.AutoButtonColor = false
+closeBtn.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 5)
+closeCorner.Parent = closeBtn
+
+setupButtonAnimations(minimizeBtn, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
+setupButtonAnimations(closeBtn, Theme.CloseRed, Color3.fromRGB(190, 50, 50), Color3.fromRGB(120, 25, 25))
+
+-- Size Label
+local sizeLabel = Instance.new("TextLabel")
+sizeLabel.Size = UDim2.new(1, -20, 0, 20)
+sizeLabel.Position = UDim2.new(0, 10, 0, 46)
+sizeLabel.BackgroundTransparency = 1
+sizeLabel.Text = "Hitbox Size"
+sizeLabel.TextColor3 = Theme.TextSecondary
+sizeLabel.TextSize = 12
+sizeLabel.Font = Enum.Font.Gotham
+sizeLabel.TextXAlignment = Enum.TextXAlignment.Left
+sizeLabel.Parent = mainFrame
+
+-- Size Input
+local sizeBox = Instance.new("TextBox")
+sizeBox.Name = "SizeInput"
+sizeBox.Size = UDim2.new(1, -20, 0, 32)
+sizeBox.Position = UDim2.new(0, 10, 0, 68)
+sizeBox.PlaceholderText = "Size (default 10)"
+sizeBox.Text = tostring(HEAD_SIZE)
+sizeBox.ClearTextOnFocus = false
+sizeBox.BackgroundColor3 = Theme.Elevated
+sizeBox.BackgroundTransparency = T
+sizeBox.TextColor3 = Theme.TextPrimary
+sizeBox.PlaceholderColor3 = Theme.TextSecondary
+sizeBox.TextSize = 14
+sizeBox.Font = Enum.Font.Gotham
+sizeBox.Parent = mainFrame
+
+local sizeCorner = Instance.new("UICorner")
+sizeCorner.CornerRadius = UDim.new(0, 6)
+sizeCorner.Parent = sizeBox
+
+local sizeStroke = Instance.new("UIStroke")
+sizeStroke.Color = Theme.Border
+sizeStroke.Thickness = 1
+sizeStroke.Parent = sizeBox
+
+-- Toggle Button
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleButton"
+toggleBtn.Size = UDim2.new(1, -20, 0, 34)
+toggleBtn.Position = UDim2.new(0, 10, 0, 112)
+toggleBtn.BackgroundColor3 = Theme.Success
+toggleBtn.BackgroundTransparency = T
+toggleBtn.Text = "Enabled"
+toggleBtn.TextColor3 = Theme.TextPrimary
+toggleBtn.TextSize = 14
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.AutoButtonColor = false
+toggleBtn.Parent = mainFrame
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 6)
+toggleCorner.Parent = toggleBtn
+
+local function updateToggleVisual()
+	if ENABLED then
+		toggleBtn.Text = "Enabled"
+		toggleBtn.BackgroundColor3 = Theme.Success
+		setupButtonAnimations(toggleBtn, Theme.Success, Color3.fromRGB(50, 170, 90), Color3.fromRGB(30, 110, 55))
+	else
+		toggleBtn.Text = "Disabled"
+		toggleBtn.BackgroundColor3 = Theme.Danger
+		setupButtonAnimations(toggleBtn, Theme.Danger, Color3.fromRGB(170, 50, 50), Color3.fromRGB(110, 30, 30))
+	end
+end
+
+updateToggleVisual()
+
+-- Size change
+sizeBox.FocusLost:Connect(function()
+	local num = tonumber(sizeBox.Text)
+	if num and num > 0 then
+		HEAD_SIZE = math.clamp(num, 1, 50)
+		sizeBox.Text = tostring(HEAD_SIZE)
+	else
+		sizeBox.Text = tostring(HEAD_SIZE)
+	end
+end)
+
+-- Toggle
+toggleBtn.MouseButton1Click:Connect(function()
+	ENABLED = not ENABLED
+	updateToggleVisual()
+end)
+
+-- Minimize / Restore
+local minimized = false
+local originalSize = UDim2.new(0, 260, 0, 180)
+local minimizedSize = UDim2.new(0, 180, 0, 36)
+
+local function setMinimized(state)
+	minimized = state
+	if minimized then
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = minimizedSize
+		}):Play()
+		sizeLabel.Visible = false
+		sizeBox.Visible = false
+		toggleBtn.Visible = false
+		minimizeBtn.Text = "+"
+		titleLabel.Size = UDim2.new(1, -40, 1, 0)
+		closeBtn.Visible = false
+		minimizeBtn.Position = UDim2.new(1, -30, 0.5, -12)
+	else
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = originalSize
+		}):Play()
+		sizeLabel.Visible = true
+		sizeBox.Visible = true
+		toggleBtn.Visible = true
+		minimizeBtn.Text = "–"
+		titleLabel.Size = UDim2.new(1, -70, 1, 0)
+		closeBtn.Visible = true
+		minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+	end
+end
+
+minimizeBtn.MouseButton1Click:Connect(function()
+	setMinimized(not minimized)
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	ENABLED = false
+	screenGui:Destroy()
+end)
+
+-- Dragging
+local dragging = false
+local dragStart, startPos
+
+titleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+	end
+end)
+
+titleBar.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
