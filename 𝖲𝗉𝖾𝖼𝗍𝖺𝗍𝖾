@@ -1,0 +1,499 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+local LOCAL_PLAYER = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local T = 0.6
+
+local Theme = {
+	Background = Color3.fromRGB(0, 0, 0),
+	Surface = Color3.fromRGB(12, 12, 12),
+	SurfaceHover = Color3.fromRGB(28, 28, 28),
+	Elevated = Color3.fromRGB(18, 18, 18),
+	Border = Color3.fromRGB(45, 45, 45),
+	Accent = Color3.fromRGB(90, 150, 255),
+	TextPrimary = Color3.fromRGB(255, 255, 255),
+	TextSecondary = Color3.fromRGB(180, 180, 180),
+	CloseRed = Color3.fromRGB(160, 40, 40),
+	Success = Color3.fromRGB(40, 140, 70),
+	Danger = Color3.fromRGB(140, 40, 40),
+}
+
+local function Tween(obj, props, duration)
+	TweenService:Create(obj, TweenInfo.new(duration or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function setupButtonAnimations(button, normalColor, hoverColor, pressColor)
+	local originalSize = button.Size
+
+	button.MouseEnter:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.12)
+	end)
+
+	button.MouseLeave:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = normalColor,
+			Size = originalSize
+		}, 0.12)
+	end)
+
+	button.MouseButton1Down:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = pressColor,
+			Size = originalSize - UDim2.new(0, 1, 0, 1)
+		}, 0.08)
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.08)
+	end)
+end
+
+-- ====================== SPECTATE STATE ======================
+local playerList = {}
+local currentIndex = 0
+local isSpectating = false
+local currentTarget = nil
+local characterConnection = nil
+
+local storedBlur = nil
+local storedBlurParent = nil
+local storedRoleSelector = nil
+local storedRoleSelectorParent = nil
+
+local function removeBlurAndRoleSelector()
+	local blur = Lighting:FindFirstChild("Blur")
+	if blur then
+		storedBlur = blur
+		storedBlurParent = blur.Parent
+		blur.Parent = nil
+	end
+
+	local playerGui = LOCAL_PLAYER:FindFirstChild("PlayerGui")
+	if playerGui then
+		local hud2 = playerGui:FindFirstChild("HUD2")
+		if hud2 then
+			local rs = hud2:FindFirstChild("RoleSelector")
+			if rs then
+				storedRoleSelector = rs
+				storedRoleSelectorParent = rs.Parent
+				rs.Parent = nil
+			end
+		end
+	end
+end
+
+local function restoreBlurAndRoleSelector()
+	if storedBlur and storedBlurParent then
+		storedBlur.Parent = storedBlurParent
+	end
+	storedBlur = nil
+	storedBlurParent = nil
+
+	if storedRoleSelector and storedRoleSelectorParent then
+		storedRoleSelector.Parent = storedRoleSelectorParent
+	end
+	storedRoleSelector = nil
+	storedRoleSelectorParent = nil
+end
+
+local function updatePlayerList()
+	playerList = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LOCAL_PLAYER then
+			table.insert(playerList, player)
+		end
+	end
+
+	if currentIndex > #playerList then
+		currentIndex = #playerList
+	end
+	if currentIndex < 1 and #playerList > 0 then
+		currentIndex = 1
+	end
+end
+
+local function setCameraToPlayer(player)
+	if not player or not player.Character then
+		return false
+	end
+
+	-- Prefer Head so the size-10 HumanoidRootPart doesn't lift the camera
+	local head = player.Character:FindFirstChild("Head")
+	if head then
+		Camera.CameraSubject = head
+		return true
+	end
+
+	-- Fallback to Humanoid if Head is missing
+	local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		Camera.CameraSubject = humanoid
+		return true
+	end
+
+	return false
+end
+
+local function startSpectate(player)
+	if not player then return end
+
+	if characterConnection then
+		characterConnection:Disconnect()
+		characterConnection = nil
+	end
+
+	currentTarget = player
+	isSpectating = true
+
+	setCameraToPlayer(player)
+
+	characterConnection = player.CharacterAdded:Connect(function()
+		task.wait(0.15)
+		if isSpectating and currentTarget == player then
+			setCameraToPlayer(player)
+		end
+	end)
+
+	removeBlurAndRoleSelector()
+	updateNameLabel()
+end
+
+local function stopSpectate()
+	isSpectating = false
+	currentTarget = nil
+	currentIndex = 0
+
+	if characterConnection then
+		characterConnection:Disconnect()
+		characterConnection = nil
+	end
+
+	-- Return camera to local player (prefer Head too for consistency)
+	if LOCAL_PLAYER.Character then
+		local head = LOCAL_PLAYER.Character:FindFirstChild("Head")
+		if head then
+			Camera.CameraSubject = head
+		else
+			local hum = LOCAL_PLAYER.Character:FindFirstChildOfClass("Humanoid")
+			if hum then
+				Camera.CameraSubject = hum
+			end
+		end
+	end
+
+	restoreBlurAndRoleSelector()
+	updateNameLabel()
+end
+
+local function spectateNext()
+	updatePlayerList()
+	if #playerList == 0 then
+		stopSpectate()
+		return
+	end
+
+	currentIndex = currentIndex % #playerList + 1
+	startSpectate(playerList[currentIndex])
+end
+
+local function spectatePrevious()
+	updatePlayerList()
+	if #playerList == 0 then
+		stopSpectate()
+		return
+	end
+
+	currentIndex = (currentIndex - 2) % #playerList + 1
+	startSpectate(playerList[currentIndex])
+end
+
+-- ====================== GUI ======================
+local playerGui = LOCAL_PLAYER:WaitForChild("PlayerGui")
+local oldGui = playerGui:FindFirstChild("SpectateGUI")
+if oldGui then oldGui:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SpectateGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Main"
+mainFrame.Size = UDim2.new(0, 260, 0, 200)
+mainFrame.Position = UDim2.new(0, 16, 0.5, -100)
+mainFrame.BackgroundColor3 = Theme.Background
+mainFrame.BackgroundTransparency = T
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Theme.Border
+stroke.Thickness = 1
+stroke.Parent = mainFrame
+
+-- Title Bar
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 36)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Theme.Background
+titleBar.BackgroundTransparency = T
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -70, 1, 0)
+titleLabel.Position = UDim2.new(0, 12, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Spectate"
+titleLabel.TextColor3 = Theme.TextPrimary
+titleLabel.TextSize = 14
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- Minimize Button
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 24, 0, 24)
+minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+minimizeBtn.BackgroundColor3 = Theme.Elevated
+minimizeBtn.BackgroundTransparency = T
+minimizeBtn.Text = "–"
+minimizeBtn.TextColor3 = Theme.TextPrimary
+minimizeBtn.TextSize = 16
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.AutoButtonColor = false
+minimizeBtn.Parent = titleBar
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 5)
+minCorner.Parent = minimizeBtn
+
+-- Close Button
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -28, 0.5, -12)
+closeBtn.BackgroundColor3 = Theme.CloseRed
+closeBtn.BackgroundTransparency = T
+closeBtn.Text = "×"
+closeBtn.TextColor3 = Theme.TextPrimary
+closeBtn.TextSize = 16
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.AutoButtonColor = false
+closeBtn.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 5)
+closeCorner.Parent = closeBtn
+
+setupButtonAnimations(minimizeBtn, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
+setupButtonAnimations(closeBtn, Theme.CloseRed, Color3.fromRGB(190, 50, 50), Color3.fromRGB(120, 25, 25))
+
+-- Current player name label
+local nameLabel = Instance.new("TextLabel")
+nameLabel.Name = "NameLabel"
+nameLabel.Size = UDim2.new(1, -20, 0, 28)
+nameLabel.Position = UDim2.new(0, 10, 0, 44)
+nameLabel.BackgroundColor3 = Theme.Elevated
+nameLabel.BackgroundTransparency = T
+nameLabel.Text = "None"
+nameLabel.TextColor3 = Theme.TextPrimary
+nameLabel.TextSize = 13
+nameLabel.Font = Enum.Font.Gotham
+nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+nameLabel.Parent = mainFrame
+
+local nameCorner = Instance.new("UICorner")
+nameCorner.CornerRadius = UDim.new(0, 6)
+nameCorner.Parent = nameLabel
+
+local nameStroke = Instance.new("UIStroke")
+nameStroke.Color = Theme.Border
+nameStroke.Thickness = 1
+nameStroke.Parent = nameLabel
+
+function updateNameLabel()
+	if isSpectating and currentTarget then
+		nameLabel.Text = currentTarget.DisplayName .. " (@" .. currentTarget.Name .. ")"
+	else
+		nameLabel.Text = "None"
+	end
+end
+
+-- Left Arrow
+local leftBtn = Instance.new("TextButton")
+leftBtn.Name = "LeftArrow"
+leftBtn.Text = "◄"
+leftBtn.Size = UDim2.new(0, 70, 0, 36)
+leftBtn.Position = UDim2.new(0, 10, 0, 82)
+leftBtn.BackgroundColor3 = Theme.Elevated
+leftBtn.BackgroundTransparency = T
+leftBtn.TextColor3 = Theme.TextPrimary
+leftBtn.TextSize = 18
+leftBtn.Font = Enum.Font.GothamBold
+leftBtn.AutoButtonColor = false
+leftBtn.Parent = mainFrame
+
+local leftCorner = Instance.new("UICorner")
+leftCorner.CornerRadius = UDim.new(0, 6)
+leftCorner.Parent = leftBtn
+
+-- Right Arrow
+local rightBtn = Instance.new("TextButton")
+rightBtn.Name = "RightArrow"
+rightBtn.Text = "►"
+rightBtn.Size = UDim2.new(0, 70, 0, 36)
+rightBtn.Position = UDim2.new(1, -80, 0, 82)
+rightBtn.BackgroundColor3 = Theme.Elevated
+rightBtn.BackgroundTransparency = T
+rightBtn.TextColor3 = Theme.TextPrimary
+rightBtn.TextSize = 18
+rightBtn.Font = Enum.Font.GothamBold
+rightBtn.AutoButtonColor = false
+rightBtn.Parent = mainFrame
+
+local rightCorner = Instance.new("UICorner")
+rightCorner.CornerRadius = UDim.new(0, 6)
+rightCorner.Parent = rightBtn
+
+setupButtonAnimations(leftBtn, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
+setupButtonAnimations(rightBtn, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
+
+-- Stop Spectating button
+local stopButton = Instance.new("TextButton")
+stopButton.Name = "StopButton"
+stopButton.Text = "Stop Spectating"
+stopButton.Size = UDim2.new(1, -20, 0, 34)
+stopButton.Position = UDim2.new(0, 10, 0, 130)
+stopButton.BackgroundColor3 = Theme.Danger
+stopButton.BackgroundTransparency = T
+stopButton.TextColor3 = Theme.TextPrimary
+stopButton.TextSize = 14
+stopButton.Font = Enum.Font.GothamBold
+stopButton.AutoButtonColor = false
+stopButton.Parent = mainFrame
+
+local stopCorner = Instance.new("UICorner")
+stopCorner.CornerRadius = UDim.new(0, 6)
+stopCorner.Parent = stopButton
+
+setupButtonAnimations(stopButton, Theme.Danger, Color3.fromRGB(170, 50, 50), Color3.fromRGB(110, 30, 30))
+
+-- Minimize / Restore
+local minimized = false
+local originalSize = UDim2.new(0, 260, 0, 200)
+local minimizedSize = UDim2.new(0, 160, 0, 36)
+
+local function setMinimized(state)
+	minimized = state
+	if minimized then
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = minimizedSize
+		}):Play()
+		nameLabel.Visible = false
+		leftBtn.Visible = false
+		rightBtn.Visible = false
+		stopButton.Visible = false
+		minimizeBtn.Text = "+"
+		titleLabel.Size = UDim2.new(1, -40, 1, 0)
+		closeBtn.Visible = false
+		minimizeBtn.Position = UDim2.new(1, -30, 0.5, -12)
+	else
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = originalSize
+		}):Play()
+		nameLabel.Visible = true
+		leftBtn.Visible = true
+		rightBtn.Visible = true
+		stopButton.Visible = true
+		minimizeBtn.Text = "–"
+		titleLabel.Size = UDim2.new(1, -70, 1, 0)
+		closeBtn.Visible = true
+		minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+	end
+end
+
+minimizeBtn.MouseButton1Click:Connect(function()
+	setMinimized(not minimized)
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	stopSpectate()
+	screenGui:Destroy()
+end)
+
+-- Dragging
+local dragging = false
+local dragStart, startPos
+
+titleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+	end
+end)
+
+titleBar.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+-- Button connections
+leftBtn.MouseButton1Click:Connect(spectatePrevious)
+rightBtn.MouseButton1Click:Connect(spectateNext)
+stopButton.MouseButton1Click:Connect(stopSpectate)
+
+-- Player join / leave handling
+Players.PlayerAdded:Connect(function(player)
+	if player == LOCAL_PLAYER then return end
+	updatePlayerList()
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if player == LOCAL_PLAYER then return end
+
+	if currentTarget == player then
+		updatePlayerList()
+		if #playerList > 0 then
+			currentIndex = math.clamp(currentIndex, 1, #playerList)
+			startSpectate(playerList[currentIndex])
+		else
+			stopSpectate()
+		end
+	else
+		updatePlayerList()
+	end
+end)
+
+-- Initial list
+updatePlayerList()
+updateNameLabel()
