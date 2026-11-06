@@ -1,0 +1,429 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LOCAL_PLAYER = Players.LocalPlayer
+local FRONT_DISTANCE = 4
+local KEEP_IN_FRONT = true
+local T = 0.6
+
+local Theme = {
+	Background = Color3.fromRGB(0, 0, 0),
+	Surface = Color3.fromRGB(12, 12, 12),
+	SurfaceHover = Color3.fromRGB(28, 28, 28),
+	Elevated = Color3.fromRGB(18, 18, 18),
+	Border = Color3.fromRGB(45, 45, 45),
+	Accent = Color3.fromRGB(90, 150, 255),
+	TextPrimary = Color3.fromRGB(255, 255, 255),
+	TextSecondary = Color3.fromRGB(180, 180, 180),
+	CloseRed = Color3.fromRGB(160, 40, 40),
+	Success = Color3.fromRGB(40, 140, 70),
+	Danger = Color3.fromRGB(140, 40, 40),
+}
+
+local function Tween(obj, props, duration)
+	TweenService:Create(obj, TweenInfo.new(duration or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function setupButtonAnimations(button, normalColor, hoverColor, pressColor)
+	local originalSize = button.Size
+
+	button.MouseEnter:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.12)
+	end)
+
+	button.MouseLeave:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = normalColor,
+			Size = originalSize
+		}, 0.12)
+	end)
+
+	button.MouseButton1Down:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = pressColor,
+			Size = originalSize - UDim2.new(0, 1, 0, 1)
+		}, 0.08)
+	end)
+
+	button.MouseButton1Up:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = hoverColor,
+			Size = originalSize + UDim2.new(0, 2, 0, 2)
+		}, 0.08)
+	end)
+end
+
+local trackedPlayers = {}
+
+local playerGui = LOCAL_PLAYER:WaitForChild("PlayerGui")
+local oldGui = playerGui:FindFirstChild("BringPlayersGUI")
+if oldGui then oldGui:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "BringPlayersGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Main"
+mainFrame.Size = UDim2.new(0, 260, 0, 200)
+mainFrame.Position = UDim2.new(0, 16, 0.5, -100)
+mainFrame.BackgroundColor3 = Theme.Background
+mainFrame.BackgroundTransparency = T
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Theme.Border
+stroke.Thickness = 1
+stroke.Parent = mainFrame
+
+-- ====================== TITLE BAR (Fixed - No Overlap) ======================
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 36)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Theme.Background
+titleBar.BackgroundTransparency = T
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -70, 1, 0)
+titleLabel.Position = UDim2.new(0, 12, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Bring Player"          -- change to "Bring Players" in the other script
+titleLabel.TextColor3 = Theme.TextPrimary
+titleLabel.TextSize = 14
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- Minimize Button
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 24, 0, 24)
+minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+minimizeBtn.BackgroundColor3 = Theme.Elevated
+minimizeBtn.BackgroundTransparency = T
+minimizeBtn.Text = "–"
+minimizeBtn.TextColor3 = Theme.TextPrimary
+minimizeBtn.TextSize = 16
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.AutoButtonColor = false
+minimizeBtn.Parent = titleBar
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 5)
+minCorner.Parent = minimizeBtn
+
+-- Close Button
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -28, 0.5, -12)
+closeBtn.BackgroundColor3 = Theme.CloseRed
+closeBtn.BackgroundTransparency = T
+closeBtn.Text = "×"
+closeBtn.TextColor3 = Theme.TextPrimary
+closeBtn.TextSize = 16
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.AutoButtonColor = false
+closeBtn.Parent = titleBar
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 5)
+closeCorner.Parent = closeBtn
+
+setupButtonAnimations(minimizeBtn, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
+setupButtonAnimations(closeBtn, Theme.CloseRed, Color3.fromRGB(190, 50, 50), Color3.fromRGB(120, 25, 25))
+
+-- Content
+local inputBox = Instance.new("TextBox")
+inputBox.Name = "PlayerInput"
+inputBox.Size = UDim2.new(1, -20, 0, 32)
+inputBox.Position = UDim2.new(0, 10, 0, 42)
+inputBox.PlaceholderText = "Player name or 'all'"
+inputBox.Text = ""
+inputBox.ClearTextOnFocus = false
+inputBox.BackgroundColor3 = Theme.Elevated
+inputBox.BackgroundTransparency = T
+inputBox.TextColor3 = Theme.TextPrimary
+inputBox.PlaceholderColor3 = Theme.TextSecondary
+inputBox.TextSize = 14
+inputBox.Font = Enum.Font.Gotham
+inputBox.Parent = mainFrame
+
+local inputCorner = Instance.new("UICorner")
+inputCorner.CornerRadius = UDim.new(0, 6)
+inputCorner.Parent = inputBox
+
+local inputStroke = Instance.new("UIStroke")
+inputStroke.Color = Theme.Border
+inputStroke.Thickness = 1
+inputStroke.Parent = inputBox
+
+local bringButton = Instance.new("TextButton")
+bringButton.Name = "BringButton"
+bringButton.Text = "Bring"
+bringButton.Size = UDim2.new(1, -20, 0, 34)
+bringButton.Position = UDim2.new(0, 10, 0, 84)
+bringButton.BackgroundColor3 = Theme.Success
+bringButton.BackgroundTransparency = T
+bringButton.TextColor3 = Theme.TextPrimary
+bringButton.TextSize = 14
+bringButton.Font = Enum.Font.GothamBold
+bringButton.AutoButtonColor = false
+bringButton.Parent = mainFrame
+
+local bringCorner = Instance.new("UICorner")
+bringCorner.CornerRadius = UDim.new(0, 6)
+bringCorner.Parent = bringButton
+
+local disableButton = Instance.new("TextButton")
+disableButton.Name = "DisableButton"
+disableButton.Text = "Disable Bring"
+disableButton.Size = UDim2.new(1, -20, 0, 34)
+disableButton.Position = UDim2.new(0, 10, 0, 128)
+disableButton.BackgroundColor3 = Theme.Danger
+disableButton.BackgroundTransparency = T
+disableButton.TextColor3 = Theme.TextPrimary
+disableButton.TextSize = 14
+disableButton.Font = Enum.Font.GothamBold
+disableButton.AutoButtonColor = false
+disableButton.Parent = mainFrame
+
+local disableCorner = Instance.new("UICorner")
+disableCorner.CornerRadius = UDim.new(0, 6)
+disableCorner.Parent = disableButton
+
+setupButtonAnimations(bringButton, Theme.Success, Color3.fromRGB(50, 170, 90), Color3.fromRGB(30, 110, 55))
+setupButtonAnimations(disableButton, Theme.Danger, Color3.fromRGB(170, 50, 50), Color3.fromRGB(110, 30, 30))
+
+-- Minimize / Restore
+local minimized = false
+local originalSize = UDim2.new(0, 260, 0, 200)
+local minimizedSize = UDim2.new(0, 160, 0, 36)
+
+local function setMinimized(state)
+	minimized = state
+	if minimized then
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = minimizedSize
+		}):Play()
+		inputBox.Visible = false
+		bringButton.Visible = false
+		disableButton.Visible = false
+		minimizeBtn.Text = "+"
+		titleLabel.Size = UDim2.new(1, -40, 1, 0)
+		closeBtn.Visible = false
+		minimizeBtn.Position = UDim2.new(1, -30, 0.5, -12)
+	else
+		TweenService:Create(mainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = originalSize
+		}):Play()
+		inputBox.Visible = true
+		bringButton.Visible = true
+		disableButton.Visible = true
+		minimizeBtn.Text = "–"
+		titleLabel.Size = UDim2.new(1, -70, 1, 0)
+		closeBtn.Visible = true
+		minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
+	end
+end
+
+-- Only the minimize button controls minimize/maximize
+minimizeBtn.MouseButton1Click:Connect(function()
+	setMinimized(not minimized)
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end)
+
+-- Dragging
+local dragging = false
+local dragStart, startPos
+
+titleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = mainFrame.Position
+	end
+end)
+
+titleBar.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+-- Core logic (unchanged)
+local function getRootPart(player)
+	if not player then return nil end
+	local character = player.Character
+	if not character then return nil end
+	return character:FindFirstChild("HumanoidRootPart")
+end
+
+local function getFrontCFrame()
+	local myCharacter = LOCAL_PLAYER.Character
+	if not myCharacter then return nil end
+	local myHRP = myCharacter:FindFirstChild("HumanoidRootPart")
+	if not myHRP then return nil end
+	local direction = myHRP.CFrame.LookVector
+	local newPosition = myHRP.Position + direction * FRONT_DISTANCE
+	return CFrame.lookAt(newPosition, newPosition + direction)
+end
+
+local function movePlayerToFront(player)
+	if not player or player == LOCAL_PLAYER then return end
+	if not player.Character then return end
+	local targetHRP = getRootPart(player)
+	if not targetHRP then return end
+	local frontCFrame = getFrontCFrame()
+	if not frontCFrame then return end
+	player.Character:PivotTo(frontCFrame)
+end
+
+local function setPlayerCollision(player, canCollide)
+	if not player or not player.Character then return end
+	for _, object in ipairs(player.Character:GetDescendants()) do
+		if object:IsA("BasePart") then
+			object.CanCollide = canCollide
+		end
+	end
+end
+
+local function trackPlayer(player)
+	if not player or player == LOCAL_PLAYER then return end
+	trackedPlayers[player] = true
+	setPlayerCollision(player, false)
+	movePlayerToFront(player)
+end
+
+local function disableBring()
+	for player in pairs(trackedPlayers) do
+		setPlayerCollision(player, true)
+		trackedPlayers[player] = nil
+	end
+	KEEP_IN_FRONT = false
+	disableButton.Text = "Bring Disabled"
+	disableButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	task.delay(1.2, function()
+		if disableButton and disableButton.Parent then
+			disableButton.Text = "Disable Bring"
+			disableButton.BackgroundColor3 = Theme.Danger
+		end
+	end)
+end
+
+local function findPlayers(target)
+	local results = {}
+	target = string.lower(target)
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LOCAL_PLAYER then
+			local playerName = string.lower(player.Name)
+			local displayName = string.lower(player.DisplayName)
+			if string.find(playerName, target, 1, true) or string.find(displayName, target, 1, true) then
+				table.insert(results, player)
+			end
+		end
+	end
+	return results
+end
+
+local function bringPlayers(target)
+	target = string.lower(string.gsub(target, "^%s*(.-)%s*$", "%1"))
+	if target == "" then return end
+	KEEP_IN_FRONT = true
+	if target == "all" then
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LOCAL_PLAYER then
+				trackPlayer(player)
+			end
+		end
+		return
+	end
+	local matchedPlayers = findPlayers(target)
+	for _, player in ipairs(matchedPlayers) do
+		trackPlayer(player)
+	end
+end
+
+bringButton.MouseButton1Click:Connect(function()
+	if inputBox.Text ~= "" then
+		bringPlayers(inputBox.Text)
+	end
+end)
+
+inputBox.FocusLost:Connect(function(enterPressed)
+	if enterPressed and inputBox.Text ~= "" then
+		bringPlayers(inputBox.Text)
+	end
+end)
+
+disableButton.MouseButton1Click:Connect(function()
+	disableBring()
+end)
+
+RunService.Heartbeat:Connect(function()
+	if not KEEP_IN_FRONT then return end
+	for player in pairs(trackedPlayers) do
+		if not player.Parent then
+			trackedPlayers[player] = nil
+		else
+			setPlayerCollision(player, false)
+			movePlayerToFront(player)
+		end
+	end
+end)
+
+local function setupPlayer(player)
+	if player == LOCAL_PLAYER then return end
+	player.CharacterAdded:Connect(function(character)
+		local hrp = character:WaitForChild("HumanoidRootPart", 5)
+		if not hrp then return end
+		task.wait(0.2)
+		if trackedPlayers[player] and KEEP_IN_FRONT then
+			setPlayerCollision(player, false)
+			movePlayerToFront(player)
+		end
+	end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	setupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(function(player)
+	setupPlayer(player)
+	if string.lower(inputBox.Text) == "all" and KEEP_IN_FRONT then
+		trackPlayer(player)
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	trackedPlayers[player] = nil
+end)
