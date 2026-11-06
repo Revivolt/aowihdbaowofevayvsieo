@@ -1,6 +1,7 @@
 --  Useful for games that have chat commands, such as CAC private servers (not guaranteed to work for all games)
 --  Type [--set key __ ] to change the toggle key to open and close the command bar
---  Press [;]     → open/close command bar
+--  Type [--close]      to completely remove this script/GUI
+--  Press [;]           → open/close command bar
 -- ============================================================
 
 local Players           = game:GetService("Players")
@@ -9,8 +10,24 @@ local UserInputService  = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 local TextChatService   = game:GetService("TextChatService")
 
-local LocalPlayer       = Players.LocalPlayer
-local PlayerGui         = LocalPlayer:WaitForChild("PlayerGui")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ── Theme (matches your other scripts) ────────────────────
+local Theme = {
+	Background     = Color3.fromRGB(0, 0, 0),
+	Surface        = Color3.fromRGB(12, 12, 12),
+	SurfaceHover   = Color3.fromRGB(28, 28, 28),
+	Elevated       = Color3.fromRGB(18, 18, 18),
+	Border         = Color3.fromRGB(45, 45, 45),
+	Accent         = Color3.fromRGB(90, 150, 255),
+	TextPrimary    = Color3.fromRGB(255, 255, 255),
+	TextSecondary  = Color3.fromRGB(180, 180, 180),
+	Success        = Color3.fromRGB(40, 140, 70),
+	Danger         = Color3.fromRGB(140, 40, 40),
+}
+
+local T = 0.15
 
 -- ── Detect which chat system the game uses ────────────────
 local chatVersion  = TextChatService.ChatVersion
@@ -18,275 +35,291 @@ local usingNewChat = (chatVersion == Enum.ChatVersion.TextChatService)
 print("[ChatCmd] Chat system detected:", usingNewChat and "TextChatService (NEW)" or "Legacy Chat (OLD)")
 
 -- ── Build GUI ─────────────────────────────────────────────
+local oldGui = PlayerGui:FindFirstChild("ChatCommandGui")
+if oldGui then oldGui:Destroy() end
 
-local ScreenGui             = Instance.new("ScreenGui")
-ScreenGui.Name              = "ChatCommandGui"
-ScreenGui.ResetOnSpawn      = false
-ScreenGui.ZIndexBehavior    = Enum.ZIndexBehavior.Sibling
-ScreenGui.IgnoreGuiInset    = true
-ScreenGui.Parent            = PlayerGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ChatCommandGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = PlayerGui
 
-local Frame                 = Instance.new("Frame")
-Frame.Name                  = "CommandFrame"
-Frame.Size                  = UDim2.new(0, 520, 0, 44)
-Frame.Position              = UDim2.new(0.5, -260, 1, -100)
-Frame.BackgroundColor3      = Color3.fromRGB(12, 12, 18)
-Frame.BackgroundTransparency = 0.1
-Frame.BorderSizePixel       = 0
-Frame.Visible               = false
-Frame.Parent                = ScreenGui
+local Frame = Instance.new("Frame")
+Frame.Name = "CommandFrame"
+Frame.Size = UDim2.new(0, 520, 0, 48)
+Frame.Position = UDim2.new(0.5, -260, 1, -100)
+Frame.BackgroundColor3 = Theme.Background
+Frame.BackgroundTransparency = T
+Frame.BorderSizePixel = 0
+Frame.Visible = false
+Frame.Parent = ScreenGui
 
-Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 9)
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = Frame
 
-local Stroke                = Instance.new("UIStroke")
-Stroke.Color                = Color3.fromRGB(80, 200, 255)
-Stroke.Thickness            = 1.5
-Stroke.Transparency         = 0.4
-Stroke.Parent               = Frame
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Theme.Border
+Stroke.Thickness = 1
+Stroke.Parent = Frame
 
-local Accent                = Instance.new("Frame")
-Accent.Size                 = UDim2.new(0, 4, 0.7, 0)
-Accent.Position             = UDim2.new(0, 0, 0.15, 0)
-Accent.BackgroundColor3     = Color3.fromRGB(80, 200, 255)
-Accent.BorderSizePixel      = 0
-Accent.Parent               = Frame
-Instance.new("UICorner", Accent).CornerRadius = UDim.new(0, 4)
+local Accent = Instance.new("Frame")
+Accent.Size = UDim2.new(0, 4, 0.7, 0)
+Accent.Position = UDim2.new(0, 0, 0.15, 0)
+Accent.BackgroundColor3 = Theme.Accent
+Accent.BorderSizePixel = 0
+Accent.Parent = Frame
 
-local Prefix                = Instance.new("TextLabel")
-Prefix.Size                 = UDim2.new(0, 30, 1, 0)
-Prefix.Position             = UDim2.new(0, 10, 0, 0)
+local accentCorner = Instance.new("UICorner")
+accentCorner.CornerRadius = UDim.new(0, 4)
+accentCorner.Parent = Accent
+
+local Prefix = Instance.new("TextLabel")
+Prefix.Size = UDim2.new(0, 30, 1, 0)
+Prefix.Position = UDim2.new(0, 10, 0, 0)
 Prefix.BackgroundTransparency = 1
-Prefix.Text                 = "›"
-Prefix.TextColor3           = Color3.fromRGB(80, 200, 255)
-Prefix.Font                 = Enum.Font.GothamBold
-Prefix.TextSize             = 22
-Prefix.TextXAlignment       = Enum.TextXAlignment.Center
-Prefix.Parent               = Frame
+Prefix.Text = "›"
+Prefix.TextColor3 = Theme.Accent
+Prefix.Font = Enum.Font.GothamBold
+Prefix.TextSize = 22
+Prefix.TextXAlignment = Enum.TextXAlignment.Center
+Prefix.Parent = Frame
 
-local TextBox               = Instance.new("TextBox")
-TextBox.Name                = "Input"
-TextBox.Size                = UDim2.new(1, -55, 1, -10)
-TextBox.Position            = UDim2.new(0, 42, 0, 5)
+local TextBox = Instance.new("TextBox")
+TextBox.Name = "Input"
+TextBox.Size = UDim2.new(1, -55, 1, -12)
+TextBox.Position = UDim2.new(0, 42, 0, 6)
 TextBox.BackgroundTransparency = 1
-TextBox.Text                = ""
-TextBox.PlaceholderText     = "Type command (e.g. /clone) then press Enter…"
-TextBox.PlaceholderColor3   = Color3.fromRGB(100, 100, 120)
-TextBox.TextColor3          = Color3.fromRGB(230, 230, 255)
-TextBox.Font                = Enum.Font.Gotham
-TextBox.TextSize            = 15
-TextBox.ClearTextOnFocus    = false
-TextBox.TextXAlignment      = Enum.TextXAlignment.Left
-TextBox.Parent              = Frame
+TextBox.Text = ""
+TextBox.PlaceholderText = "'--set key E' to change key / '--close' to remove / For MM2 and CAC chat commands"
+TextBox.PlaceholderColor3 = Theme.TextSecondary
+TextBox.TextColor3 = Theme.TextPrimary
+TextBox.Font = Enum.Font.Gotham
+TextBox.TextSize = 13
+TextBox.ClearTextOnFocus = false
+TextBox.TextXAlignment = Enum.TextXAlignment.Left
+TextBox.Parent = Frame
 
-local StatusLabel           = Instance.new("TextLabel")
-StatusLabel.Name            = "Status"
-StatusLabel.Size            = UDim2.new(1, 0, 0, 18)
-StatusLabel.Position        = UDim2.new(0, 0, 1, 5)
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Name = "Status"
+StatusLabel.Size = UDim2.new(1, 0, 0, 18)
+StatusLabel.Position = UDim2.new(0, 0, 1, 6)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text            = ""
-StatusLabel.TextColor3      = Color3.fromRGB(80, 200, 120)
-StatusLabel.Font            = Enum.Font.Gotham
-StatusLabel.TextSize        = 12
-StatusLabel.TextXAlignment  = Enum.TextXAlignment.Center
-StatusLabel.Parent          = Frame
+StatusLabel.Text = ""
+StatusLabel.TextColor3 = Theme.Success
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextSize = 12
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
+StatusLabel.Parent = Frame
 
 -- ── Send chat message ─────────────────────────────────────
-
 local function sendMessage(message)
-    print("[ChatCmd] Attempting to send:", message)
+	print("[ChatCmd] Attempting to send:", message)
 
-    -- ── NEW TextChatService path ──────────────────────────
-    if usingNewChat then
-        local channels = TextChatService:FindFirstChild("TextChannels")
-        if channels then
-            for _, ch in ipairs(channels:GetChildren()) do
-                if ch:IsA("TextChannel") then
-                    local ok, err = pcall(function()
-                        ch:SendAsync(message)
-                    end)
-                    if ok then
-                        print("[ChatCmd] ✓ Sent via TextChannel:", ch.Name)
-                        return true
-                    else
-                        print("[ChatCmd] ✗ Channel", ch.Name, "failed:", err)
-                    end
-                end
-            end
-        else
-            print("[ChatCmd] ✗ TextChannels not found under TextChatService")
-        end
-    end
+	if usingNewChat then
+		local channels = TextChatService:FindFirstChild("TextChannels")
+		if channels then
+			for _, ch in ipairs(channels:GetChildren()) do
+				if ch:IsA("TextChannel") then
+					local ok, err = pcall(function()
+						ch:SendAsync(message)
+					end)
+					if ok then
+						print("[ChatCmd] ✓ Sent via TextChannel:", ch.Name)
+						return true
+					else
+						print("[ChatCmd] ✗ Channel", ch.Name, "failed:", err)
+					end
+				end
+			end
+		else
+			print("[ChatCmd] ✗ TextChannels not found under TextChatService")
+		end
+	end
 
-    -- ── LEGACY chat: SayMessageRequest ───────────────────
-    local ok1, err1 = pcall(function()
-        local events = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-        if not events then error("DefaultChatSystemChatEvents not found") end
-        local sayReq = events:FindFirstChild("SayMessageRequest")
-        if not sayReq then error("SayMessageRequest not found") end
-        sayReq:FireServer(message, "All")
-    end)
-    if ok1 then
-        print("[ChatCmd] ✓ Sent via SayMessageRequest (legacy)")
-        return true
-    else
-        print("[ChatCmd] ✗ SayMessageRequest failed:", err1)
-    end
+	local ok1, err1 = pcall(function()
+		local events = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+		if not events then error("DefaultChatSystemChatEvents not found") end
+		local sayReq = events:FindFirstChild("SayMessageRequest")
+		if not sayReq then error("SayMessageRequest not found") end
+		sayReq:FireServer(message, "All")
+	end)
+	if ok1 then
+		print("[ChatCmd] ✓ Sent via SayMessageRequest (legacy)")
+		return true
+	else
+		print("[ChatCmd] ✗ SayMessageRequest failed:", err1)
+	end
 
-    -- ── LEGACY chat: LocalPlayer:Chat() ──────────────────
-    local ok2, err2 = pcall(function()
-        LocalPlayer:Chat(message)
-    end)
-    if ok2 then
-        print("[ChatCmd] ✓ Sent via LocalPlayer:Chat()")
-        return true
-    else
-        print("[ChatCmd] ✗ LocalPlayer:Chat() failed:", err2)
-    end
+	local ok2, err2 = pcall(function()
+		LocalPlayer:Chat(message)
+	end)
+	if ok2 then
+		print("[ChatCmd] ✓ Sent via LocalPlayer:Chat()")
+		return true
+	else
+		print("[ChatCmd] ✗ LocalPlayer:Chat() failed:", err2)
+	end
 
-    -- ── Bubble-only fallback (visual only, won't fire server cmds) ──
-    local ok3, err3 = pcall(function()
-        local BubbleSvc = game:GetService("Chat")
-        local char = LocalPlayer.Character
-        if not char then error("No character") end
-        BubbleSvc:Chat(char:FindFirstChild("Head") or char.PrimaryPart, message, Enum.ChatColor.White)
-    end)
-    if ok3 then
-        print("[ChatCmd] ⚠ BubbleChat only — visual, may not trigger server commands")
-        return true
-    else
-        print("[ChatCmd] ✗ BubbleChat failed:", err3)
-    end
+	local ok3, err3 = pcall(function()
+		local BubbleSvc = game:GetService("Chat")
+		local char = LocalPlayer.Character
+		if not char then error("No character") end
+		BubbleSvc:Chat(char:FindFirstChild("Head") or char.PrimaryPart, message, Enum.ChatColor.White)
+	end)
+	if ok3 then
+		print("[ChatCmd] ⚠ BubbleChat only — visual, may not trigger server commands")
+		return true
+	else
+		print("[ChatCmd] ✗ BubbleChat failed:", err3)
+	end
 
-    print("[ChatCmd] ✗ ALL METHODS FAILED — press F9 to open Output for details")
-    return false
+	print("[ChatCmd] ✗ ALL METHODS FAILED — press F9 to open Output for details")
+	return false
 end
 
 -- ── Open / Close ──────────────────────────────────────────
-
-local isOpen   = false
+local isOpen = false
 local tweenIn  = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local tweenOut = TweenInfo.new(0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
 local function openBar()
-    if isOpen then return end
-    isOpen = true
-    StatusLabel.Text = ""
-    TextBox.Text = ""
-    Frame.Position = UDim2.new(0.5, -260, 1, -80)
-    Frame.Visible  = true
-    TweenService:Create(Frame, tweenIn, { Position = UDim2.new(0.5, -260, 1, -100) }):Play()
-    task.defer(function() TextBox:CaptureFocus() end)
+	if isOpen then return end
+	isOpen = true
+	StatusLabel.Text = ""
+	TextBox.Text = ""
+	Frame.Position = UDim2.new(0.5, -260, 1, -80)
+	Frame.Visible = true
+	TweenService:Create(Frame, tweenIn, { Position = UDim2.new(0.5, -260, 1, -100) }):Play()
+	task.defer(function() TextBox:CaptureFocus() end)
 end
 
 local function closeBar()
-    if not isOpen then return end
-    isOpen = false
-    local t = TweenService:Create(Frame, tweenOut, { Position = UDim2.new(0.5, -260, 1, -80) })
-    t:Play()
-    t.Completed:Connect(function() Frame.Visible = false end)
-    TextBox:ReleaseFocus()
+	if not isOpen then return end
+	isOpen = false
+	local t = TweenService:Create(Frame, tweenOut, { Position = UDim2.new(0.5, -260, 1, -80) })
+	t:Play()
+	t.Completed:Connect(function() Frame.Visible = false end)
+	TextBox:ReleaseFocus()
 end
 
 local function flashStatus(msg, success)
-    StatusLabel.TextColor3 = success
-        and Color3.fromRGB(80, 220, 120)
-        or  Color3.fromRGB(255, 90, 90)
-    StatusLabel.Text = msg
-    task.delay(2.5, function() StatusLabel.Text = "" end)
+	StatusLabel.TextColor3 = success and Theme.Success or Theme.Danger
+	StatusLabel.Text = msg
+	task.delay(2.5, function()
+		if StatusLabel then
+			StatusLabel.Text = ""
+		end
+	end)
 end
 
 -- ── Toggle key (changeable at runtime) ───────────────────
 local toggleKey     = Enum.KeyCode.Semicolon
-local toggleKeyName = ";"  -- display name
+local toggleKeyName = ";"
 
 local function setToggleKey(keyName)
-    -- Accept common shorthand names as well as exact Enum names
-    local aliases = {
-        [";"]           = "Semicolon",
-        ["semicolon"]   = "Semicolon",
-        ["/"]           = "Slash",
-        ["slash"]       = "Slash",
-        ["'"]           = "Quote",
-        ["quote"]       = "Quote",
-        [","]           = "Comma",
-        ["comma"]       = "Comma",
-        ["."]           = "Period",
-        ["period"]      = "Period",
-        ["`"]           = "BackQuote",
-        ["backquote"]   = "BackQuote",
-        ["grave"]       = "BackQuote",
-        ["tab"]         = "Tab",
-        ["capslock"]    = "CapsLock",
-        ["caps"]        = "CapsLock",
-        ["\\"]          = "BackSlash",
-        ["backslash"]   = "BackSlash",
-        ["["]           = "LeftBracket",
-        ["]"]           = "RightBracket",
-        ["-"]           = "Minus",
-        ["="]           = "Equals",
-    }
+	local aliases = {
+		[";"]         = "Semicolon",
+		["semicolon"] = "Semicolon",
+		["/"]         = "Slash",
+		["slash"]     = "Slash",
+		["'"]         = "Quote",
+		["quote"]     = "Quote",
+		[","]         = "Comma",
+		["comma"]     = "Comma",
+		["."]         = "Period",
+		["period"]    = "Period",
+		["`"]         = "BackQuote",
+		["backquote"] = "BackQuote",
+		["grave"]     = "BackQuote",
+		["tab"]       = "Tab",
+		["capslock"]  = "CapsLock",
+		["caps"]      = "CapsLock",
+		["\\"]        = "BackSlash",
+		["backslash"] = "BackSlash",
+		["["]         = "LeftBracket",
+		["]"]         = "RightBracket",
+		["-"]         = "Minus",
+		["="]         = "Equals",
+	}
 
-    local enumName = aliases[keyName:lower()] or keyName
-    -- Capitalise first letter for single-letter keys (e.g. "p" → "P")
-    if #enumName == 1 then
-        enumName = enumName:upper()
-    end
+	local enumName = aliases[keyName:lower()] or keyName
+	if #enumName == 1 then
+		enumName = enumName:upper()
+	end
 
-    local ok, result = pcall(function()
-        return Enum.KeyCode[enumName]
-    end)
+	local ok, result = pcall(function()
+		return Enum.KeyCode[enumName]
+	end)
 
-    if ok and result then
-        toggleKey     = result
-        toggleKeyName = keyName
-        print("[ChatCmd] Toggle key changed to:", keyName, "(Enum.KeyCode." .. enumName .. ")")
-        return true, keyName
-    else
-        print("[ChatCmd] Unknown key:", keyName)
-        return false, keyName
-    end
+	if ok and result then
+		toggleKey = result
+		toggleKeyName = keyName
+		print("[ChatCmd] Toggle key changed to:", keyName, "(Enum.KeyCode." .. enumName .. ")")
+		return true, keyName
+	else
+		print("[ChatCmd] Unknown key:", keyName)
+		return false, keyName
+	end
 end
 
 -- ── Keybinds ──────────────────────────────────────────────
-
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == toggleKey then
-        if isOpen then closeBar() else openBar() end
-    end
-    if input.KeyCode == Enum.KeyCode.Escape and isOpen then
-        closeBar()
-    end
+	if gameProcessed then return end
+
+	if input.KeyCode == toggleKey then
+		if isOpen then closeBar() else openBar() end
+	end
+
+	if input.KeyCode == Enum.KeyCode.Escape and isOpen then
+		closeBar()
+	end
 end)
 
 TextBox.FocusLost:Connect(function(enterPressed)
-    if not enterPressed then return end
-    local msg = TextBox.Text:match("^%s*(.-)%s*$")
-    if msg == "" then closeBar(); return end
+	if not enterPressed then return end
 
-    -- ── Handle --set key X ───────────────────────────────
-    local newKey = msg:match("^%-%-set%s+key%s+(%S+)$")
+	local msg = TextBox.Text:match("^%s*(.-)%s*$")
+	if msg == "" then
+		closeBar()
+		return
+	end
 
-    if newKey then
-        local ok, name = setToggleKey(newKey)
-        if ok then
-            flashStatus("✓ Toggle key set to [" .. name .. "]", true)
-        else
-            flashStatus("✗ Unknown key: \"" .. name .. "\" — try e.g. ; / P Tab", false)
-        end
-        closeBar()
-        return
-    end
+	-- ── Handle --close ────────────────────────────────────
+	if msg:lower() == "--close" then
+		closeBar()
+		ScreenGui:Destroy()
+		print("[ChatCmd] Closed and removed.")
+		return
+	end
 
-    -- ── Normal chat send ──────────────────────────────────
-    local ok = sendMessage(msg)
-    if ok then
-        flashStatus("✓ Sent: " .. msg, true)
-    else
-        flashStatus("✗ Failed — press F9 and check Output for details", false)
-    end
-    closeBar()
+	-- ── Handle --set key X ────────────────────────────────
+	local newKey = msg:match("^%-%-set%s+key%s+(%S+)$")
+	if newKey then
+		local ok, name = setToggleKey(newKey)
+		if ok then
+			flashStatus("✓ Toggle key set to [" .. name .. "]", true)
+		else
+			flashStatus("✗ Unknown key: \"" .. name .. "\" — try e.g. ; / P Tab", false)
+		end
+		closeBar()
+		return
+	end
+
+	-- ── Normal chat send ──────────────────────────────────
+	local ok = sendMessage(msg)
+	if ok then
+		flashStatus("✓ Sent: " .. msg, true)
+	else
+		flashStatus("✗ Failed — press F9 and check Output for details", false)
+	end
+	closeBar()
 end)
 
-print("[ChatCmd] Ready — Press [;] to open | Chat system:", usingNewChat and "NEW" or "LEGACY")
+-- ── Open by default ───────────────────────────────────────
+openBar()
+
+print("[ChatCmd] Ready — Press [;] to open/close | Chat system:", usingNewChat and "NEW" or "LEGACY")
 print("[ChatCmd] Tip: type  --set key G  to change the toggle key")
+print("[ChatCmd] Tip: type  --close  to completely remove this GUI")
