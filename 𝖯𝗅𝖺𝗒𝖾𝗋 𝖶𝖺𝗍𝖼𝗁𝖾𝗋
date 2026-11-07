@@ -6,107 +6,102 @@ local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
 
-local T = 0.6 -- same transparency as NovaUI
+local T = 0.6
 
 -- ================================
--- WATCHLIST (edit these)
+-- FILE SYSTEM (Executor Workspace)
 -- ================================
-local watchedUsernames = {
-    "dArK_fR4nCy",
-    "muxhny",
-    "discreetings",
-    "grusomelyness",
-    "Hana_playz22",
-    "500reasons_x",
-    "Trxhgix",
-    "Yirikane_2",
-    "allyisurmom",
-    "goter12340",
-    "idk02595",
-    "paul_a3c",
-    "KARTOFELMARKIZ",
-    "524425u22k",
-    "maria_1287060",
-    "Tm_MANU987",
-    "leonanthoy67",
-    "hscyhfe",
-    "jas_mil",
-    "Gabriel_115618",
-    "LoL_MM29878",
-    "Shanezhka7",
-    "MerlynSinh",
-    "Daizzy30",
-    "cxrvettezz",
-    "AnaAzuri",
-    "aevrsiie",
-    "fofinho_568",
-    "SWEET_CHERRY6663",
-    "zy4wrr",
-    "cokroch_life3",
-    "0PeppaPig06",
-    "7XxmilaxX7",
-	"baconzin_batata",
-	"FIRSTEVER48",
-	"MM2gramba",
-	"zaid820409",
-	"El_pop21",
-	"allay_20110",
-	"dhsuehidwh_83747",
-	"classicaloasis",
-	"Abigail_99802",
-	"5gywu",
-	"leylacutecore2",
-	"primo_w10",
-	"not_agirl120",
-	"Plinfiry",
-	"yangmoon20286",
-	"Emily24681097",
-	"hgdhdrdbcbcglvy",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-	"example",
-}
+local FOLDER_NAME = "PlayerWatcher"
+local FILE_PATH = FOLDER_NAME .. "/watched.txt"
 
 local watchSet = {}
-for _, name in ipairs(watchedUsernames) do
-	watchSet[string.lower(name)] = true
+
+local function ensureFolder()
+	pcall(function()
+		if isfolder and not isfolder(FOLDER_NAME) then
+			makefolder(FOLDER_NAME)
+		end
+	end)
 end
 
+local function loadWatchedFromFile()
+	watchSet = {}
+	ensureFolder()
+
+	local success, content = pcall(function()
+		if isfile and isfile(FILE_PATH) then
+			return readfile(FILE_PATH)
+		end
+		return nil
+	end)
+
+	if success and content then
+		for line in content:gmatch("[^\r\n]+") do
+			local name = line:match("^%s*(.-)%s*$")
+			if name and name ~= "" then
+				watchSet[string.lower(name)] = true
+			end
+		end
+	end
+end
+
+local function saveUsernameToFile(username)
+	if not username or username == "" then return false end
+
+	local lower = string.lower(username)
+	if watchSet[lower] then
+		return false -- already saved
+	end
+
+	watchSet[lower] = true
+	ensureFolder()
+
+	local success = pcall(function()
+		local existing = ""
+		if isfile and isfile(FILE_PATH) then
+			existing = readfile(FILE_PATH)
+			if existing ~= "" and not existing:match("\n$") then
+				existing = existing .. "\n"
+			end
+		end
+		writefile(FILE_PATH, existing .. username .. "\n")
+	end)
+
+	return success
+end
+
+local function removeUsernameFromFile(username)
+	if not username or username == "" then return false end
+
+	local lower = string.lower(username)
+	if not watchSet[lower] then
+		return false -- not in list
+	end
+
+	watchSet[lower] = nil
+
+	local success = pcall(function()
+		local lines = {}
+		if isfile and isfile(FILE_PATH) then
+			local content = readfile(FILE_PATH)
+			for line in content:gmatch("[^\r\n]+") do
+				local name = line:match("^%s*(.-)%s*$")
+				if name and name ~= "" and string.lower(name) ~= lower then
+					table.insert(lines, name)
+				end
+			end
+		end
+		writefile(FILE_PATH, table.concat(lines, "\n") .. (#lines > 0 and "\n" or ""))
+	end)
+
+	return success
+end
+
+-- Load on start
+loadWatchedFromFile()
+
 -- ================================
--- Theme (matching NovaUI)
+-- Theme
 -- ================================
 local Theme = {
 	Background = Color3.fromRGB(0, 0, 0),
@@ -118,6 +113,8 @@ local Theme = {
 	TextPrimary = Color3.fromRGB(255, 255, 255),
 	TextSecondary = Color3.fromRGB(180, 180, 180),
 	CloseRed = Color3.fromRGB(160, 40, 40),
+	Success = Color3.fromRGB(40, 140, 70),
+	Danger = Color3.fromRGB(140, 40, 40),
 }
 
 local function Tween(obj, props, duration)
@@ -197,6 +194,9 @@ end
 -- ================================
 -- Create GUI
 -- ================================
+local oldGui = PlayerGui:FindFirstChild("PlayerWatcherGui")
+if oldGui then oldGui:Destroy() end
+
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "PlayerWatcherGui"
 screenGui.ResetOnSpawn = false
@@ -222,7 +222,7 @@ stroke.Color = Theme.Border
 stroke.Thickness = 1
 stroke.Parent = mainFrame
 
--- ====================== TITLE BAR (Top corners only) ======================
+-- Title Bar
 local titleBar = Instance.new("Frame")
 titleBar.Name = "TitleBar"
 titleBar.Size = UDim2.new(1, 0, 0, 36)
@@ -232,24 +232,21 @@ titleBar.BackgroundTransparency = T
 titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 
--- Rounded corners (will be partially covered)
 local titleCorner = Instance.new("UICorner")
 titleCorner.CornerRadius = UDim.new(0, 10)
 titleCorner.Parent = titleBar
 
--- Title text
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -70, 1, 0)
 titleLabel.Position = UDim2.new(0, 12, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Player Logger" -- Change to "Bring Players" in the other script
+titleLabel.Text = "Player Logger"
 titleLabel.TextColor3 = Theme.TextPrimary
 titleLabel.TextSize = 14
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleBar
 
--- Minimize Button
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Size = UDim2.new(0, 24, 0, 24)
 minimizeBtn.Position = UDim2.new(1, -56, 0.5, -12)
@@ -266,7 +263,6 @@ local minCorner = Instance.new("UICorner")
 minCorner.CornerRadius = UDim.new(0, 5)
 minCorner.Parent = minimizeBtn
 
--- Close Button
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 24, 0, 24)
 closeBtn.Position = UDim2.new(1, -28, 0.5, -12)
@@ -286,7 +282,6 @@ closeCorner.Parent = closeBtn
 setupButtonAnimations(minimizeBtn, Theme.Elevated, Theme.SurfaceHover, Color3.fromRGB(10, 10, 10))
 setupButtonAnimations(closeBtn, Theme.CloseRed, Color3.fromRGB(190, 50, 50), Color3.fromRGB(120, 25, 25))
 
--- Status Label
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -16, 0, 18)
 statusLabel.Position = UDim2.new(0, 8, 0, 34)
@@ -298,7 +293,6 @@ statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Parent = mainFrame
 
--- Scrolling Frame
 local scroll = Instance.new("ScrollingFrame")
 scroll.Name = "PlayerList"
 scroll.Size = UDim2.new(1, -16, 1, -62)
@@ -333,8 +327,8 @@ listPadding.Parent = scroll
 -- ================================
 local popup = Instance.new("Frame")
 popup.Name = "ProfilePopup"
-popup.Size = UDim2.new(0, 220, 0, 310)
-popup.Position = UDim2.new(0, 290, 0.5, -155)
+popup.Size = UDim2.new(0, 220, 0, 400)
+popup.Position = UDim2.new(0, 290, 0.5, -200)
 popup.BackgroundColor3 = Theme.Background
 popup.BackgroundTransparency = T
 popup.BorderSizePixel = 0
@@ -428,10 +422,11 @@ usernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 usernameLabel.ZIndex = 11
 usernameLabel.Parent = popup
 
+-- Copy Username
 local copyBtn = Instance.new("TextButton")
 copyBtn.Name = "CopyButton"
 copyBtn.Size = UDim2.new(1, -24, 0, 32)
-copyBtn.Position = UDim2.new(0, 12, 1, -44)
+copyBtn.Position = UDim2.new(0, 12, 1, -124)
 copyBtn.BackgroundColor3 = Theme.Accent
 copyBtn.BackgroundTransparency = T
 copyBtn.Text = "Copy Username"
@@ -448,12 +443,55 @@ copyCorner.Parent = copyBtn
 
 setupButtonAnimations(copyBtn, Theme.Accent, Color3.fromRGB(110, 170, 255), Color3.fromRGB(60, 110, 200))
 
+-- Save Username
+local saveBtn = Instance.new("TextButton")
+saveBtn.Name = "SaveButton"
+saveBtn.Size = UDim2.new(1, -24, 0, 32)
+saveBtn.Position = UDim2.new(0, 12, 1, -84)
+saveBtn.BackgroundColor3 = Theme.Success
+saveBtn.BackgroundTransparency = T
+saveBtn.Text = "Save Username"
+saveBtn.TextColor3 = Theme.TextPrimary
+saveBtn.TextSize = 13
+saveBtn.Font = Enum.Font.GothamBold
+saveBtn.AutoButtonColor = false
+saveBtn.ZIndex = 11
+saveBtn.Parent = popup
+
+local saveCorner = Instance.new("UICorner")
+saveCorner.CornerRadius = UDim.new(0, 6)
+saveCorner.Parent = saveBtn
+
+setupButtonAnimations(saveBtn, Theme.Success, Color3.fromRGB(50, 170, 90), Color3.fromRGB(30, 110, 55))
+
+-- Remove Username (NEW)
+local removeBtn = Instance.new("TextButton")
+removeBtn.Name = "RemoveButton"
+removeBtn.Size = UDim2.new(1, -24, 0, 32)
+removeBtn.Position = UDim2.new(0, 12, 1, -44)
+removeBtn.BackgroundColor3 = Theme.Danger
+removeBtn.BackgroundTransparency = T
+removeBtn.Text = "Remove Username"
+removeBtn.TextColor3 = Theme.TextPrimary
+removeBtn.TextSize = 13
+removeBtn.Font = Enum.Font.GothamBold
+removeBtn.AutoButtonColor = false
+removeBtn.ZIndex = 11
+removeBtn.Parent = popup
+
+local removeCorner = Instance.new("UICorner")
+removeCorner.CornerRadius = UDim.new(0, 6)
+removeCorner.Parent = removeBtn
+
+setupButtonAnimations(removeBtn, Theme.Danger, Color3.fromRGB(170, 50, 50), Color3.fromRGB(110, 30, 30))
+
 -- Popup logic
 local currentPopupUsername = nil
 local popupOpen = false
 local minimized = false
 local originalSize = UDim2.new(0, 260, 0, 340)
 local minimizedSize = UDim2.new(0, 160, 0, 36)
+local playerEntries = {}
 
 local function updatePopupPosition()
 	if not popupOpen then return end
@@ -473,15 +511,39 @@ local function closePopup()
 	if not popupOpen then return end
 	popupOpen = false
 	local tween = TweenService:Create(popup, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = UDim2.new(0, 200, 0, 280),
+		Size = UDim2.new(0, 200, 0, 370),
 		BackgroundTransparency = 1
 	})
 	tween:Play()
 	tween.Completed:Connect(function()
 		popup.Visible = false
 		popup.BackgroundTransparency = T
-		popup.Size = UDim2.new(0, 220, 0, 310)
+		popup.Size = UDim2.new(0, 220, 0, 400)
 	end)
+end
+
+local function updateSaveRemoveButtons()
+	if not currentPopupUsername then return end
+
+	local isSaved = watchSet[string.lower(currentPopupUsername)]
+
+	if isSaved then
+		saveBtn.Text = "Already Saved"
+		saveBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+		setupButtonAnimations(saveBtn, Color3.fromRGB(60, 60, 60), Color3.fromRGB(75, 75, 75), Color3.fromRGB(45, 45, 45))
+
+		removeBtn.Text = "Remove Username"
+		removeBtn.BackgroundColor3 = Theme.Danger
+		setupButtonAnimations(removeBtn, Theme.Danger, Color3.fromRGB(170, 50, 50), Color3.fromRGB(110, 30, 30))
+	else
+		saveBtn.Text = "Save Username"
+		saveBtn.BackgroundColor3 = Theme.Success
+		setupButtonAnimations(saveBtn, Theme.Success, Color3.fromRGB(50, 170, 90), Color3.fromRGB(30, 110, 55))
+
+		removeBtn.Text = "Not Saved"
+		removeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+		setupButtonAnimations(removeBtn, Color3.fromRGB(60, 60, 60), Color3.fromRGB(75, 75, 75), Color3.fromRGB(45, 45, 45))
+	end
 end
 
 local function openPopup(userId, displayName, username)
@@ -490,6 +552,7 @@ local function openPopup(userId, displayName, username)
 	displayNameLabel.Text = displayName
 	usernameLabel.Text = "@" .. username
 	avatarImage.Image = ""
+	updateSaveRemoveButtons()
 
 	task.spawn(function()
 		local content = nil
@@ -515,21 +578,91 @@ local function openPopup(userId, displayName, username)
 	end)
 
 	popup.Visible = true
-	popup.Size = UDim2.new(0, 200, 0, 280)
+	popup.Size = UDim2.new(0, 200, 0, 370)
 	popup.BackgroundTransparency = 1
 	popupOpen = true
 	updatePopupPosition()
 
 	TweenService:Create(popup, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Size = UDim2.new(0, 220, 0, 310),
+		Size = UDim2.new(0, 220, 0, 400),
 		BackgroundTransparency = T
 	}):Play()
 end
 
 popupClose.MouseButton1Click:Connect(closePopup)
+
 copyBtn.MouseButton1Click:Connect(function()
 	if currentPopupUsername then
 		copyToClipboard(currentPopupUsername)
+	end
+end)
+
+saveBtn.MouseButton1Click:Connect(function()
+	if not currentPopupUsername then return end
+
+	if watchSet[string.lower(currentPopupUsername)] then
+		sendNotification("Already Saved", currentPopupUsername .. " is already in the watchlist", 3)
+		return
+	end
+
+	local success = saveUsernameToFile(currentPopupUsername)
+	if success then
+		sendNotification("Saved!", currentPopupUsername .. " added to watchlist", 4)
+		updateSaveRemoveButtons()
+
+		local data = playerEntries[currentPopupUsername]
+		if data and data.frame then
+			local entry = data.frame
+			entry.BackgroundColor3 = Color3.fromRGB(40, 15, 15)
+
+			local userLabel = entry:FindFirstChild("UserLabel")
+			if userLabel then
+				userLabel.TextColor3 = Color3.fromRGB(255, 140, 140)
+			end
+
+			if not entry:FindFirstChildOfClass("UIStroke") then
+				local watchStroke = Instance.new("UIStroke")
+				watchStroke.Color = Color3.fromRGB(200, 50, 50)
+				watchStroke.Thickness = 1.2
+				watchStroke.Parent = entry
+			end
+		end
+	else
+		sendNotification("Save Failed", "Could not write to file (executor support?)", 4)
+	end
+end)
+
+removeBtn.MouseButton1Click:Connect(function()
+	if not currentPopupUsername then return end
+
+	if not watchSet[string.lower(currentPopupUsername)] then
+		sendNotification("Not Saved", currentPopupUsername .. " is not in the watchlist", 3)
+		return
+	end
+
+	local success = removeUsernameFromFile(currentPopupUsername)
+	if success then
+		sendNotification("Removed!", currentPopupUsername .. " removed from watchlist", 4)
+		updateSaveRemoveButtons()
+
+		-- Revert the list entry back to normal
+		local data = playerEntries[currentPopupUsername]
+		if data and data.frame then
+			local entry = data.frame
+			entry.BackgroundColor3 = Theme.Elevated
+
+			local userLabel = entry:FindFirstChild("UserLabel")
+			if userLabel then
+				userLabel.TextColor3 = Theme.TextSecondary
+			end
+
+			local stroke = entry:FindFirstChildOfClass("UIStroke")
+			if stroke then
+				stroke:Destroy()
+			end
+		end
+	else
+		sendNotification("Remove Failed", "Could not update the file", 4)
 	end
 end)
 
@@ -538,8 +671,6 @@ mainFrame:GetPropertyChangedSignal("Position"):Connect(updatePopupPosition)
 -- ================================
 -- Player Entries
 -- ================================
-local playerEntries = {}
-
 local function updateStatus()
 	local total, online = 0, 0
 	for _, data in pairs(playerEntries) do
